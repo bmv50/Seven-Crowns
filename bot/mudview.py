@@ -160,12 +160,12 @@ def render_score(ch) -> str:
     L.append("━━━━━━━━━━━━━━━━━━")
 
     # шкалы: полоса всегда с начала строки (клетки равной ширины → ровные
-    # столбцы), подпись и цифры — после; цвет по ресурсу (HP 🟥, мана 🟦,
-    # ярость 🟧, опыт 🟩)
-    L.append(f"{_bar10(ch.hp, ch.max_hp, '🟥')} ❤️ {ch.hp}/{ch.max_hp}")
+    # столбцы), затем эмодзи, цифры и название шкалы; цвет по ресурсу
+    # (HP 🟥, мана 🟦, ярость 🟧, опыт 🟩)
+    L.append(f"{_bar10(ch.hp, ch.max_hp, '🟥')} ❤️ {ch.hp}/{ch.max_hp} *HP*")
     L.append(f"{_bar10(ch.mp, ch.max_resource, _res_fill(ch.resource_name))} "
-             f"{ch.resource_emoji} {ch.mp}/{ch.max_resource}")
-    L.append(f"{_bar10(ch.xp, ch.xp_to_next, '🟩')} ✨ {ch.xp}/{ch.xp_to_next}")
+             f"{ch.resource_emoji} {ch.mp}/{ch.max_resource} *{ch.resource_name}*")
+    L.append(f"{_bar10(ch.xp, ch.xp_to_next, '🟩')} ✨ {ch.xp}/{ch.xp_to_next} *Опыт*")
     L.append("━━━━━━━━━━━━━━━━━━")
 
     # боевые
