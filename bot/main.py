@@ -2578,8 +2578,20 @@ async def on_cb(cb: CallbackQuery):
             await cb.answer()
         await show_room(cb.message, ch, edit_cb=cb)
     elif action == "talk":
+        # Мгновенно погасить спиннер кнопки: LLM-реплика может думать до 20с,
+        # а протухший callback Telegram затем молча «съедает» ответ — игрок
+        # видел «ничего не происходит» (баг живого прогона на VPS).
+        try:
+            await cb.answer()
+        except Exception:
+            pass
         talking_to[uid] = arg
-        ai_line, act = await npc_ai.say_action(ch, arg)
+        try:
+            ai_line, act = await npc_ai.say_action(ch, arg)
+        except Exception as e:
+            # ИИ-реплика никогда не должна ронять диалог: откат на шаблон
+            _elog.log_err(_log, "npc_talk_failed", e, uid=uid, npc=arg)
+            ai_line, act = None, None
         _stash_errand(ch, arg, act)
         _qtalk = quest.on_talk(ch, arg)           # talk-цели квестов
         # недельная цель event_talk: разговор с NPC во время мирового события (Этап 6.1)
@@ -2591,7 +2603,8 @@ async def on_cb(cb: CallbackQuery):
             await save(ch)
         await safe_edit(cb, npc_dialog(ch, arg, line=ai_line), ui.kb_npc(ch, arg, highlight=act))
         if _qtalk:
-            await cb.answer("\n".join(_qtalk).replace("*", "")[:190], show_alert=True)
+            # callback уже отвечен выше — квест-прогресс шлём обычным сообщением
+            await send(uid, "\n".join(_qtalk))
     elif action == "erroffer":
         off = errands.offer(ch, arg)            # fallback без ИИ: случайный кандидат
         if not off:
