@@ -1,0 +1,1548 @@
+power_strike:
+  name: Мощный удар
+  emoji: 💥
+  kind: damage
+  target: enemy
+  mp: 15
+  cooldown: 2
+  scaling: 2.2
+  desc: Сокрушительный удар, 220% урона от Силы.
+shield_wall:
+  name: Стена щитов
+  emoji: 🛡
+  kind: buff
+  target: self
+  mp: 20
+  cooldown: 4
+  effect:
+    type: shield
+    amount_scaling: 3.0
+    duration: 3
+  desc: Поглощает урон в течение 3 ходов.
+cleave:
+  name: Рассекающий удар
+  emoji: 🪓
+  kind: damage
+  target: enemy
+  mp: 25
+  cooldown: 3
+  scaling: 1.6
+  desc: Широкий замах, 160% урона от Силы.
+fireball:
+  name: Огненный шар
+  emoji: 🔥
+  kind: damage
+  target: enemy
+  mp: 12
+  cooldown: 1
+  scaling: 2.6
+  desc: Взрыв пламени, 260% урона от Интеллекта.
+  effect:
+    type: burn
+    dmg: 6
+    duration: 3
+frost_armor:
+  name: Ледяная броня
+  emoji: ❄️
+  kind: buff
+  target: self
+  mp: 10
+  cooldown: 4
+  effect:
+    type: shield
+    amount_scaling: 2.5
+    duration: 3
+  desc: Ледяной панцирь поглощает урон.
+arcane_burst:
+  name: Чародейский залп
+  emoji: 🌌
+  kind: damage
+  target: enemy
+  mp: 22
+  cooldown: 4
+  scaling: 4.0
+  desc: Опустошительный взрыв маны, 400% урона от Интеллекта.
+backstab:
+  name: Удар в спину
+  emoji: 🔪
+  kind: damage
+  target: enemy
+  mp: 20
+  cooldown: 2
+  scaling: 2.4
+  crit_bonus: 0.4
+  desc: Подлый удар с огромным шансом крита.
+evasion:
+  name: Уклонение
+  emoji: 💨
+  kind: buff
+  target: self
+  mp: 15
+  cooldown: 4
+  effect:
+    type: dodge
+    chance: 0.5
+    duration: 2
+  desc: 50% шанс уклониться от удара в течение 2 ходов.
+poison_blade:
+  name: Отравленный клинок
+  emoji: 🟢
+  kind: damage
+  target: enemy
+  mp: 25
+  cooldown: 3
+  scaling: 1.2
+  effect:
+    type: poison
+    dmg: 6
+    duration: 3
+  desc: Урон + яд, наносящий урон 3 хода.
+heal:
+  name: Исцеление
+  emoji: 💚
+  kind: heal
+  target: self
+  mp: 10
+  cooldown: 1
+  scaling: 2.5
+  desc: Восстанавливает HP по Духу.
+smite:
+  name: Кара
+  emoji: ⚡
+  kind: damage
+  target: enemy
+  mp: 9
+  cooldown: 1
+  scaling: 2.0
+  desc: Священный урон, 200% от Духа.
+blessing:
+  name: Благословение
+  emoji: 🌟
+  kind: heal
+  target: allies
+  mp: 18
+  cooldown: 4
+  scaling: 1.8
+  desc: Лечит всех союзников в комнате.
+holy_strike:
+  name: Святой удар
+  emoji: ⚜️
+  kind: damage
+  target: enemy
+  mp: 8
+  cooldown: 2
+  scaling: 2.3
+  desc: Удар, освящённый светом. 230% урона от Силы.
+lay_on_hands:
+  name: Возложение рук
+  emoji: 🙌
+  kind: heal
+  target: self
+  mp: 14
+  cooldown: 3
+  scaling: 2.0
+  desc: Исцеляет раны святой силой (по Духу).
+consecration:
+  name: Освящение
+  emoji: 🌅
+  kind: heal
+  target: allies
+  mp: 20
+  cooldown: 5
+  scaling: 1.5
+  desc: Освящает землю, исцеляя всех союзников в комнате.
+drain_life:
+  name: Высасывание жизни
+  emoji: 🩸
+  kind: damage
+  target: enemy
+  mp: 12
+  cooldown: 1
+  scaling: 2.2
+  lifesteal: 0.5
+  desc: Урон от Интеллекта; половина возвращается вам как HP.
+bone_armor:
+  name: Костяная броня
+  emoji: 🦴
+  kind: buff
+  target: self
+  mp: 10
+  cooldown: 4
+  effect:
+    type: shield
+    amount_scaling: 2.8
+    duration: 3
+  desc: Панцирь из костей поглощает урон.
+curse:
+  name: Проклятие гнили
+  emoji: ☠️
+  kind: damage
+  target: enemy
+  mp: 14
+  cooldown: 3
+  scaling: 1.3
+  effect:
+    type: poison
+    dmg: 10
+    duration: 4
+  desc: Урон + гниение, отнимающее HP 4 хода.
+whirlwind:
+  name: Вихрь клинков
+  emoji: 🌪
+  class: warrior
+  learn_level: 13
+  kind: damage
+  target: enemy
+  aoe: true
+  mp: 35
+  cooldown: 3
+  scaling: 1.4
+  desc: Удар по всем врагам в комнате (140% от Силы).
+mighty_blow:
+  name: Сокрушающий удар
+  emoji: 🔨
+  class: warrior
+  learn_level: 35
+  kind: damage
+  target: enemy
+  mp: 35
+  cooldown: 3
+  scaling: 3.4
+  desc: Тяжелейший удар, 340% урона от Силы.
+blizzard:
+  name: Метель
+  emoji: ❄️
+  class: mage
+  learn_level: 26
+  kind: damage
+  target: enemy
+  aoe: true
+  mp: 24
+  cooldown: 4
+  scaling: 2.0
+  desc: Ледяная буря по всем врагам (200% от Интеллекта).
+meteor:
+  name: Метеор
+  emoji: ☄️
+  class: mage
+  learn_level: 48
+  kind: damage
+  target: enemy
+  mp: 32
+  cooldown: 5
+  scaling: 5.2
+  desc: Падение метеора, 520% урона от Интеллекта.
+fan_of_knives:
+  name: Веер клинков
+  emoji: 🌀
+  class: rogue
+  learn_level: 13
+  kind: damage
+  target: enemy
+  aoe: true
+  mp: 35
+  cooldown: 3
+  scaling: 1.5
+  desc: Россыпь метательных ножей по всем врагам (150% от Ловкости).
+eviscerate:
+  name: Потрошение
+  emoji: 🩸
+  class: rogue
+  learn_level: 31
+  kind: damage
+  target: enemy
+  mp: 35
+  cooldown: 3
+  scaling: 3.5
+  crit_bonus: 0.25
+  desc: Серия добивающих ударов, 350% от Ловкости, высокий крит.
+holy_nova:
+  name: Священная вспышка
+  emoji: 🌟
+  class: priest
+  learn_level: 22
+  kind: damage
+  target: enemy
+  aoe: true
+  mp: 20
+  cooldown: 4
+  scaling: 1.6
+  desc: Волна света по всем врагам (160% от Духа).
+greater_heal:
+  name: Великое исцеление
+  emoji: 💞
+  class: priest
+  learn_level: 26
+  kind: heal
+  target: self
+  mp: 18
+  cooldown: 2
+  scaling: 4.0
+  desc: Мощное исцеление по Духу.
+divine_storm:
+  name: Божественная буря
+  emoji: ⚡
+  class: paladin
+  learn_level: 24
+  kind: damage
+  target: enemy
+  aoe: true
+  mp: 18
+  cooldown: 4
+  scaling: 1.6
+  desc: Святой вихрь по всем врагам (160% от Силы).
+avenging_wrath:
+  name: Гнев караящий
+  emoji: 🌅
+  class: paladin
+  learn_level: 43
+  kind: damage
+  target: enemy
+  mp: 16
+  cooldown: 4
+  scaling: 3.4
+  desc: Удар возмездия светом, 340% урона от Силы.
+corpse_explosion:
+  name: Взрыв трупа
+  emoji: 💥
+  class: necromancer
+  learn_level: 33
+  kind: damage
+  target: enemy
+  aoe: true
+  mp: 22
+  cooldown: 4
+  scaling: 1.8
+  desc: Гнилостный взрыв по всем врагам (180% от Интеллекта).
+death_coil:
+  name: Кольцо смерти
+  emoji: 💀
+  class: necromancer
+  learn_level: 46
+  kind: damage
+  target: enemy
+  mp: 16
+  cooldown: 3
+  scaling: 3.0
+  lifesteal: 0.5
+  desc: Сгусток тьмы, 300% от Интеллекта; половина урона возвращается как HP.
+rending_strike:
+  name: Рассекающая рана
+  emoji: 🩸
+  class: warrior
+  learn_level: 8
+  kind: damage
+  target: enemy
+  mp: 20
+  cooldown: 2
+  scaling: 1.6
+  effect:
+    type: poison
+    dmg: 5
+    duration: 3
+  desc: 'Удар, вскрывающий плоть: 160% от Силы и кровотечение 3 хода.'
+heavy_swing:
+  name: Тяжёлый замах
+  emoji: ⚔️
+  class: warrior
+  learn_level: 4
+  kind: damage
+  target: enemy
+  mp: 15
+  cooldown: 1
+  scaling: 2.0
+  desc: Размашистый удар оружием, 200% урона от Силы.
+battle_shout:
+  name: Боевой клич
+  emoji: 📢
+  class: warrior
+  learn_level: 17
+  kind: buff
+  target: self
+  mp: 20
+  cooldown: 4
+  effect:
+    type: shield
+    amount_scaling: 2.6
+    duration: 3
+  desc: Воин рычит в ярости, обращая боевой дух в щит на 3 хода.
+sunder_armor:
+  name: Сокрушение брони
+  emoji: 🔧
+  class: warrior
+  learn_level: 26
+  kind: damage
+  target: enemy
+  mp: 25
+  cooldown: 2
+  scaling: 2.6
+  desc: Удар, ломающий доспех и кости, 260% урона от Силы.
+bladestorm:
+  name: Буря клинков
+  emoji: 🌪
+  class: warrior
+  learn_level: 40
+  kind: damage
+  target: enemy
+  aoe: true
+  mp: 45
+  cooldown: 4
+  scaling: 1.8
+  desc: Воин кружится вихрем стали, поражая всех врагов (180% от Силы).
+crushing_charge:
+  name: Сокрушительный натиск
+  emoji: 🐂
+  class: warrior
+  learn_level: 44
+  kind: damage
+  target: enemy
+  mp: 35
+  cooldown: 3
+  scaling: 3.2
+  crit_bonus: 0.2
+  desc: Таранный бросок всем телом, 320% урона от Силы с шансом крита.
+iron_skin:
+  name: Железная шкура
+  emoji: 🛡
+  class: warrior
+  learn_level: 31
+  kind: buff
+  target: self
+  mp: 30
+  cooldown: 4
+  effect:
+    type: dodge
+    chance: 0.4
+    duration: 3
+  desc: 'Тело твердеет как сталь: 40% шанс уклонения на 3 хода.'
+second_wind:
+  name: Второе дыхание
+  emoji: 💗
+  class: warrior
+  learn_level: 22
+  kind: heal
+  target: self
+  mp: 30
+  cooldown: 4
+  scaling: 1.8
+  desc: Воин превозмогает боль и восстанавливает HP (по Силе).
+reckless_blow:
+  name: Безрассудный удар
+  emoji: 💢
+  class: warrior
+  learn_level: 48
+  kind: damage
+  target: enemy
+  mp: 35
+  cooldown: 3
+  scaling: 3.6
+  crit_bonus: 0.3
+  desc: Удар без оглядки на защиту, 360% от Силы, высокий шанс крита.
+savage_sweep:
+  name: Дикий покос
+  emoji: 🪓
+  class: warrior
+  learn_level: 53
+  kind: damage
+  target: enemy
+  aoe: true
+  mp: 50
+  cooldown: 4
+  scaling: 2.0
+  desc: Широкий горизонтальный взмах по всем врагам (200% от Силы).
+deep_wound:
+  name: Глубокая рана
+  emoji: 🗡
+  class: warrior
+  learn_level: 57
+  kind: damage
+  target: enemy
+  mp: 40
+  cooldown: 3
+  scaling: 2.4
+  effect:
+    type: poison
+    dmg: 12
+    duration: 4
+  desc: 'Клинок входит до кости: 240% от Силы и тяжёлое кровотечение 4 хода.'
+intimidating_roar:
+  name: Устрашающий рёв
+  emoji: 🦁
+  class: warrior
+  learn_level: 38
+  kind: buff
+  target: self
+  mp: 35
+  cooldown: 5
+  effect:
+    type: shield
+    amount_scaling: 3.6
+    duration: 4
+  desc: Грозный рёв воина крепит волю, обращая её в щит на 4 хода.
+earthshatter:
+  name: Раскол земли
+  emoji: 🌋
+  class: warrior
+  learn_level: 47
+  kind: damage
+  target: enemy
+  aoe: true
+  mp: 60
+  cooldown: 5
+  scaling: 2.4
+  desc: Удар о землю разламывает её под всеми врагами (240% от Силы).
+executioner_blow:
+  name: Удар палача
+  emoji: 🔨
+  class: warrior
+  learn_level: 59
+  kind: damage
+  target: enemy
+  mp: 50
+  cooldown: 4
+  scaling: 4.6
+  desc: Тяжелейший добивающий удар сверху, 460% урона от Силы.
+last_stand:
+  name: Последний рубеж
+  emoji: 🏔
+  class: warrior
+  learn_level: 60
+  kind: buff
+  target: self
+  mp: 55
+  cooldown: 5
+  effect:
+    type: shield
+    amount_scaling: 5.0
+    duration: 4
+  desc: Воин встаёт насмерть, окутываясь несокрушимым щитом на 4 хода.
+frostbolt:
+  name: Ледяная стрела
+  emoji: 🧊
+  class: mage
+  learn_level: 8
+  kind: damage
+  target: enemy
+  mp: 8
+  cooldown: 1
+  scaling: 2.2
+  desc: Колкая стрела льда, 220% урона от Интеллекта.
+  effect:
+    type: freeze
+    duration: 2
+flamestrike:
+  name: Огненный удар
+  emoji: 🔥
+  class: mage
+  learn_level: 13
+  kind: damage
+  target: enemy
+  mp: 11
+  cooldown: 2
+  scaling: 2.7
+  effect:
+    type: poison
+    dmg: 6
+    duration: 3
+  desc: Столб пламени, 270% урона от Интеллекта + горение 3 хода.
+arcane_missile:
+  name: Тайная стрела
+  emoji: ✨
+  class: mage
+  learn_level: 4
+  kind: damage
+  target: enemy
+  mp: 9
+  cooldown: 1
+  scaling: 2.4
+  crit_bonus: 0.2
+  desc: Самонаводящийся снаряд маны, 240% от Интеллекта, повышенный крит.
+mana_shield:
+  name: Щит маны
+  emoji: 🔵
+  class: mage
+  learn_level: 17
+  kind: buff
+  target: self
+  mp: 12
+  cooldown: 4
+  effect:
+    type: shield
+    amount_scaling: 2.6
+    duration: 3
+  desc: Покров чистой маны поглощает урон 3 хода.
+blink:
+  name: Мерцание
+  emoji: 💠
+  class: mage
+  learn_level: 22
+  kind: buff
+  target: self
+  mp: 10
+  cooldown: 4
+  effect:
+    type: dodge
+    chance: 0.5
+    duration: 2
+  desc: Скачок сквозь пространство, 50% уклонения на 2 хода.
+frost_nova:
+  name: Ледяная вспышка
+  emoji: ❄️
+  class: mage
+  learn_level: 31
+  kind: damage
+  target: enemy
+  aoe: true
+  mp: 18
+  cooldown: 3
+  scaling: 1.4
+  effect:
+    type: poison
+    dmg: 5
+    duration: 3
+  desc: Кольцо стужи по всем врагам (140% от Интеллекта) + обморожение 3 хода.
+flame_wave:
+  name: Волна пламени
+  emoji: 🌋
+  class: mage
+  learn_level: 35
+  kind: damage
+  target: enemy
+  aoe: true
+  mp: 22
+  cooldown: 4
+  scaling: 1.8
+  desc: Вал огня по всем врагам (180% от Интеллекта).
+chain_lightning:
+  name: Цепная молния
+  emoji: ⚡
+  class: mage
+  learn_level: 44
+  kind: damage
+  target: enemy
+  aoe: true
+  mp: 26
+  cooldown: 4
+  scaling: 2.1
+  crit_bonus: 0.15
+  desc: Разряд скачет по всем врагам (210% от Интеллекта).
+icicle_lance:
+  name: Ледяное копьё
+  emoji: 🪡
+  class: mage
+  learn_level: 40
+  kind: damage
+  target: enemy
+  mp: 16
+  cooldown: 2
+  scaling: 3.6
+  desc: Пробивающий ледяной шип, 360% урона от Интеллекта.
+  effect:
+    type: freeze
+    duration: 2
+pyroblast:
+  name: Пиробласт
+  emoji: 💥
+  class: mage
+  learn_level: 57
+  kind: damage
+  target: enemy
+  mp: 24
+  cooldown: 4
+  scaling: 4.4
+  crit_bonus: 0.25
+  desc: Раскалённый снаряд, 440% урона от Интеллекта, высокий крит.
+arcane_barrier:
+  name: Чародейский барьер
+  emoji: 🟣
+  class: mage
+  learn_level: 53
+  kind: buff
+  target: self
+  mp: 16
+  cooldown: 5
+  effect:
+    type: shield
+    amount_scaling: 3.6
+    duration: 3
+  desc: Мощный барьер из тайной энергии поглощает урон 3 хода.
+fire_rain:
+  name: Огненный дождь
+  emoji: 🌧
+  class: mage
+  learn_level: 38
+  kind: damage
+  target: enemy
+  aoe: true
+  mp: 28
+  cooldown: 5
+  scaling: 2.3
+  effect:
+    type: poison
+    dmg: 8
+    duration: 4
+  desc: Ливень пламени по всем врагам (230% от Интеллекта) + горение 4 хода.
+shatter:
+  name: Раскол льда
+  emoji: 🧊
+  class: mage
+  learn_level: 47
+  kind: damage
+  target: enemy
+  mp: 22
+  cooldown: 3
+  scaling: 4.8
+  crit_bonus: 0.3
+  desc: Удар по обмороженной цели, 480% урона от Интеллекта, огромный крит.
+arcane_annihilation:
+  name: Тайное уничтожение
+  emoji: 🌌
+  class: mage
+  learn_level: 60
+  kind: damage
+  target: enemy
+  mp: 32
+  cooldown: 5
+  scaling: 5.8
+  desc: Залп концентрированной маны, 580% урона от Интеллекта.
+absolute_zero:
+  name: Абсолютный ноль
+  emoji: 🥶
+  class: mage
+  learn_level: 59
+  kind: damage
+  target: enemy
+  aoe: true
+  mp: 34
+  cooldown: 5
+  scaling: 2.6
+  effect:
+    type: poison
+    dmg: 10
+    duration: 4
+  desc: Волна предельного холода по всем врагам (260% от Интеллекта) + лютая стужа
+    4 хода.
+ambush:
+  name: Засада
+  emoji: 🗡
+  class: rogue
+  learn_level: 4
+  kind: damage
+  target: enemy
+  mp: 22
+  cooldown: 2
+  scaling: 2.6
+  crit_bonus: 0.45
+  desc: Внезапный удар из тени, 260% от Ловкости с огромным шансом крита.
+rupture:
+  name: Разрыв
+  emoji: 🩸
+  class: rogue
+  learn_level: 8
+  kind: damage
+  target: enemy
+  mp: 25
+  cooldown: 3
+  scaling: 1.4
+  effect:
+    type: poison
+    dmg: 8
+    duration: 4
+  desc: Рваная рана, 140% от Ловкости + кровотечение 4 хода.
+shadowstep:
+  name: Шаг сквозь тень
+  emoji: 🌑
+  class: rogue
+  learn_level: 17
+  kind: buff
+  target: self
+  mp: 20
+  cooldown: 4
+  effect:
+    type: dodge
+    chance: 0.55
+    duration: 2
+  desc: Растворяясь в тенях, уклоняетесь от ударов с шансом 55% на 2 хода.
+blade_flurry:
+  name: Шквал клинков
+  emoji: 🔃
+  class: rogue
+  learn_level: 22
+  kind: damage
+  target: enemy
+  aoe: true
+  mp: 40
+  cooldown: 3
+  scaling: 1.7
+  crit_bonus: 0.2
+  desc: Вихрь рассекающих ударов по всем врагам (170% от Ловкости).
+throat_slit:
+  name: Перерезанное горло
+  emoji: 🔪
+  class: rogue
+  learn_level: 26
+  kind: damage
+  target: enemy
+  mp: 30
+  cooldown: 3
+  scaling: 3.0
+  crit_bonus: 0.5
+  desc: Точный смертельный надрез, 300% от Ловкости с предельным критом.
+venom_strike:
+  name: Ядовитый укол
+  emoji: 🟣
+  class: rogue
+  learn_level: 35
+  kind: damage
+  target: enemy
+  mp: 32
+  cooldown: 3
+  scaling: 1.6
+  effect:
+    type: poison
+    dmg: 12
+    duration: 4
+  desc: Глубокий укол, 160% от Ловкости + сильный яд на 4 хода.
+shadow_cloak:
+  name: Покров теней
+  emoji: 🌫
+  class: rogue
+  learn_level: 40
+  kind: buff
+  target: self
+  mp: 30
+  cooldown: 4
+  effect:
+    type: shield
+    amount_scaling: 2.6
+    duration: 3
+  desc: Сотканный из тьмы плащ поглощает урон 3 хода.
+deadly_throw:
+  name: Смертельный бросок
+  emoji: 🎯
+  class: rogue
+  learn_level: 44
+  kind: damage
+  target: enemy
+  mp: 35
+  cooldown: 3
+  scaling: 3.4
+  crit_bonus: 0.4
+  desc: Метко брошенный кинжал, 340% от Ловкости с высоким критом.
+caltrops:
+  name: Колючий шип
+  emoji: 🌵
+  class: rogue
+  learn_level: 48
+  kind: damage
+  target: enemy
+  aoe: true
+  mp: 45
+  cooldown: 4
+  scaling: 1.3
+  effect:
+    type: poison
+    dmg: 9
+    duration: 3
+  desc: Россыпь отравленных шипов по всем врагам (130% от Ловкости + яд).
+blind_spot:
+  name: Слепая зона
+  emoji: 💨
+  class: rogue
+  learn_level: 53
+  kind: buff
+  target: self
+  mp: 25
+  cooldown: 4
+  effect:
+    type: dodge
+    chance: 0.6
+    duration: 3
+  desc: Двигаясь вне поля зрения, уклоняетесь с шансом 60% на 3 хода.
+gut_ripper:
+  name: Вспоротые внутренности
+  emoji: 🩸
+  class: rogue
+  learn_level: 57
+  kind: damage
+  target: enemy
+  mp: 40
+  cooldown: 3
+  scaling: 2.8
+  effect:
+    type: poison
+    dmg: 14
+    duration: 4
+  desc: Зверский разрез, 280% от Ловкости + обильное кровотечение 4 хода.
+shadow_barrage:
+  name: Теневой залп
+  emoji: 🌀
+  class: rogue
+  learn_level: 38
+  kind: damage
+  target: enemy
+  aoe: true
+  mp: 50
+  cooldown: 4
+  scaling: 2.0
+  crit_bonus: 0.25
+  desc: Шквал клинков из тени по всем врагам (200% от Ловкости, высокий крит).
+vital_strike:
+  name: Удар по жизненно важному
+  emoji: 🗡
+  class: rogue
+  learn_level: 47
+  kind: damage
+  target: enemy
+  mp: 45
+  cooldown: 3
+  scaling: 4.0
+  crit_bonus: 0.45
+  desc: Расчётливый удар по уязвимой точке, 400% от Ловкости.
+toxic_cloud:
+  name: Ядовитое облако
+  emoji: ☠️
+  class: rogue
+  learn_level: 59
+  kind: damage
+  target: enemy
+  aoe: true
+  mp: 55
+  cooldown: 4
+  scaling: 1.5
+  effect:
+    type: poison
+    dmg: 13
+    duration: 4
+  desc: Распыляет токсин по всем врагам (150% от Ловкости + яд 4 хода).
+assassinate:
+  name: Казнь убийцы
+  emoji: 💀
+  class: rogue
+  learn_level: 60
+  kind: damage
+  target: enemy
+  mp: 60
+  cooldown: 4
+  scaling: 4.8
+  crit_bonus: 0.5
+  desc: Финальный смертоносный удар, 480% от Ловкости с предельным критом.
+renew:
+  name: Обновление
+  emoji: 🌿
+  class: priest
+  learn_level: 4
+  kind: heal
+  target: self
+  mp: 8
+  cooldown: 1
+  scaling: 2.5
+  desc: Лёгкое исцеление по Духу.
+flash_heal:
+  name: Быстрое исцеление
+  emoji: 💗
+  class: priest
+  learn_level: 13
+  kind: heal
+  target: self
+  mp: 12
+  cooldown: 1
+  scaling: 3.2
+  desc: Скорое заклинание света, исцеляет по Духу.
+prayer_of_mending:
+  name: Молитва исцеления
+  emoji: 🕊
+  class: priest
+  learn_level: 35
+  kind: heal
+  target: self
+  mp: 16
+  cooldown: 2
+  scaling: 4.3
+  desc: Глубокое исцеление ран святой молитвой (по Духу).
+divine_light:
+  name: Божественный свет
+  emoji: ✨
+  class: priest
+  learn_level: 38
+  kind: heal
+  target: self
+  mp: 24
+  cooldown: 3
+  scaling: 5.0
+  desc: Поток чистого света исцеляет тяжелейшие раны (по Духу).
+prayer_of_healing:
+  name: Молитва о здравии
+  emoji: 🙏
+  class: priest
+  learn_level: 44
+  kind: heal
+  target: allies
+  mp: 22
+  cooldown: 4
+  scaling: 2.6
+  desc: Молитва исцеляет всех союзников в комнате (по Духу).
+circle_of_healing:
+  name: Круг исцеления
+  emoji: 💫
+  class: priest
+  learn_level: 59
+  kind: heal
+  target: allies
+  mp: 28
+  cooldown: 5
+  scaling: 3.4
+  desc: Священный круг света лечит всех союзников в комнате (по Духу).
+power_word_shield:
+  name: 'Слово силы: Щит'
+  emoji: 🔆
+  class: priest
+  learn_level: 8
+  kind: buff
+  target: self
+  mp: 10
+  cooldown: 3
+  effect:
+    type: shield
+    amount_scaling: 2.6
+    duration: 3
+  desc: Благословенный щит поглощает урон в течение 3 ходов.
+guardian_spirit:
+  name: Дух-хранитель
+  emoji: 🛡
+  class: priest
+  learn_level: 53
+  kind: buff
+  target: self
+  mp: 16
+  cooldown: 5
+  effect:
+    type: shield
+    amount_scaling: 4.2
+    duration: 4
+  desc: Дух-хранитель окутывает мощным щитом на 4 хода.
+aegis_of_faith:
+  name: Эгида веры
+  emoji: 🌟
+  class: priest
+  learn_level: 57
+  kind: buff
+  target: allies
+  mp: 26
+  cooldown: 5
+  effect:
+    type: shield
+    amount_scaling: 2.8
+    duration: 3
+  desc: Покрывает благословенным щитом всех союзников в комнате.
+holy_nimbus:
+  name: Святой нимб
+  emoji: 😇
+  class: priest
+  learn_level: 40
+  kind: buff
+  target: self
+  mp: 12
+  cooldown: 4
+  effect:
+    type: dodge
+    chance: 0.45
+    duration: 2
+  desc: Сияющий нимб даёт 45% шанс уклониться от удара на 2 хода.
+holy_fire:
+  name: Священный огонь
+  emoji: 🔥
+  class: priest
+  learn_level: 17
+  kind: damage
+  target: enemy
+  mp: 12
+  cooldown: 2
+  scaling: 1.6
+  effect:
+    type: poison
+    dmg: 8
+    duration: 3
+  desc: Жжёт нежить священным пламенем, нанося урон ещё 3 хода.
+penance:
+  name: Покаяние
+  emoji: ⚡
+  class: priest
+  learn_level: 31
+  kind: damage
+  target: enemy
+  mp: 14
+  cooldown: 2
+  scaling: 2.8
+  crit_bonus: 0.2
+  desc: Залп карающего света, 280% урона от Духа.
+condemn:
+  name: Изобличение
+  emoji: ☀️
+  class: priest
+  learn_level: 47
+  kind: damage
+  target: enemy
+  mp: 22
+  cooldown: 4
+  scaling: 4.5
+  crit_bonus: 0.25
+  desc: Сокрушительный приговор светом, 450% урона от Духа.
+searing_light:
+  name: Опаляющий свет
+  emoji: 🌟
+  class: priest
+  learn_level: 48
+  kind: damage
+  target: enemy
+  aoe: true
+  mp: 24
+  cooldown: 4
+  scaling: 2.0
+  desc: Вспышка опаляющего света по всем врагам (200% от Духа).
+dawnbreak:
+  name: Рассветный взрыв
+  emoji: 🌅
+  class: priest
+  learn_level: 60
+  kind: damage
+  target: enemy
+  aoe: true
+  mp: 30
+  cooldown: 5
+  scaling: 2.4
+  desc: Ослепительная заря выжигает всех врагов в комнате (240% от Духа).
+crusader_strike:
+  name: Удар крестоносца
+  emoji: ⚔️
+  class: paladin
+  learn_level: 4
+  kind: damage
+  target: enemy
+  mp: 8
+  cooldown: 1
+  scaling: 2.2
+  desc: Стремительный удар светом, 220% урона от Силы.
+hammer_of_light:
+  name: Молот света
+  emoji: 🔨
+  class: paladin
+  learn_level: 16
+  kind: damage
+  target: enemy
+  mp: 12
+  cooldown: 3
+  scaling: 3.2
+  crit_bonus: 0.2
+  desc: Тяжёлый молот, пылающий светом. 320% урона от Силы.
+  effect:
+    type: stun
+    duration: 1
+holy_wrath:
+  name: Святой гнев
+  emoji: ☀️
+  class: paladin
+  learn_level: 59
+  kind: damage
+  target: enemy
+  mp: 18
+  cooldown: 4
+  scaling: 4.6
+  crit_bonus: 0.25
+  desc: Испепеляющий поток света, 460% урона от Силы.
+sword_of_judgment:
+  name: Меч приговора
+  emoji: 🗡
+  class: paladin
+  learn_level: 60
+  kind: damage
+  target: enemy
+  mp: 20
+  cooldown: 4
+  scaling: 4.8
+  desc: Меч, несущий божественный приговор. 480% урона от Силы.
+hammer_of_wrath:
+  name: Молот ярости
+  emoji: 🌩
+  class: paladin
+  learn_level: 36
+  kind: damage
+  target: enemy
+  aoe: true
+  mp: 18
+  cooldown: 4
+  scaling: 1.8
+  desc: Падение молота поражает всех врагов в комнате (180% от Силы).
+  effect:
+    type: stun
+    duration: 1
+light_of_dawn:
+  name: Свет зари
+  emoji: 🌄
+  class: paladin
+  learn_level: 55
+  kind: damage
+  target: enemy
+  aoe: true
+  mp: 22
+  cooldown: 5
+  scaling: 2.2
+  desc: Рассвет испепеляет всех врагов в комнате (220% от Силы).
+wave_of_light:
+  name: Волна света
+  emoji: 💫
+  class: paladin
+  learn_level: 12
+  kind: damage
+  target: enemy
+  aoe: true
+  mp: 14
+  cooldown: 3
+  scaling: 1.4
+  desc: Расходящаяся волна света по всем врагам (140% от Силы).
+blessing_of_might:
+  name: Благословение мощи
+  emoji: 🛡
+  class: paladin
+  learn_level: 8
+  kind: buff
+  target: self
+  mp: 10
+  cooldown: 4
+  effect:
+    type: shield
+    amount_scaling: 2.8
+    duration: 3
+  desc: Свет окутывает воина бронёй, поглощая урон.
+divine_shield:
+  name: Божественный щит
+  emoji: ✨
+  class: paladin
+  learn_level: 51
+  kind: buff
+  target: self
+  mp: 16
+  cooldown: 5
+  effect:
+    type: shield
+    amount_scaling: 3.6
+    duration: 3
+  desc: Непроницаемый барьер света поглощает урон.
+aura_of_protection:
+  name: Аура защиты
+  emoji: 🌟
+  class: paladin
+  learn_level: 32
+  kind: buff
+  target: allies
+  mp: 20
+  cooldown: 5
+  effect:
+    type: shield
+    amount_scaling: 2.4
+    duration: 3
+  desc: Аура окружает союзников щитом света.
+hand_of_protection:
+  name: Длань защиты
+  emoji: 🤚
+  class: paladin
+  learn_level: 28
+  kind: buff
+  target: self
+  mp: 12
+  cooldown: 4
+  effect:
+    type: dodge
+    chance: 0.45
+    duration: 2
+  desc: 'Длань света отводит удары: 45% шанс уклонения на 2 хода.'
+blessing_of_freedom:
+  name: Благословение свободы
+  emoji: 🕊
+  class: paladin
+  learn_level: 38
+  kind: buff
+  target: allies
+  mp: 22
+  cooldown: 5
+  effect:
+    type: dodge
+    chance: 0.4
+    duration: 2
+  desc: 'Союзники наполняются светом: 40% шанс уклонения на 2 хода.'
+holy_light:
+  name: Святой свет
+  emoji: 💛
+  class: paladin
+  learn_level: 20
+  kind: heal
+  target: self
+  mp: 14
+  cooldown: 2
+  scaling: 3.0
+  desc: Поток святого света исцеляет раны (по Духу).
+word_of_glory:
+  name: Слово славы
+  emoji: 📜
+  class: paladin
+  learn_level: 48
+  kind: heal
+  target: self
+  mp: 18
+  cooldown: 3
+  scaling: 3.8
+  desc: Святое слово закрывает тяжёлые раны (по Духу).
+beacon_of_light:
+  name: Маяк света
+  emoji: 🔆
+  class: paladin
+  learn_level: 47
+  kind: heal
+  target: allies
+  mp: 24
+  cooldown: 5
+  scaling: 2.2
+  desc: Маяк света исцеляет всех союзников в комнате.
+sacred_flame:
+  name: Священное пламя
+  emoji: 🔥
+  class: paladin
+  learn_level: 40
+  kind: damage
+  target: enemy
+  mp: 12
+  cooldown: 3
+  scaling: 1.4
+  effect:
+    type: poison
+    dmg: 7
+    duration: 3
+  desc: Урон + святое жжение, опаляющее врага 3 хода.
+searing_brand:
+  name: Жгучий свет
+  emoji: 🌟
+  class: paladin
+  learn_level: 58
+  kind: damage
+  target: enemy
+  mp: 16
+  cooldown: 4
+  scaling: 1.6
+  effect:
+    type: poison
+    dmg: 11
+    duration: 4
+  desc: Урон + клеймо света, выжигающее скверну 4 хода.
+shadow_bolt:
+  name: Теневой снаряд
+  emoji: 🌑
+  class: necromancer
+  learn_level: 4
+  kind: damage
+  target: enemy
+  mp: 8
+  cooldown: 1
+  scaling: 2.0
+  desc: Сгусток тьмы, 200% урона от Интеллекта.
+life_tap:
+  name: Иссушающее касание
+  emoji: 🖐
+  class: necromancer
+  learn_level: 8
+  kind: damage
+  target: enemy
+  mp: 9
+  cooldown: 1
+  scaling: 2.0
+  lifesteal: 0.4
+  desc: Высасывает жизнь касанием; 40% урона возвращается как HP.
+bone_spear:
+  name: Костяное копьё
+  emoji: 🦴
+  class: necromancer
+  learn_level: 12
+  kind: damage
+  target: enemy
+  mp: 11
+  cooldown: 2
+  scaling: 2.8
+  crit_bonus: 0.2
+  desc: Острый костяной шип пронзает врага, 280% от Интеллекта.
+plague:
+  name: Чума
+  emoji: 🤢
+  class: necromancer
+  learn_level: 17
+  kind: damage
+  target: enemy
+  mp: 13
+  cooldown: 3
+  scaling: 1.3
+  effect:
+    type: poison
+    dmg: 9
+    duration: 4
+  desc: Заражает врага чумой, гниющей 4 хода.
+soul_leech:
+  name: Пиявка душ
+  emoji: 🩸
+  class: necromancer
+  learn_level: 25
+  kind: damage
+  target: enemy
+  mp: 12
+  cooldown: 2
+  scaling: 2.4
+  lifesteal: 0.45
+  desc: Вытягивает душу врага; 45% урона возвращается как HP.
+festering_wound:
+  name: Гниющая рана
+  emoji: 🦠
+  class: necromancer
+  learn_level: 21
+  kind: damage
+  target: enemy
+  mp: 14
+  cooldown: 3
+  scaling: 1.4
+  effect:
+    type: poison
+    dmg: 12
+    duration: 4
+  desc: Разверзает гнойную рану, отнимающую HP 4 хода.
+grave_chill:
+  name: Могильный холод
+  emoji: 🪦
+  class: necromancer
+  learn_level: 37
+  kind: damage
+  target: enemy
+  mp: 13
+  cooldown: 2
+  scaling: 2.6
+  lifesteal: 0.35
+  desc: Ледяная хватка нежити; 35% урона возвращается как HP.
+bone_shield:
+  name: Костяной щит
+  emoji: 🛡
+  class: necromancer
+  learn_level: 29
+  kind: buff
+  target: self
+  mp: 12
+  cooldown: 4
+  effect:
+    type: shield
+    amount_scaling: 3.0
+    duration: 3
+  desc: Завеса из костей поглощает урон 3 хода.
+withering_blight:
+  name: Увядающая порча
+  emoji: ☣️
+  class: necromancer
+  learn_level: 42
+  kind: damage
+  target: enemy
+  aoe: true
+  mp: 20
+  cooldown: 4
+  scaling: 1.5
+  effect:
+    type: poison
+    dmg: 8
+    duration: 3
+  desc: Облако порчи бьёт всех врагов и сеет гниль 3 хода.
+undead_shroud:
+  name: Саван нежити
+  emoji: 👻
+  class: necromancer
+  learn_level: 50
+  kind: buff
+  target: self
+  mp: 11
+  cooldown: 4
+  effect:
+    type: dodge
+    chance: 0.5
+    duration: 2
+  desc: 'Туман нежити скрывает вас: 50% шанс уклонения 2 хода.'
+soul_harvest:
+  name: Жатва душ
+  emoji: 💀
+  class: necromancer
+  learn_level: 54
+  kind: damage
+  target: enemy
+  aoe: true
+  mp: 24
+  cooldown: 4
+  scaling: 1.8
+  lifesteal: 0.4
+  desc: Косит души всех врагов; 40% урона возвращается как HP.
+dark_pact:
+  name: Тёмный пакт
+  emoji: 🖤
+  class: necromancer
+  learn_level: 58
+  kind: damage
+  target: enemy
+  mp: 18
+  cooldown: 3
+  scaling: 3.6
+  lifesteal: 0.5
+  desc: Кровавый договор иссушает врага; половина урона возвращается как HP.
+epidemic:
+  name: Эпидемия
+  emoji: 🧫
+  class: necromancer
+  learn_level: 38
+  kind: damage
+  target: enemy
+  aoe: true
+  mp: 26
+  cooldown: 5
+  scaling: 2.0
+  effect:
+    type: poison
+    dmg: 14
+    duration: 4
+  desc: Мор расползается по всем врагам, гния 4 хода.
+bone_prison:
+  name: Костяная темница
+  emoji: ⚰️
+  class: necromancer
+  learn_level: 47
+  kind: buff
+  target: self
+  mp: 16
+  cooldown: 5
+  effect:
+    type: shield
+    amount_scaling: 4.0
+    duration: 4
+  desc: Сомкнутые кости-рёбра поглощают урон 4 хода.
+defile:
+  name: Осквернение
+  emoji: 🩸
+  class: necromancer
+  learn_level: 59
+  kind: damage
+  target: enemy
+  aoe: true
+  mp: 28
+  cooldown: 5
+  scaling: 2.4
+  lifesteal: 0.4
+  desc: Оскверняет землю гнилью; бьёт всех врагов, 40% урона возвращается как HP.
+soul_rend:
+  name: Разрыв души
+  emoji: 🌌
+  class: necromancer
+  learn_level: 60
+  kind: damage
+  target: enemy
+  mp: 28
+  cooldown: 5
+  scaling: 5.0
+  lifesteal: 0.55
+  desc: Разрывает душу врага; 550% от Интеллекта, 55% урона возвращается как HP.

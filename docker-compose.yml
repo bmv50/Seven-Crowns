@@ -1,0 +1,73 @@
+# СЕМЬ КОРОН — оркестрация (Этап 9). Один документированный запуск:
+#     docker compose up -d --build
+#
+# Сервисы:
+#   postgres — БД (том pgdata, healthcheck pg_isready, порт НАРУЖУ НЕ проброшен).
+#   bot      — игровой процесс (PROD=1, ждёт здоровья БД, авто-рестарт).
+#   backup   — суточный pg_dump в ./backups (в 04:00 UTC, чистит дампы >14 дней).
+#
+# POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_DB и BOT_TOKEN берутся из .env
+# (см. .env.example). DATABASE_URL внутри сети указывает на хост `postgres`.
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # Порт НЕ публикуется наружу — БД доступна только внутри compose-сети.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  bot:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # bot портов не слушает (long-polling к Telegram, входящих нет).
+
+  backup:
+    image: postgres:16
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ./backups:/backups
+    # Простой shell-цикл вместо внешнего крон-образа: ждём до 04:00 UTC, снимаем
+    # pg_dump -Fc, удаляем дампы старше 14 дней. $$ — экранирование для compose
+    # (переменные разворачивает шелл контейнера в рантайме, не compose).
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        echo "backup service up; nightly pg_dump at 04:00 UTC -> /backups";
+        while true; do
+          now=$$(date -u +%s);
+          target=$$(date -u -d "04:00" +%s);
+          if [ "$$now" -ge "$$target" ]; then target=$$(date -u -d "tomorrow 04:00" +%s); fi;
+          sleep $$((target - now));
+          ts=$$(date -u +%Y%m%d_%H%M%S);
+          if pg_dump -Fc -h postgres -U "$$POSTGRES_USER" "$$POSTGRES_DB" > /backups/mud_$$ts.dump; then
+            echo "[backup] ok /backups/mud_$$ts.dump ($$(date -u))";
+          else
+            echo "[backup] FAILED at $$(date -u)"; rm -f /backups/mud_$$ts.dump;
+          fi;
+          find /backups -name 'mud_*.dump' -mtime +14 -delete;
+        done
+
+volumes:
+  pgdata:

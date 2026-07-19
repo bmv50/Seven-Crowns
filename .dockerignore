@@ -1,0 +1,42 @@
+# Секреты — НИКОГДА в образ (пробрасываются через env_file в рантайме)
+.env
+.env.*
+
+# VCS и CI
+.git
+.github
+.gitignore
+.graphifyignore
+
+# Референсный проект и генераторы контента — в рантайме не нужны
+TeleMud/
+Instruction/
+graphify-out/
+.omc/
+
+# Тесты и симуляции (нужен живой Postgres/фикстуры; smoke — через HEALTHCHECK)
+test_*.py
+sim_*.py
+run_tests.py
+.pytest_cache/
+.sim_rules2_cache.json
+
+# Тяжёлые изображения (240+ МБ, воспроизводятся gen_images*.py)
+images/
+gen_images*.py
+gen_item*.py
+
+# Документация и большие md-справки
+docs/
+*.md
+
+# Кэши/логи/локальные состояния
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.log
+saves.json
+guilds.json
+auction.json
+territory.json
+backups/

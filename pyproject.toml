@@ -1,0 +1,5 @@
+[project]
+name = "echo-of-the-deep"
+version = "0.1.0"
+description = "Эхо Глубин / Семь Корон — Telegram-MUD"
+requires-python = ">=3.12"

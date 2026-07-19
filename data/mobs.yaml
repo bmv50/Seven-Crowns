@@ -1,0 +1,1115 @@
+# =====================================================================
+#  МОБЫ (враги)
+#  level влияет на масштаб; tick_speed — как часто моб бьёт (сек)
+#  loot: [ [item, шанс], ... ];  drops gold/xp при смерти
+#  skills (опц.) — мобы тоже могут применять умения
+# =====================================================================
+
+крыса:
+  name: "Гигантская крыса"
+  emoji: "🐀"
+  level: 1
+  hp: 16
+  atk: 4
+  defense: 0
+  xp: 8
+  gold: 300
+  respawn: 40
+  tick_speed: 4
+  loot: [["крысиная_шкура", 0.4]]
+
+волк:
+  name: "Тощий волк"
+  emoji: "🐺"
+  level: 2
+  hp: 28
+  atk: 7
+  defense: 1
+  xp: 18
+  gold: 600
+  respawn: 60
+  tick_speed: 3
+  loot: [["волчья_шкура", 0.5]]
+
+лесной_дух:
+  name: "Лесной дух"
+  emoji: "🌿"
+  level: 4
+  hp: 46
+  atk: 11
+  defense: 3
+  xp: 40
+  gold: 1800
+  respawn: 90
+  tick_speed: 4
+  loot: [["эфирная_пыль", 0.6], ["целебная_трава", 0.3]]
+
+гигантский_паук:
+  name: "Гигантский паук"
+  emoji: "🕷"
+  level: 5
+  hp: 60
+  atk: 13
+  defense: 2
+  xp: 55
+  gold: 2200
+  respawn: 120
+  tick_speed: 3
+  skills: ["poison_blade"]
+  loot: [["паучий_яд", 0.5], ["шёлк", 0.6]]
+
+скелет:
+  name: "Древний скелет"
+  emoji: "💀"
+  level: 3
+  hp: 38
+  atk: 9
+  defense: 4
+  xp: 28
+  gold: 1200
+  respawn: 70
+  tick_speed: 4
+  loot: [["костяная_крошка", 0.5]]
+
+кобольд:
+  name: "Кобольд-рудокоп"
+  emoji: "👺"
+  level: 4
+  hp: 44
+  atk: 10
+  defense: 3
+  xp: 38
+  gold: 2000
+  respawn: 80
+  tick_speed: 3
+  loot: [["железная_руда", 0.4], ["кирка", 0.1]]
+
+каменный_голем:
+  name: "Каменный голем"
+  emoji: "🗿"
+  level: 7
+  hp: 110
+  atk: 16
+  defense: 10
+  xp: 95
+  gold: 5000
+  respawn: 180
+  tick_speed: 5
+  loot: [["осколок_голема", 0.7], ["самоцвет", 0.2]]
+
+призрак:
+  name: "Неупокоенный призрак"
+  emoji: "👻"
+  level: 5
+  hp: 50
+  atk: 14
+  defense: 1
+  xp: 50
+  gold: 0
+  respawn: 100
+  tick_speed: 3
+  loot: [["эктоплазма", 0.6]]
+
+болотная_тварь:
+  name: "Болотная тварь"
+  emoji: "🦎"
+  level: 3
+  hp: 42
+  atk: 9
+  defense: 2
+  xp: 32
+  gold: 1400
+  respawn: 70
+  tick_speed: 4
+  loot: [["слизь", 0.5]]
+
+утопленник:
+  name: "Утопленник"
+  emoji: "🧟"
+  level: 5
+  hp: 58
+  atk: 12
+  defense: 3
+  xp: 48
+  gold: 1600
+  respawn: 100
+  tick_speed: 4
+  loot: [["гнилая_плоть", 0.5]]
+
+тёмный_рыцарь:
+  name: "Тёмный рыцарь"
+  emoji: "🖤"
+  level: 8
+  hp: 140
+  atk: 20
+  defense: 12
+  xp: 130
+  gold: 8000
+  respawn: 240
+  tick_speed: 4
+  skills: ["power_strike"]
+  loot: [["проклятый_клинок", 0.3], ["самоцвет", 0.4]]
+
+летучая_мышь:
+  name: "Пещерная мышь"
+  emoji: "🦇"
+  level: 1
+  hp: 10
+  atk: 3
+  defense: 0
+  xp: 6
+  gold: 200
+  respawn: 35
+  tick_speed: 3
+  loot: [["крысиная_шкура", 0.3]]
+
+вожак_стаи:
+  name: "Вожак стаи"
+  emoji: "🐺"
+  level: 5
+  hp: 78
+  atk: 14
+  defense: 2
+  xp: 62
+  gold: 3000
+  respawn: 150
+  tick_speed: 3
+  skills: ["power_strike"]
+  loot: [["волчья_шкура", 0.8], ["клык_вожака", 0.5]]
+
+кристальный_голем:
+  name: "Кристальный голем"
+  emoji: "💠"
+  level: 8
+  hp: 135
+  atk: 17
+  defense: 11
+  xp: 115
+  gold: 6000
+  respawn: 200
+  tick_speed: 5
+  loot: [["самоцвет", 0.6], ["кристальное_сердце", 0.5]]
+
+# ───────────────────── БОССЫ ─────────────────────
+падший_король:
+  name: "Падший Король"
+  emoji: "👑"
+  level: 12
+  hp: 480
+  atk: 28
+  defense: 14
+  xp: 600
+  gold: 22000
+  respawn: 99999
+  tick_speed: 3
+  boss: true
+  skills: ["cleave", "arcane_burst"]
+  loot: [["корона_тумана", 1.0]]
+
+# ═════════════════════════ ЖЕЛЕЗНЫЙ ОСТРОГ ═════════════════════════
+острожный_кобольд:
+  name: "Острожный кобольд"
+  emoji: "👹"
+  level: 5
+  hp: 60
+  atk: 11
+  defense: 3
+  xp: 50
+  gold: 2200
+  respawn: 80
+  tick_speed: 3
+  loot: [["руда_тумана", 0.4], ["железная_руда", 0.3]]
+
+туманный_рудокоп:
+  name: "Туманный рудокоп"
+  emoji: "⛏"
+  level: 6
+  hp: 72
+  atk: 13
+  defense: 4
+  xp: 60
+  gold: 2600
+  respawn: 100
+  tick_speed: 4
+  skills: ["power_strike"]
+  loot: [["туманный_кристалл", 0.4], ["железная_руда", 0.3]]
+
+штольный_призрак:
+  name: "Штольный призрак"
+  emoji: "👻"
+  level: 7
+  hp: 84
+  atk: 16
+  defense: 2
+  xp: 70
+  gold: 0
+  respawn: 110
+  tick_speed: 3
+  loot: [["эктоплазма", 0.5], ["туманный_кристалл", 0.3]]
+
+кристальный_бур:
+  name: "Кристальный бур"
+  emoji: "💠"
+  level: 8
+  hp: 96
+  atk: 18
+  defense: 9
+  xp: 80
+  gold: 4400
+  respawn: 150
+  tick_speed: 5
+  loot: [["туманный_кристалл", 0.6], ["осколок_голема", 0.3]]
+
+острожный_буревестник:
+  name: "Буревестник тумана"
+  emoji: "🌩"
+  level: 9
+  hp: 130
+  atk: 20
+  defense: 8
+  xp: 110
+  gold: 7000
+  respawn: 200
+  tick_speed: 3
+  boss: true
+  skills: ["power_strike", "cleave"]
+  loot: [["туманный_кристалл", 1.0], ["сердце_бури", 0.6]]
+
+# ═════════════════════════ СТЫЛАЯ ГАВАНЬ ═════════════════════════
+туманная_крыса_трюма:
+  name: "Туманная крыса трюма"
+  emoji: "🐀"
+  level: 4
+  hp: 48
+  atk: 9
+  defense: 2
+  xp: 40
+  gold: 1000
+  respawn: 60
+  tick_speed: 3
+  loot: [["крысиная_шкура", 0.5], ["гнилая_плоть", 0.3]]
+
+матрос_утопленник:
+  name: "Матрос-утопленник"
+  emoji: "🧟"
+  level: 5
+  hp: 60
+  atk: 11
+  defense: 3
+  xp: 50
+  gold: 1400
+  respawn: 90
+  tick_speed: 4
+  loot: [["гнилая_плоть", 0.5], ["промокший_журнал", 0.25], ["рыбацкая_сеть", 0.5]]
+
+контрабандист_головорез:
+  name: "Контрабандист-головорез"
+  emoji: "🔪"
+  level: 6
+  hp: 72
+  atk: 13
+  defense: 4
+  xp: 60
+  gold: 3500
+  respawn: 110
+  tick_speed: 3
+  skills: ["poison_blade"]
+  loot: [["просоленный_клинок", 0.2], ["ящик_контрабанды", 0.3]]
+
+утопший_боцман:
+  name: "Утопший боцман"
+  emoji: "⚓"
+  level: 8
+  hp: 130
+  atk: 18
+  defense: 6
+  xp: 110
+  gold: 6000
+  respawn: 180
+  tick_speed: 4
+  skills: ["power_strike"]
+  boss: true
+  loot: [["китобойный_гарпун", 0.4], ["солёный_жемчуг", 0.5], ["компас_странника", 0.3]]
+
+портовый_бродяга:
+  name: "Портовый бродяга"
+  emoji: "🥖"
+  level: 4
+  hp: 46
+  atk: 9
+  defense: 1
+  xp: 38
+  gold: 800
+  respawn: 70
+  tick_speed: 4
+  loot: [["гнилая_плоть", 0.3]]
+
+# ═════════════════════════ ПЕПЕЛЬНЫЕ ПУСТОШИ ═════════════════════════
+пепельная_тварь:
+  name: "Пепельная тварь"
+  emoji: "🌫"
+  level: 10
+  hp: 120
+  atk: 22
+  defense: 7
+  xp: 100
+  gold: 4500
+  respawn: 120
+  tick_speed: 3
+  skills: ["poison_blade"]
+  loot: [["горсть_пепла", 0.6], ["туманная_эссенция", 0.3]]
+
+пепельный_легионер:
+  name: "Пепельный легионер"
+  emoji: "💀"
+  level: 11
+  hp: 132
+  atk: 24
+  defense: 9
+  xp: 110
+  gold: 5500
+  respawn: 140
+  tick_speed: 4
+  skills: ["power_strike"]
+  loot: [["костяная_крошка", 0.5], ["пепельная_сталь", 0.35]]
+
+туманный_плакальщик:
+  name: "Туманный плакальщик"
+  emoji: "👻"
+  level: 12
+  hp: 144
+  atk: 27
+  defense: 5
+  xp: 120
+  gold: 5000
+  respawn: 150
+  tick_speed: 3
+  skills: ["arcane_burst"]
+  loot: [["туманная_эссенция", 0.5], ["эктоплазма", 0.4]]
+
+пепельный_страж_провала:
+  name: "Страж провала"
+  emoji: "🕳"
+  level: 13
+  hp: 156
+  atk: 29
+  defense: 11
+  xp: 130
+  gold: 6500
+  respawn: 200
+  tick_speed: 4
+  skills: ["cleave"]
+  loot: [["осколок_глуби", 0.5], ["пепельная_сталь", 0.3]]
+
+пепельный_рыцарь:
+  name: "Пепельный Рыцарь"
+  emoji: "♟"
+  level: 14
+  hp: 360
+  atk: 32
+  defense: 16
+  xp: 420
+  gold: 35000
+  respawn: 99999
+  tick_speed: 3
+  boss: true
+  skills: ["cleave", "power_strike"]
+  loot: [["клинок_пепла", 1.0], ["пепельный_шлем", 0.5], ["туманная_эссенция", 1.0]]
+
+# ═════════════════════════ ЧЕРТОГИ РАССВЕТА ═════════════════════════
+туманный_кающийся:
+  name: "Туманный кающийся"
+  emoji: "🕯"
+  level: 6
+  hp: 72
+  atk: 13
+  defense: 3
+  xp: 60
+  gold: 2200
+  respawn: 90
+  tick_speed: 4
+  loot: [["костяная_крошка", 0.5], ["обрывок_рясы", 0.4]]
+
+восходный_упырь:
+  name: "Восходный упырь"
+  emoji: "🧟"
+  level: 7
+  hp: 84
+  atk: 16
+  defense: 4
+  xp: 70
+  gold: 2800
+  respawn: 100
+  tick_speed: 4
+  skills: ["power_strike"]
+  loot: [["гнилая_плоть", 0.5], ["обрывок_рясы", 0.3]]
+
+осквернённый_храмовник:
+  name: "Осквернённый храмовник"
+  emoji: "⚔️"
+  level: 8
+  hp: 100
+  atk: 18
+  defense: 7
+  xp: 80
+  gold: 4000
+  respawn: 130
+  tick_speed: 4
+  skills: ["holy_strike"]
+  loot: [["осквернённый_образок", 0.4], ["освящённый_елей", 0.3]]
+
+восходный_плакальщик:
+  name: "Восходный плакальщик"
+  emoji: "👻"
+  level: 9
+  hp: 108
+  atk: 20
+  defense: 3
+  xp: 90
+  gold: 3600
+  respawn: 130
+  tick_speed: 3
+  skills: ["arcane_burst"]
+  loot: [["эктоплазма", 0.5], ["осквернённый_образок", 0.3]]
+
+туманный_исполин:
+  name: "Туманный исполин"
+  emoji: "🌫"
+  level: 10
+  hp: 150
+  atk: 22
+  defense: 10
+  xp: 120
+  gold: 9000
+  respawn: 200
+  tick_speed: 4
+  boss: true
+  skills: ["cleave", "power_strike"]
+  loot: [["сердце_исполина", 1.0], ["освящённый_елей", 0.6]]
+
+# ═════════════════════════ ПЕРЕВАЛ СТОНУЩИХ ВЕТРОВ ═════════════════════════
+горный_хищник:
+  name: "Горный хищник"
+  emoji: "🐆"
+  level: 6
+  hp: 72
+  atk: 13
+  defense: 3
+  xp: 60
+  gold: 1800
+  respawn: 90
+  tick_speed: 3
+  loot: [["шкура_хищника", 0.6], ["клык_вожака", 0.2]]
+
+горный_изгой:
+  name: "Горный изгой"
+  emoji: "🪓"
+  level: 7
+  hp: 84
+  atk: 16
+  defense: 4
+  xp: 70
+  gold: 3800
+  respawn: 100
+  tick_speed: 3
+  skills: ["power_strike"]
+  loot: [["клеймёный_жетон", 0.4], ["ветрорез", 0.12], ["волчья_шкура", 0.3]]
+
+замёрзший_мертвец:
+  name: "Замёрзший мертвец"
+  emoji: "🧊"
+  level: 7
+  hp: 90
+  atk: 15
+  defense: 5
+  xp: 72
+  gold: 1200
+  respawn: 110
+  tick_speed: 4
+  loot: [["костяная_крошка", 0.5], ["обмёрзлый_клок", 0.5]]
+
+дух_ветра:
+  name: "Туманный дух ветра"
+  emoji: "🌬"
+  level: 8
+  hp: 96
+  atk: 18
+  defense: 2
+  xp: 82
+  gold: 0
+  respawn: 120
+  tick_speed: 3
+  skills: ["arcane_burst"]
+  loot: [["эктоплазма", 0.5], ["вой_ветра", 0.35]]
+
+главарь_изгоев:
+  name: "Грозовой Кьяр, главарь изгоев"
+  emoji: "🪖"
+  level: 9
+  hp: 140
+  atk: 21
+  defense: 9
+  xp: 120
+  gold: 9500
+  respawn: 220
+  tick_speed: 3
+  boss: true
+  skills: ["power_strike", "cleave"]
+  loot: [["ветрорез", 1.0], ["трофейный_плащ", 0.6], ["клеймёный_жетон", 1.0]]
+
+# ═════════════════════════ ЗАТОНУВШИЙ ГОРОД ═════════════════════════
+глубинный_утопленник:
+  name: "Глубинный утопленник"
+  emoji: "🧟"
+  level: 13
+  hp: 156
+  atk: 29
+  defense: 8
+  xp: 130
+  gold: 5500
+  respawn: 130
+  tick_speed: 4
+  skills: ["poison_blade"]
+  loot: [["гнилая_плоть", 0.5], ["глубинный_перламутр", 0.3]]
+
+левиафанов_отпрыск:
+  name: "Отпрыск левиафана"
+  emoji: "🐙"
+  level: 14
+  hp: 168
+  atk: 31
+  defense: 9
+  xp: 140
+  gold: 6000
+  respawn: 150
+  tick_speed: 3
+  skills: ["cleave"]
+  loot: [["щупальце_левиафана", 0.5], ["глубинный_перламутр", 0.3]]
+
+глубинный_жрец:
+  name: "Жрец Глуби"
+  emoji: "🦑"
+  level: 14
+  hp: 168
+  atk: 31
+  defense: 7
+  xp: 145
+  gold: 7000
+  respawn: 150
+  tick_speed: 3
+  skills: ["arcane_burst"]
+  loot: [["соль_глуби", 0.5], ["туманная_эссенция", 0.3]]
+
+бездонная_тварь:
+  name: "Бездонная тварь"
+  emoji: "🕳"
+  level: 15
+  hp: 180
+  atk: 33
+  defense: 12
+  xp: 155
+  gold: 7500
+  respawn: 170
+  tick_speed: 4
+  skills: ["cleave", "poison_blade"]
+  loot: [["осколок_глуби", 0.4], ["щупальце_левиафана", 0.3]]
+
+верховный_жрец_глуби:
+  name: "Верховный жрец Глуби"
+  emoji: "👁"
+  level: 15
+  hp: 320
+  atk: 33
+  defense: 13
+  xp: 400
+  gold: 32000
+  respawn: 99999
+  tick_speed: 3
+  boss: true
+  skills: ["arcane_burst", "cleave"]
+  loot: [["митра_глуби", 1.0], ["трезубец_глуби", 0.5], ["соль_глуби", 1.0], ["туманная_эссенция", 1.0]]
+
+сердце_глуби:
+  name: "Сердце Глуби"
+  emoji: "👁"
+  level: 16
+  hp: 660
+  atk: 33
+  defense: 17
+  xp: 1000
+  gold: 52000
+  respawn: 99999
+  tick_speed: 3
+  boss: true
+  skills: ["cleave", "arcane_burst", "power_strike"]
+  loot: [["око_глуби", 1.0], ["сердце_тумана", 1.0]]
+
+
+# ═════════════════════════ ЧЕРТОГИ РАССВЕТА ═════════════════════════
+туманный_кающийся:
+  name: "Туманный кающийся"
+  emoji: "🕯"
+  level: 6
+  hp: 72
+  atk: 13
+  defense: 3
+  xp: 60
+  gold: 2200
+  respawn: 90
+  tick_speed: 4
+  loot: [["костяная_крошка", 0.5], ["обрывок_рясы", 0.4]]
+
+восходный_упырь:
+  name: "Восходный упырь"
+  emoji: "🧟"
+  level: 7
+  hp: 84
+  atk: 16
+  defense: 4
+  xp: 70
+  gold: 2800
+  respawn: 100
+  tick_speed: 4
+  skills: ["power_strike"]
+  loot: [["гнилая_плоть", 0.5], ["обрывок_рясы", 0.3]]
+
+осквернённый_храмовник:
+  name: "Осквернённый храмовник"
+  emoji: "⚔️"
+  level: 8
+  hp: 100
+  atk: 18
+  defense: 7
+  xp: 80
+  gold: 4000
+  respawn: 130
+  tick_speed: 4
+  skills: ["holy_strike"]
+  loot: [["осквернённый_образок", 0.4], ["освящённый_елей", 0.3]]
+
+восходный_плакальщик:
+  name: "Восходный плакальщик"
+  emoji: "👻"
+  level: 9
+  hp: 108
+  atk: 20
+  defense: 3
+  xp: 90
+  gold: 3600
+  respawn: 130
+  tick_speed: 3
+  skills: ["arcane_burst"]
+  loot: [["эктоплазма", 0.5], ["осквернённый_образок", 0.3]]
+
+туманный_исполин:
+  name: "Туманный исполин"
+  emoji: "🌫"
+  level: 10
+  hp: 150
+  atk: 22
+  defense: 10
+  xp: 120
+  gold: 9000
+  respawn: 200
+  tick_speed: 4
+  boss: true
+  skills: ["cleave", "power_strike"]
+  loot: [["сердце_исполина", 1.0], ["освящённый_елей", 0.6]]
+
+# ═════════════════════════ ПЕРЕВАЛ СТОНУЩИХ ВЕТРОВ ═════════════════════════
+горный_хищник:
+  name: "Горный хищник"
+  emoji: "🐆"
+  level: 6
+  hp: 72
+  atk: 13
+  defense: 3
+  xp: 60
+  gold: 1800
+  respawn: 90
+  tick_speed: 3
+  loot: [["шкура_хищника", 0.6], ["клык_вожака", 0.2]]
+
+горный_изгой:
+  name: "Горный изгой"
+  emoji: "🪓"
+  level: 7
+  hp: 84
+  atk: 16
+  defense: 4
+  xp: 70
+  gold: 3800
+  respawn: 100
+  tick_speed: 3
+  skills: ["power_strike"]
+  loot: [["клеймёный_жетон", 0.4], ["ветрорез", 0.12], ["волчья_шкура", 0.3]]
+
+замёрзший_мертвец:
+  name: "Замёрзший мертвец"
+  emoji: "🧊"
+  level: 7
+  hp: 90
+  atk: 15
+  defense: 5
+  xp: 72
+  gold: 1200
+  respawn: 110
+  tick_speed: 4
+  loot: [["костяная_крошка", 0.5], ["обмёрзлый_клок", 0.5]]
+
+дух_ветра:
+  name: "Туманный дух ветра"
+  emoji: "🌬"
+  level: 8
+  hp: 96
+  atk: 18
+  defense: 2
+  xp: 82
+  gold: 0
+  respawn: 120
+  tick_speed: 3
+  skills: ["arcane_burst"]
+  loot: [["эктоплазма", 0.5], ["вой_ветра", 0.35]]
+
+главарь_изгоев:
+  name: "Грозовой Кьяр, главарь изгоев"
+  emoji: "🪖"
+  level: 9
+  hp: 140
+  atk: 21
+  defense: 9
+  xp: 120
+  gold: 9500
+  respawn: 220
+  tick_speed: 3
+  boss: true
+  skills: ["power_strike", "cleave"]
+  loot: [["ветрорез", 1.0], ["трофейный_плащ", 0.6], ["клеймёный_жетон", 1.0]]
+
+# ═════════════════════════ ЗАТОНУВШИЙ ГОРОД ═════════════════════════
+глубинный_утопленник:
+  name: "Глубинный утопленник"
+  emoji: "🧟"
+  level: 13
+  hp: 156
+  atk: 29
+  defense: 8
+  xp: 130
+  gold: 5500
+  respawn: 130
+  tick_speed: 4
+  skills: ["poison_blade"]
+  loot: [["гнилая_плоть", 0.5], ["глубинный_перламутр", 0.3]]
+
+левиафанов_отпрыск:
+  name: "Отпрыск левиафана"
+  emoji: "🐙"
+  level: 14
+  hp: 168
+  atk: 31
+  defense: 9
+  xp: 140
+  gold: 6000
+  respawn: 150
+  tick_speed: 3
+  skills: ["cleave"]
+  loot: [["щупальце_левиафана", 0.5], ["глубинный_перламутр", 0.3]]
+
+глубинный_жрец:
+  name: "Жрец Глуби"
+  emoji: "🦑"
+  level: 14
+  hp: 168
+  atk: 31
+  defense: 7
+  xp: 145
+  gold: 7000
+  respawn: 150
+  tick_speed: 3
+  skills: ["arcane_burst"]
+  loot: [["соль_глуби", 0.5], ["туманная_эссенция", 0.3]]
+
+бездонная_тварь:
+  name: "Бездонная тварь"
+  emoji: "🕳"
+  level: 15
+  hp: 180
+  atk: 33
+  defense: 12
+  xp: 155
+  gold: 7500
+  respawn: 170
+  tick_speed: 4
+  skills: ["cleave", "poison_blade"]
+  loot: [["осколок_глуби", 0.4], ["щупальце_левиафана", 0.3]]
+
+верховный_жрец_глуби:
+  name: "Верховный жрец Глуби"
+  emoji: "👁"
+  level: 15
+  hp: 320
+  atk: 33
+  defense: 13
+  xp: 400
+  gold: 32000
+  respawn: 99999
+  tick_speed: 3
+  boss: true
+  skills: ["arcane_burst", "cleave"]
+  loot: [["митра_глуби", 1.0], ["трезубец_глуби", 0.5], ["соль_глуби", 1.0], ["туманная_эссенция", 1.0]]
+
+сердце_глуби:
+  name: "Сердце Глуби"
+  emoji: "👁"
+  level: 16
+  hp: 660
+  atk: 33
+  defense: 17
+  xp: 1000
+  gold: 52000
+  respawn: 99999
+  tick_speed: 3
+  boss: true
+  skills: ["cleave", "arcane_burst", "power_strike"]
+  loot: [["око_глуби", 1.0], ["сердце_тумана", 1.0]]
+
+
+# ═════════════════════════ ГНОМИЙ ЧЕРТОГ ═════════════════════════
+рудничная_крыса: { name: "Рудничная крыса", emoji: "🐀", level: 1, hp: 12, atk: 2, defense: 0, xp: 10, gold: 300, respawn: 40, tick_speed: 4, loot: [["крысиная_шкура", 0.4]] }
+штрековый_кобольдёныш: { name: "Штрековый кобольдёныш", emoji: "👺", level: 2, hp: 24, atk: 4, defense: 1, xp: 20, gold: 700, respawn: 60, tick_speed: 3, loot: [["железная_руда", 0.3], ["глыба_кварца", 0.3]] }
+пещерный_слизень: { name: "Пещерный слизень", emoji: "🟢", level: 2, hp: 26, atk: 4, defense: 2, xp: 18, gold: 500, respawn: 55, tick_speed: 5, loot: [["слизь", 0.5], ["глыба_кварца", 0.2]] }
+породный_клещ: { name: "Породный клещ", emoji: "🪲", level: 3, hp: 36, atk: 6, defense: 3, xp: 30, gold: 1000, respawn: 70, tick_speed: 3, loot: [["глыба_кварца", 0.4], ["костяная_крошка", 0.3]] }
+
+# ═════════════════════════ ЛУННЫЙ ПРЕДЕЛ ═════════════════════════
+лунный_мотылёк: { name: "Лунный мотылёк", emoji: "🦋", level: 1, hp: 12, atk: 2, defense: 0, xp: 10, gold: 200, respawn: 40, tick_speed: 3, loot: [["лунная_пыльца", 0.5]] }
+порченый_лис: { name: "Порченый лис", emoji: "🦊", level: 2, hp: 24, atk: 4, defense: 1, xp: 20, gold: 500, respawn: 55, tick_speed: 3, loot: [["порченый_мех", 0.5], ["лунная_пыльца", 0.2]] }
+лунопряха: { name: "Лунопряха", emoji: "🕷", level: 2, hp: 24, atk: 5, defense: 0, xp: 20, gold: 400, respawn: 55, tick_speed: 4, skills: ["poison_blade"], loot: [["шёлк", 0.4], ["лунная_пыльца", 0.3]] }
+порченый_олень: { name: "Порченый олень", emoji: "🦌", level: 3, hp: 36, atk: 7, defense: 2, xp: 30, gold: 900, respawn: 70, tick_speed: 4, skills: ["power_strike"], loot: [["порченый_мех", 0.6], ["ветвистый_рог", 0.35]] }
+
+# ═════════════════════════ КРОВАВЫЙ КРЯЖ ═════════════════════════
+болотный_кабан: { name: "Болотный кабан", emoji: "🐗", level: 1, hp: 14, atk: 3, defense: 1, xp: 10, gold: 300, respawn: 45, tick_speed: 4, loot: [["кабаний_клык", 0.4], ["гнилая_плоть", 0.3]] }
+степной_падальщик: { name: "Степной падальщик", emoji: "🦴", level: 2, hp: 24, atk: 5, defense: 1, xp: 20, gold: 600, respawn: 55, tick_speed: 3, loot: [["крысиная_шкура", 0.4], ["кабаний_клык", 0.3]] }
+трясинная_пиявка: { name: "Трясинная пиявка", emoji: "🪱", level: 2, hp: 22, atk: 5, defense: 0, xp: 20, gold: 400, respawn: 50, tick_speed: 3, loot: [["слизь", 0.5], ["жилы_твари", 0.3]] }
+клыкастый_секач: { name: "Клыкастый секач", emoji: "🐗", level: 3, hp: 36, atk: 7, defense: 2, xp: 30, gold: 1100, respawn: 75, tick_speed: 4, loot: [["кабаний_клык", 0.6], ["жилы_твари", 0.4]] }
+
+# ═════════════════════════ ГОБЛИНСКАЯ НОРА ═════════════════════════
+туннельная_крыса: { name: "Туннельная крыса", emoji: "🐀", level: 1, hp: 12, atk: 2, defense: 0, xp: 10, gold: 200, respawn: 35, tick_speed: 3, loot: [["крысиный_хвост", 0.5], ["крысиная_шкура", 0.3]] }
+пещерный_паучок: { name: "Пещерный паучок", emoji: "🕷", level: 2, hp: 24, atk: 4, defense: 1, xp: 20, gold: 500, respawn: 50, tick_speed: 3, skills: ["poison_blade"], loot: [["паучья_лапка", 0.5], ["шёлк", 0.3]] }
+норный_слизень: { name: "Норный слизень", emoji: "🟢", level: 2, hp: 24, atk: 4, defense: 2, xp: 20, gold: 400, respawn: 55, tick_speed: 5, loot: [["слизь", 0.6]] }
+туннельный_упырёк: { name: "Туннельный упырёк", emoji: "🧟", level: 3, hp: 36, atk: 7, defense: 2, xp: 30, gold: 900, respawn: 70, tick_speed: 4, loot: [["гнилая_плоть", 0.5], ["костяная_крошка", 0.3]] }
+
+# ─── городские и подвальные мобы столицы (слабые, не агрессивные) ───
+городской_голубь:
+  name: "Городской голубь"
+  emoji: "🕊"
+  level: 1
+  hp: 6
+  atk: 1
+  defense: 0
+  xp: 3
+  gold: 10
+  respawn: 30
+  tick_speed: 5
+  loot: [["перо", 0.5]]
+городской_пёс:
+  name: "Бродячий пёс"
+  emoji: "🐕"
+  level: 1
+  hp: 14
+  atk: 3
+  defense: 0
+  xp: 6
+  gold: 20
+  respawn: 40
+  tick_speed: 4
+  loot: [["кость", 0.4]]
+подвальная_крыса:
+  name: "Подвальная крыса"
+  emoji: "🐀"
+  level: 1
+  hp: 16
+  atk: 3
+  defense: 0
+  xp: 8
+  gold: 30
+  respawn: 60
+  tick_speed: 4
+  loot: [["знак_посвящения", 1.0], ["крысиная_шкура", 0.3]]
+подвальный_паук:
+  name: "Подвальный паук"
+  emoji: "🕷"
+  level: 2
+  hp: 22
+  atk: 4
+  defense: 1
+  xp: 12
+  gold: 40
+  respawn: 60
+  tick_speed: 4
+  loot: [["знак_посвящения", 1.0], ["паучий_шёлк", 0.3]]
+
+# ═════════════════════════ СЕРДЦЕ БЕЗДНЫ — мобы 40+ ═════════════════════════
+бездонный_ужас:
+  name: "Бездонный ужас"
+  emoji: "🕷"
+  level: 42
+  hp: 300
+  atk: 44
+  defense: 18
+  xp: 600
+  gold: 8000
+  respawn: 120
+  tick_speed: 4
+  dmg_type: negative
+  loot: [["осколок_первотумана", 0.25], ["самоцвет", 0.2]]
+пожиратель_света:
+  name: "Пожиратель света"
+  emoji: "🌑"
+  level: 46
+  hp: 360
+  atk: 52
+  defense: 22
+  xp: 850
+  gold: 11000
+  respawn: 140
+  tick_speed: 4
+  dmg_type: negative
+  loot: [["осколок_первотумана", 0.3], ["самоцвет", 0.25]]
+теневой_левиафан:
+  name: "Теневой левиафан"
+  emoji: "🐋"
+  level: 50
+  hp: 440
+  atk: 60
+  defense: 26
+  xp: 1200
+  gold: 16000
+  respawn: 160
+  tick_speed: 3
+  dmg_type: cold
+  loot: [["осколок_первотумана", 0.4], ["око_глуби", 0.2]]
+глашатай_бездны:
+  name: "Глашатай Бездны"
+  emoji: "📯"
+  level: 52
+  hp: 1300
+  atk: 72
+  defense: 32
+  xp: 6000
+  gold: 90000
+  respawn: 99999
+  tick_speed: 3
+  boss: true
+  dmg_type: negative
+  skills: ["cleave", "arcane_burst"]
+  loot: [["сердце_бездны", 1.0], ["осколок_первотумана", 1.0]]
+титан_первотумана:
+  name: "Титан Первотумана"
+  emoji: "🗿"
+  level: 60
+  hp: 2400
+  atk: 95
+  defense: 44
+  xp: 11000
+  gold: 170000
+  respawn: 99999
+  tick_speed: 3
+  boss: true
+  dmg_type: negative
+  skills: ["cleave", "power_strike", "arcane_burst"]
+  loot: [["сердце_бездны", 1.0], ["эгида_бездны", 0.5]]
+предвечная_бездна:
+  name: "Предвечная Бездна"
+  emoji: "👁"
+  level: 68
+  hp: 4000
+  atk: 130
+  defense: 60
+  xp: 22000
+  gold: 250000
+  respawn: 99999
+  tick_speed: 2
+  boss: true
+  dmg_type: negative
+  skills: ["cleave", "power_strike", "arcane_burst"]
+  loot: [["сердце_бездны", 1.0], ["венец_семи_корон", 1.0]]
+
+# ═════ МИД-ГЕЙМ: мост уровней 18–38 (между Актом III и Бездной) ═════
+пепельный_ревенант:
+  name: "Пепельный ревенант"
+  emoji: "🔥"
+  level: 18
+  hp: 140
+  atk: 25
+  defense: 8
+  xp: 90
+  gold: 4500
+  respawn: 80
+  tick_speed: 4
+  dmg_type: fire
+  loot: [["туманная_эссенция", 0.3], ["самоцвет", 0.12]]
+морозный_воевода:
+  name: "Морозный воевода"
+  emoji: "❄️"
+  level: 22
+  hp: 170
+  atk: 29
+  defense: 10
+  xp: 140
+  gold: 6000
+  respawn: 90
+  tick_speed: 4
+  dmg_type: cold
+  loot: [["туманная_эссенция", 0.32], ["самоцвет", 0.15]]
+костяной_легат:
+  name: "Костяной легат"
+  emoji: "💀"
+  level: 26
+  hp: 200
+  atk: 33
+  defense: 12
+  xp: 200
+  gold: 7500
+  respawn: 95
+  tick_speed: 4
+  dmg_type: negative
+  loot: [["туманная_эссенция", 0.34], ["самоцвет", 0.18]]
+глубинный_кошмар:
+  name: "Глубинный кошмар"
+  emoji: "🌀"
+  level: 30
+  hp: 230
+  atk: 37
+  defense: 14
+  xp: 280
+  gold: 9000
+  respawn: 100
+  tick_speed: 3
+  dmg_type: cold
+  loot: [["самоцвет", 0.22], ["осколок_первотумана", 0.1]]
+тварь_разлома:
+  name: "Тварь разлома"
+  emoji: "👹"
+  level: 34
+  hp: 260
+  atk: 41
+  defense: 16
+  xp: 380
+  gold: 11000
+  respawn: 110
+  tick_speed: 3
+  dmg_type: negative
+  loot: [["самоцвет", 0.25], ["осколок_первотумана", 0.15]]
+первотуманный_жнец:
+  name: "Первотуманный жнец"
+  emoji: "☠️"
+  level: 38
+  hp: 285
+  atk: 45
+  defense: 18
+  xp: 520
+  gold: 13000
+  respawn: 120
+  tick_speed: 3
+  dmg_type: negative
+  loot: [["самоцвет", 0.3], ["осколок_первотумана", 0.2]]

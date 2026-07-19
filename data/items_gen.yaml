@@ -1,0 +1,1971 @@
+g_axe_1:
+  bonus:
+    atk: 8
+    str: 1
+  desc: +8 к атаке. Уровень 1+.
+  emoji: 🪓
+  level_req: 1
+  name: Грубый топор
+  price: 688900
+  slot: weapon
+  type: weapon
+  weapon_class: axe
+g_axe_15:
+  bonus:
+    atk: 21
+    str: 2
+  desc: +21 к атаке. Уровень 15+.
+  emoji: 🪓
+  level_req: 15
+  name: Калёный топор
+  price: 5435300
+  slot: weapon
+  type: weapon
+  weapon_class: axe
+g_axe_30:
+  bonus:
+    atk: 36
+    str: 4
+  desc: +36 к атаке. Уровень 30+.
+  emoji: 🪓
+  level_req: 30
+  name: Закалённый топор
+  price: 7659500
+  slot: weapon
+  type: weapon
+  weapon_class: axe
+g_axe_45:
+  bonus:
+    atk: 51
+    str: 6
+  desc: +51 к атаке. Уровень 45+.
+  emoji: 🪓
+  level_req: 45
+  name: Рунный топор
+  price: 13818800
+  slot: weapon
+  type: weapon
+  weapon_class: axe
+g_axe_60:
+  bonus:
+    atk: 66
+    str: 9
+  desc: +66 к атаке. Уровень 60+.
+  emoji: 🪓
+  level_req: 60
+  name: Мифрильный топор
+  price: 13884200
+  slot: weapon
+  type: weapon
+  weapon_class: axe
+g_axe_75:
+  bonus:
+    atk: 81
+    str: 11
+  desc: +81 к атаке. Уровень 58+.
+  emoji: 🪓
+  level_req: 58
+  remort_req: 1
+  name: Драконий топор
+  price: 13980100
+  slot: weapon
+  type: weapon
+  weapon_class: axe
+g_axe_90:
+  bonus:
+    atk: 96
+    str: 13
+  desc: +96 к атаке. Уровень 60+.
+  emoji: 🪓
+  level_req: 60
+  remort_req: 2
+  name: Эфирный топор
+  price: 14046800
+  slot: weapon
+  type: weapon
+  weapon_class: axe
+g_bow_1:
+  bonus:
+    atk: 6
+    dex: 1
+  desc: +6 к атаке. Уровень 1+.
+  emoji: 🏹
+  level_req: 1
+  name: Грубый лук
+  price: 543900
+  slot: weapon
+  type: weapon
+  weapon_class: bow
+g_bow_15:
+  bonus:
+    atk: 18
+    dex: 2
+  desc: +18 к атаке. Уровень 15+.
+  emoji: 🏹
+  level_req: 15
+  name: Калёный лук
+  price: 4755900
+  slot: weapon
+  type: weapon
+  weapon_class: bow
+g_bow_30:
+  bonus:
+    atk: 30
+    dex: 4
+  desc: +30 к атаке. Уровень 30+.
+  emoji: 🏹
+  level_req: 30
+  name: Закалённый лук
+  price: 6565300
+  slot: weapon
+  type: weapon
+  weapon_class: bow
+g_bow_45:
+  bonus:
+    atk: 43
+    dex: 6
+  desc: +43 к атаке. Уровень 45+.
+  emoji: 🏹
+  level_req: 45
+  name: Рунный лук
+  price: 11976200
+  slot: weapon
+  type: weapon
+  weapon_class: bow
+g_bow_60:
+  bonus:
+    atk: 56
+    dex: 9
+  desc: +56 к атаке. Уровень 60+.
+  emoji: 🏹
+  level_req: 60
+  name: Мифрильный лук
+  price: 12137800
+  slot: weapon
+  type: weapon
+  weapon_class: bow
+g_bow_75:
+  bonus:
+    atk: 69
+    dex: 11
+  desc: +69 к атаке. Уровень 58+.
+  emoji: 🏹
+  level_req: 58
+  remort_req: 1
+  name: Драконий лук
+  price: 12259400
+  slot: weapon
+  type: weapon
+  weapon_class: bow
+g_bow_90:
+  bonus:
+    atk: 82
+    dex: 13
+  desc: +82 к атаке. Уровень 60+.
+  emoji: 🏹
+  level_req: 60
+  remort_req: 2
+  name: Эфирный лук
+  price: 12344100
+  slot: weapon
+  type: weapon
+  weapon_class: bow
+g_dagger_1:
+  bonus:
+    atk: 4
+    dex: 1
+  desc: +4 к атаке. Уровень 1+.
+  emoji: 🔪
+  level_req: 1
+  name: Грубый кинжал
+  price: 398900
+  slot: weapon
+  type: weapon
+  weapon_class: dagger
+g_dagger_15:
+  bonus:
+    atk: 14
+    dex: 2
+  desc: +14 к атаке. Уровень 15+.
+  emoji: 🔪
+  level_req: 15
+  name: Калёный кинжал
+  price: 3850000
+  slot: weapon
+  type: weapon
+  weapon_class: dagger
+g_dagger_30:
+  bonus:
+    atk: 25
+    dex: 4
+  desc: +25 к атаке. Уровень 30+.
+  emoji: 🔪
+  level_req: 30
+  name: Закалённый кинжал
+  price: 5653400
+  slot: weapon
+  type: weapon
+  weapon_class: dagger
+g_dagger_45:
+  bonus:
+    atk: 36
+    dex: 6
+  desc: +36 к атаке. Уровень 45+.
+  emoji: 🔪
+  level_req: 45
+  name: Рунный кинжал
+  price: 10364100
+  slot: weapon
+  type: weapon
+  weapon_class: dagger
+g_dagger_60:
+  bonus:
+    atk: 46
+    dex: 9
+  desc: +46 к атаке. Уровень 60+.
+  emoji: 🔪
+  level_req: 60
+  name: Мифрильный кинжал
+  price: 10391400
+  slot: weapon
+  type: weapon
+  weapon_class: dagger
+g_dagger_75:
+  bonus:
+    atk: 57
+    dex: 11
+  desc: +57 к атаке. Уровень 58+.
+  emoji: 🔪
+  level_req: 58
+  remort_req: 1
+  name: Драконий кинжал
+  price: 10538800
+  slot: weapon
+  type: weapon
+  weapon_class: dagger
+g_dagger_90:
+  bonus:
+    atk: 68
+    dex: 13
+  desc: +68 к атаке. Уровень 60+.
+  emoji: 🔪
+  level_req: 60
+  remort_req: 2
+  name: Эфирный кинжал
+  price: 10641500
+  slot: weapon
+  type: weapon
+  weapon_class: dagger
+g_heavy_armor_1:
+  armor_weight: heavy
+  bonus:
+    defense: 4
+    str: 1
+  desc: +4 к защите, heavy. Уровень 1+.
+  emoji: 🥋
+  level_req: 1
+  name: Грубый нагрудник (латы)
+  price: 398900
+  slot: armor
+  type: armor
+g_heavy_armor_15:
+  armor_weight: heavy
+  bonus:
+    defense: 13
+    str: 3
+  desc: +13 к защите, heavy. Уровень 15+.
+  emoji: 🥋
+  level_req: 15
+  name: Калёный нагрудник (латы)
+  price: 3963200
+  slot: armor
+  type: armor
+g_heavy_armor_30:
+  armor_weight: heavy
+  bonus:
+    defense: 24
+    str: 5
+  desc: +24 к защите, heavy. Уровень 30+.
+  emoji: 🥋
+  level_req: 30
+  name: Закалённый нагрудник (латы)
+  price: 5744600
+  slot: armor
+  type: armor
+g_heavy_armor_45:
+  armor_weight: heavy
+  bonus:
+    defense: 34
+    str: 7
+  desc: +34 к защите, heavy. Уровень 45+.
+  emoji: 🥋
+  level_req: 45
+  name: Рунный нагрудник (латы)
+  price: 10248900
+  slot: armor
+  type: armor
+g_heavy_armor_60:
+  armor_weight: heavy
+  bonus:
+    defense: 45
+    str: 10
+  desc: +45 к защите, heavy. Уровень 60+.
+  emoji: 🥋
+  level_req: 60
+  name: Мифрильный нагрудник (латы)
+  price: 10478700
+  slot: armor
+  type: armor
+g_heavy_armor_75:
+  armor_weight: heavy
+  bonus:
+    defense: 55
+    str: 12
+  desc: +55 к защите, heavy. Уровень 57+.
+  emoji: 🥋
+  level_req: 57
+  remort_req: 1
+  name: Драконий нагрудник (латы)
+  price: 10467100
+  slot: armor
+  type: armor
+g_heavy_armor_90:
+  armor_weight: heavy
+  bonus:
+    defense: 66
+    str: 14
+  desc: +66 к защите, heavy. Уровень 60+.
+  emoji: 🥋
+  level_req: 60
+  remort_req: 2
+  name: Эфирный нагрудник (латы)
+  price: 10580700
+  slot: armor
+  type: armor
+g_heavy_feet_1:
+  armor_weight: heavy
+  bonus:
+    defense: 1
+    str: 1
+  desc: +1 к защите, heavy. Уровень 1+.
+  emoji: 🥾
+  level_req: 1
+  name: Грубый сапоги (латы)
+  price: 181300
+  slot: feet
+  type: armor
+g_heavy_feet_15:
+  armor_weight: heavy
+  bonus:
+    defense: 5
+    str: 1
+  desc: +5 к защите, heavy. Уровень 15+.
+  emoji: 🥾
+  level_req: 15
+  name: Калёный сапоги (латы)
+  price: 1472100
+  slot: feet
+  type: armor
+g_heavy_feet_30:
+  armor_weight: heavy
+  bonus:
+    defense: 10
+    str: 2
+  desc: +10 к защите, heavy. Уровень 30+.
+  emoji: 🥾
+  level_req: 30
+  name: Закалённый сапоги (латы)
+  price: 2370800
+  slot: feet
+  type: armor
+g_heavy_feet_45:
+  armor_weight: heavy
+  bonus:
+    defense: 14
+    str: 3
+  desc: +14 к защите, heavy. Уровень 45+.
+  emoji: 🥾
+  level_req: 45
+  name: Рунный сапоги (латы)
+  price: 4260800
+  slot: feet
+  type: armor
+g_heavy_feet_60:
+  armor_weight: heavy
+  bonus:
+    defense: 18
+    str: 4
+  desc: +18 к защите, heavy. Уровень 60+.
+  emoji: 🥾
+  level_req: 60
+  name: Мифрильный сапоги (латы)
+  price: 4191500
+  slot: feet
+  type: armor
+g_heavy_feet_75:
+  armor_weight: heavy
+  bonus:
+    defense: 22
+    str: 5
+  desc: +22 к защите, heavy. Уровень 56+.
+  emoji: 🥾
+  level_req: 56
+  remort_req: 1
+  name: Драконий сапоги (латы)
+  price: 4229900
+  slot: feet
+  type: armor
+g_heavy_feet_90:
+  armor_weight: heavy
+  bonus:
+    defense: 26
+    str: 6
+  desc: +26 к защите, heavy. Уровень 59+.
+  emoji: 🥾
+  level_req: 59
+  remort_req: 2
+  name: Эфирный сапоги (латы)
+  price: 4256600
+  slot: feet
+  type: armor
+g_heavy_hands_1:
+  armor_weight: heavy
+  bonus:
+    defense: 1
+    str: 1
+  desc: +1 к защите, heavy. Уровень 1+.
+  emoji: 🧤
+  level_req: 1
+  name: Грубый перчатки (латы)
+  price: 181300
+  slot: hands
+  type: armor
+g_heavy_hands_15:
+  armor_weight: heavy
+  bonus:
+    defense: 5
+    str: 1
+  desc: +5 к защите, heavy. Уровень 15+.
+  emoji: 🧤
+  level_req: 15
+  name: Калёный перчатки (латы)
+  price: 1472100
+  slot: hands
+  type: armor
+g_heavy_hands_30:
+  armor_weight: heavy
+  bonus:
+    defense: 10
+    str: 2
+  desc: +10 к защите, heavy. Уровень 30+.
+  emoji: 🧤
+  level_req: 30
+  name: Закалённый перчатки (латы)
+  price: 2370800
+  slot: hands
+  type: armor
+g_heavy_hands_45:
+  armor_weight: heavy
+  bonus:
+    defense: 14
+    str: 3
+  desc: +14 к защите, heavy. Уровень 45+.
+  emoji: 🧤
+  level_req: 45
+  name: Рунный перчатки (латы)
+  price: 4260800
+  slot: hands
+  type: armor
+g_heavy_hands_60:
+  armor_weight: heavy
+  bonus:
+    defense: 18
+    str: 4
+  desc: +18 к защите, heavy. Уровень 60+.
+  emoji: 🧤
+  level_req: 60
+  name: Мифрильный перчатки (латы)
+  price: 4191500
+  slot: hands
+  type: armor
+g_heavy_hands_75:
+  armor_weight: heavy
+  bonus:
+    defense: 22
+    str: 5
+  desc: +22 к защите, heavy. Уровень 56+.
+  emoji: 🧤
+  level_req: 56
+  remort_req: 1
+  name: Драконий перчатки (латы)
+  price: 4229900
+  slot: hands
+  type: armor
+g_heavy_hands_90:
+  armor_weight: heavy
+  bonus:
+    defense: 26
+    str: 6
+  desc: +26 к защите, heavy. Уровень 59+.
+  emoji: 🧤
+  level_req: 59
+  remort_req: 2
+  name: Эфирный перчатки (латы)
+  price: 4256600
+  slot: hands
+  type: armor
+g_heavy_head_1:
+  armor_weight: heavy
+  bonus:
+    defense: 2
+    str: 1
+  desc: +2 к защите, heavy. Уровень 1+.
+  emoji: ⛑
+  level_req: 1
+  name: Грубый шлем (латы)
+  price: 253800
+  slot: head
+  type: armor
+g_heavy_head_15:
+  armor_weight: heavy
+  bonus:
+    defense: 7
+    str: 2
+  desc: +7 к защите, heavy. Уровень 15+.
+  emoji: ⛑
+  level_req: 15
+  name: Калёный шлем (латы)
+  price: 2264700
+  slot: head
+  type: armor
+g_heavy_head_30:
+  armor_weight: heavy
+  bonus:
+    defense: 12
+    str: 3
+  desc: +12 к защите, heavy. Уровень 30+.
+  emoji: ⛑
+  level_req: 30
+  name: Закалённый шлем (латы)
+  price: 3009100
+  slot: head
+  type: armor
+g_heavy_head_45:
+  armor_weight: heavy
+  bonus:
+    defense: 17
+    str: 4
+  desc: +17 к защите, heavy. Уровень 45+.
+  emoji: ⛑
+  level_req: 45
+  name: Рунный шлем (латы)
+  price: 5297200
+  slot: head
+  type: armor
+g_heavy_head_60:
+  armor_weight: heavy
+  bonus:
+    defense: 22
+    str: 5
+  desc: +22 к защите, heavy. Уровень 60+.
+  emoji: ⛑
+  level_req: 60
+  name: Мифрильный шлем (латы)
+  price: 5152000
+  slot: head
+  type: armor
+g_heavy_head_75:
+  armor_weight: heavy
+  bonus:
+    defense: 28
+    str: 6
+  desc: +28 к защите, heavy. Уровень 57+.
+  emoji: ⛑
+  level_req: 57
+  remort_req: 1
+  name: Драконий шлем (латы)
+  price: 5305300
+  slot: head
+  type: armor
+g_heavy_head_90:
+  armor_weight: heavy
+  bonus:
+    defense: 33
+    str: 7
+  desc: +33 к защите, heavy. Уровень 59+.
+  emoji: ⛑
+  level_req: 59
+  remort_req: 2
+  name: Эфирный шлем (латы)
+  price: 5290300
+  slot: head
+  type: armor
+g_heavy_legs_1:
+  armor_weight: heavy
+  bonus:
+    defense: 2
+    str: 1
+  desc: +2 к защите, heavy. Уровень 1+.
+  emoji: 👖
+  level_req: 1
+  name: Грубый поножи (латы)
+  price: 253800
+  slot: legs
+  type: armor
+g_heavy_legs_15:
+  armor_weight: heavy
+  bonus:
+    defense: 9
+    str: 2
+  desc: +9 к защите, heavy. Уровень 15+.
+  emoji: 👖
+  level_req: 15
+  name: Калёный поножи (латы)
+  price: 2717600
+  slot: legs
+  type: armor
+g_heavy_legs_30:
+  armor_weight: heavy
+  bonus:
+    defense: 17
+    str: 4
+  desc: +17 к защите, heavy. Уровень 30+.
+  emoji: 👖
+  level_req: 30
+  name: Закалённый поножи (латы)
+  price: 4194500
+  slot: legs
+  type: armor
+g_heavy_legs_45:
+  armor_weight: heavy
+  bonus:
+    defense: 24
+    str: 5
+  desc: +24 к защите, heavy. Уровень 45+.
+  emoji: 👖
+  level_req: 45
+  name: Рунный поножи (латы)
+  price: 7254800
+  slot: legs
+  type: armor
+g_heavy_legs_60:
+  armor_weight: heavy
+  bonus:
+    defense: 31
+    str: 7
+  desc: +31 к защите, heavy. Уровень 60+.
+  emoji: 👖
+  level_req: 60
+  name: Мифрильный поножи (латы)
+  price: 7247700
+  slot: legs
+  type: armor
+g_heavy_legs_75:
+  armor_weight: heavy
+  bonus:
+    defense: 39
+    str: 8
+  desc: +39 к защите, heavy. Уровень 57+.
+  emoji: 👖
+  level_req: 57
+  remort_req: 1
+  name: Драконий поножи (латы)
+  price: 7312600
+  slot: legs
+  type: armor
+g_heavy_legs_90:
+  armor_weight: heavy
+  bonus:
+    defense: 46
+    str: 10
+  desc: +46 к защите, heavy. Уровень 60+.
+  emoji: 👖
+  level_req: 60
+  remort_req: 2
+  name: Эфирный поножи (латы)
+  price: 7418600
+  slot: legs
+  type: armor
+g_light_armor_1:
+  armor_weight: light
+  bonus:
+    defense: 2
+    int: 1
+  desc: +2 к защите, light. Уровень 1+.
+  emoji: 🥋
+  level_req: 1
+  name: Грубый нагрудник (роба)
+  price: 253800
+  slot: armor
+  type: armor
+g_light_armor_15:
+  armor_weight: light
+  bonus:
+    defense: 7
+    int: 3
+  desc: +7 к защите, light. Уровень 15+.
+  emoji: 🥋
+  level_req: 15
+  name: Калёный нагрудник (роба)
+  price: 2604400
+  slot: armor
+  type: armor
+g_light_armor_30:
+  armor_weight: light
+  bonus:
+    defense: 12
+    int: 5
+  desc: +12 к защите, light. Уровень 30+.
+  emoji: 🥋
+  level_req: 30
+  name: Закалённый нагрудник (роба)
+  price: 3556200
+  slot: armor
+  type: armor
+g_light_armor_45:
+  armor_weight: light
+  bonus:
+    defense: 17
+    int: 7
+  desc: +17 к защите, light. Уровень 45+.
+  emoji: 🥋
+  level_req: 45
+  name: Рунный нагрудник (роба)
+  price: 6333600
+  slot: armor
+  type: armor
+g_light_armor_60:
+  armor_weight: light
+  bonus:
+    defense: 22
+    int: 10
+  desc: +22 к защите, light. Уровень 60+.
+  emoji: 🥋
+  level_req: 60
+  name: Мифрильный нагрудник (роба)
+  price: 6461800
+  slot: armor
+  type: armor
+g_light_armor_75:
+  armor_weight: light
+  bonus:
+    defense: 28
+    int: 12
+  desc: +28 к защите, light. Уровень 57+.
+  emoji: 🥋
+  level_req: 57
+  remort_req: 1
+  name: Драконий нагрудник (роба)
+  price: 6595700
+  slot: armor
+  type: armor
+g_light_armor_90:
+  armor_weight: light
+  bonus:
+    defense: 33
+    int: 14
+  desc: +33 к защите, light. Уровень 59+.
+  emoji: 🥋
+  level_req: 59
+  remort_req: 2
+  name: Эфирный нагрудник (роба)
+  price: 6567300
+  slot: armor
+  type: armor
+g_light_feet_1:
+  armor_weight: light
+  bonus:
+    defense: 1
+    int: 1
+  desc: +1 к защите, light. Уровень 1+.
+  emoji: 🥾
+  level_req: 1
+  name: Грубый сапоги (роба)
+  price: 181300
+  slot: feet
+  type: armor
+g_light_feet_15:
+  armor_weight: light
+  bonus:
+    defense: 3
+    int: 1
+  desc: +3 к защите, light. Уровень 15+.
+  emoji: 🥾
+  level_req: 15
+  name: Калёный сапоги (роба)
+  price: 1155000
+  slot: feet
+  type: armor
+g_light_feet_30:
+  armor_weight: light
+  bonus:
+    defense: 5
+    int: 2
+  desc: +5 к защите, light. Уровень 30+.
+  emoji: 🥾
+  level_req: 30
+  name: Закалённый сапоги (роба)
+  price: 1559200
+  slot: feet
+  type: armor
+g_light_feet_45:
+  armor_weight: light
+  bonus:
+    defense: 7
+    int: 3
+  desc: +7 к защите, light. Уровень 45+.
+  emoji: 🥾
+  level_req: 45
+  name: Рунный сапоги (роба)
+  price: 2763800
+  slot: feet
+  type: armor
+g_light_feet_60:
+  armor_weight: light
+  bonus:
+    defense: 9
+    int: 4
+  desc: +9 к защите, light. Уровень 60+.
+  emoji: 🥾
+  level_req: 60
+  name: Мифрильный сапоги (роба)
+  price: 2763800
+  slot: feet
+  type: armor
+g_light_feet_75:
+  armor_weight: light
+  bonus:
+    defense: 11
+    int: 5
+  desc: +11 к защите, light. Уровень 56+.
+  emoji: 🥾
+  level_req: 56
+  remort_req: 1
+  name: Драконий сапоги (роба)
+  price: 2763800
+  slot: feet
+  type: armor
+g_light_feet_90:
+  armor_weight: light
+  bonus:
+    defense: 13
+    int: 6
+  desc: +13 к защите, light. Уровень 59+.
+  emoji: 🥾
+  level_req: 59
+  remort_req: 2
+  name: Эфирный сапоги (роба)
+  price: 2763800
+  slot: feet
+  type: armor
+g_light_hands_1:
+  armor_weight: light
+  bonus:
+    defense: 1
+    int: 1
+  desc: +1 к защите, light. Уровень 1+.
+  emoji: 🧤
+  level_req: 1
+  name: Грубый перчатки (роба)
+  price: 181300
+  slot: hands
+  type: armor
+g_light_hands_15:
+  armor_weight: light
+  bonus:
+    defense: 3
+    int: 1
+  desc: +3 к защите, light. Уровень 15+.
+  emoji: 🧤
+  level_req: 15
+  name: Калёный перчатки (роба)
+  price: 1155000
+  slot: hands
+  type: armor
+g_light_hands_30:
+  armor_weight: light
+  bonus:
+    defense: 5
+    int: 2
+  desc: +5 к защите, light. Уровень 30+.
+  emoji: 🧤
+  level_req: 30
+  name: Закалённый перчатки (роба)
+  price: 1559200
+  slot: hands
+  type: armor
+g_light_hands_45:
+  armor_weight: light
+  bonus:
+    defense: 7
+    int: 3
+  desc: +7 к защите, light. Уровень 45+.
+  emoji: 🧤
+  level_req: 45
+  name: Рунный перчатки (роба)
+  price: 2763800
+  slot: hands
+  type: armor
+g_light_hands_60:
+  armor_weight: light
+  bonus:
+    defense: 9
+    int: 4
+  desc: +9 к защите, light. Уровень 60+.
+  emoji: 🧤
+  level_req: 60
+  name: Мифрильный перчатки (роба)
+  price: 2763800
+  slot: hands
+  type: armor
+g_light_hands_75:
+  armor_weight: light
+  bonus:
+    defense: 11
+    int: 5
+  desc: +11 к защите, light. Уровень 56+.
+  emoji: 🧤
+  level_req: 56
+  remort_req: 1
+  name: Драконий перчатки (роба)
+  price: 2763800
+  slot: hands
+  type: armor
+g_light_hands_90:
+  armor_weight: light
+  bonus:
+    defense: 13
+    int: 6
+  desc: +13 к защите, light. Уровень 59+.
+  emoji: 🧤
+  level_req: 59
+  remort_req: 2
+  name: Эфирный перчатки (роба)
+  price: 2763800
+  slot: hands
+  type: armor
+g_light_head_1:
+  armor_weight: light
+  bonus:
+    defense: 1
+    int: 1
+  desc: +1 к защите, light. Уровень 1+.
+  emoji: ⛑
+  level_req: 1
+  name: Грубый шлем (роба)
+  price: 181300
+  slot: head
+  type: armor
+g_light_head_15:
+  armor_weight: light
+  bonus:
+    defense: 3
+    int: 2
+  desc: +3 к защите, light. Уровень 15+.
+  emoji: ⛑
+  level_req: 15
+  name: Калёный шлем (роба)
+  price: 1358800
+  slot: head
+  type: armor
+g_light_head_30:
+  armor_weight: light
+  bonus:
+    defense: 6
+    int: 3
+  desc: +6 к защите, light. Уровень 30+.
+  emoji: ⛑
+  level_req: 30
+  name: Закалённый шлем (роба)
+  price: 1914900
+  slot: head
+  type: armor
+g_light_head_45:
+  armor_weight: light
+  bonus:
+    defense: 9
+    int: 4
+  desc: +9 к защите, light. Уровень 45+.
+  emoji: ⛑
+  level_req: 45
+  name: Рунный шлем (роба)
+  price: 3454700
+  slot: head
+  type: armor
+g_light_head_60:
+  armor_weight: light
+  bonus:
+    defense: 11
+    int: 5
+  desc: +11 к защите, light. Уровень 60+.
+  emoji: ⛑
+  level_req: 60
+  name: Мифрильный шлем (роба)
+  price: 3230900
+  slot: head
+  type: armor
+g_light_head_75:
+  armor_weight: light
+  bonus:
+    defense: 14
+    int: 6
+  desc: +14 к защите, light. Уровень 56+.
+  emoji: ⛑
+  level_req: 56
+  remort_req: 1
+  name: Драконий шлем (роба)
+  price: 3297900
+  slot: head
+  type: armor
+g_light_head_90:
+  armor_weight: light
+  bonus:
+    defense: 16
+    int: 7
+  desc: +16 к защите, light. Уровень 59+.
+  emoji: ⛑
+  level_req: 59
+  remort_req: 2
+  name: Эфирный шлем (роба)
+  price: 3222900
+  slot: head
+  type: armor
+g_light_legs_1:
+  armor_weight: light
+  bonus:
+    defense: 1
+    int: 1
+  desc: +1 к защите, light. Уровень 1+.
+  emoji: 👖
+  level_req: 1
+  name: Грубый поножи (роба)
+  price: 181300
+  slot: legs
+  type: armor
+g_light_legs_15:
+  armor_weight: light
+  bonus:
+    defense: 5
+    int: 2
+  desc: +5 к защите, light. Уровень 15+.
+  emoji: 👖
+  level_req: 15
+  name: Калёный поножи (роба)
+  price: 1811800
+  slot: legs
+  type: armor
+g_light_legs_30:
+  armor_weight: light
+  bonus:
+    defense: 8
+    int: 4
+  desc: +8 к защите, light. Уровень 30+.
+  emoji: 👖
+  level_req: 30
+  name: Закалённый поножи (роба)
+  price: 2553200
+  slot: legs
+  type: armor
+g_light_legs_45:
+  armor_weight: light
+  bonus:
+    defense: 12
+    int: 5
+  desc: +12 к защите, light. Уровень 45+.
+  emoji: 👖
+  level_req: 45
+  name: Рунный поножи (роба)
+  price: 4491100
+  slot: legs
+  type: armor
+g_light_legs_60:
+  armor_weight: light
+  bonus:
+    defense: 16
+    int: 7
+  desc: +16 к защите, light. Уровень 60+.
+  emoji: 👖
+  level_req: 60
+  name: Мифрильный поножи (роба)
+  price: 4628100
+  slot: legs
+  type: armor
+g_light_legs_75:
+  armor_weight: light
+  bonus:
+    defense: 19
+    int: 8
+  desc: +19 к защите, light. Уровень 57+.
+  emoji: 👖
+  level_req: 57
+  remort_req: 1
+  name: Драконий поножи (роба)
+  price: 4444900
+  slot: legs
+  type: armor
+g_light_legs_90:
+  armor_weight: light
+  bonus:
+    defense: 23
+    int: 10
+  desc: +23 к защите, light. Уровень 59+.
+  emoji: 👖
+  level_req: 59
+  remort_req: 2
+  name: Эфирный поножи (роба)
+  price: 4621500
+  slot: legs
+  type: armor
+g_mace_1:
+  bonus:
+    atk: 6
+    spi: 1
+  desc: +6 к атаке. Уровень 1+.
+  emoji: 🔨
+  level_req: 1
+  name: Грубый булава
+  price: 543900
+  slot: weapon
+  type: weapon
+  weapon_class: mace
+g_mace_15:
+  bonus:
+    atk: 19
+    spi: 2
+  desc: +19 к атаке. Уровень 15+.
+  emoji: 🔨
+  level_req: 15
+  name: Калёный булава
+  price: 4982400
+  slot: weapon
+  type: weapon
+  weapon_class: mace
+g_mace_30:
+  bonus:
+    atk: 34
+    spi: 4
+  desc: +34 к атаке. Уровень 30+.
+  emoji: 🔨
+  level_req: 30
+  name: Закалённый булава
+  price: 7294700
+  slot: weapon
+  type: weapon
+  weapon_class: mace
+g_mace_45:
+  bonus:
+    atk: 48
+    spi: 6
+  desc: +48 к атаке. Уровень 45+.
+  emoji: 🔨
+  level_req: 45
+  name: Рунный булава
+  price: 13127800
+  slot: weapon
+  type: weapon
+  weapon_class: mace
+g_mace_60:
+  bonus:
+    atk: 62
+    spi: 9
+  desc: +62 к атаке. Уровень 60+.
+  emoji: 🔨
+  level_req: 60
+  name: Мифрильный булава
+  price: 13185700
+  slot: weapon
+  type: weapon
+  weapon_class: mace
+g_mace_75:
+  bonus:
+    atk: 76
+    spi: 11
+  desc: +76 к атаке. Уровень 58+.
+  emoji: 🔨
+  level_req: 58
+  remort_req: 1
+  name: Драконий булава
+  price: 13263100
+  slot: weapon
+  type: weapon
+  weapon_class: mace
+g_mace_90:
+  bonus:
+    atk: 90
+    spi: 13
+  desc: +90 к атаке. Уровень 60+.
+  emoji: 🔨
+  level_req: 60
+  remort_req: 2
+  name: Эфирный булава
+  price: 13317100
+  slot: weapon
+  type: weapon
+  weapon_class: mace
+g_medium_armor_1:
+  armor_weight: medium
+  bonus:
+    defense: 2
+    dex: 1
+  desc: +2 к защите, medium. Уровень 1+.
+  emoji: 🥋
+  level_req: 1
+  name: Грубый нагрудник (кольчуга)
+  price: 253800
+  slot: armor
+  type: armor
+g_medium_armor_15:
+  armor_weight: medium
+  bonus:
+    defense: 10
+    dex: 3
+  desc: +10 к защите, medium. Уровень 15+.
+  emoji: 🥋
+  level_req: 15
+  name: Калёный нагрудник (кольчуга)
+  price: 3283800
+  slot: armor
+  type: armor
+g_medium_armor_30:
+  armor_weight: medium
+  bonus:
+    defense: 17
+    dex: 5
+  desc: +17 к защите, medium. Уровень 30+.
+  emoji: 🥋
+  level_req: 30
+  name: Закалённый нагрудник (кольчуга)
+  price: 4468000
+  slot: armor
+  type: armor
+g_medium_armor_45:
+  armor_weight: medium
+  bonus:
+    defense: 24
+    dex: 7
+  desc: +24 к защите, medium. Уровень 45+.
+  emoji: 🥋
+  level_req: 45
+  name: Рунный нагрудник (кольчуга)
+  price: 7945800
+  slot: armor
+  type: armor
+g_medium_armor_60:
+  armor_weight: medium
+  bonus:
+    defense: 32
+    dex: 10
+  desc: +32 к защите, medium. Уровень 60+.
+  emoji: 🥋
+  level_req: 60
+  name: Мифрильный нагрудник (кольчуга)
+  price: 8208300
+  slot: armor
+  type: armor
+g_medium_armor_75:
+  armor_weight: medium
+  bonus:
+    defense: 40
+    dex: 12
+  desc: +40 к защите, medium. Уровень 57+.
+  emoji: 🥋
+  level_req: 57
+  remort_req: 1
+  name: Драконий нагрудник (кольчуга)
+  price: 8316300
+  slot: armor
+  type: armor
+g_medium_armor_90:
+  armor_weight: medium
+  bonus:
+    defense: 47
+    dex: 14
+  desc: +47 к защите, medium. Уровень 60+.
+  emoji: 🥋
+  level_req: 60
+  remort_req: 2
+  name: Эфирный нагрудник (кольчуга)
+  price: 8270000
+  slot: armor
+  type: armor
+g_medium_feet_1:
+  armor_weight: medium
+  bonus:
+    defense: 1
+    dex: 1
+  desc: +1 к защите, medium. Уровень 1+.
+  emoji: 🥾
+  level_req: 1
+  name: Грубый сапоги (кольчуга)
+  price: 181300
+  slot: feet
+  type: armor
+g_medium_feet_15:
+  armor_weight: medium
+  bonus:
+    defense: 4
+    dex: 1
+  desc: +4 к защите, medium. Уровень 15+.
+  emoji: 🥾
+  level_req: 15
+  name: Калёный сапоги (кольчуга)
+  price: 1245600
+  slot: feet
+  type: armor
+g_medium_feet_30:
+  armor_weight: medium
+  bonus:
+    defense: 7
+    dex: 2
+  desc: +7 к защите, medium. Уровень 30+.
+  emoji: 🥾
+  level_req: 30
+  name: Закалённый сапоги (кольчуга)
+  price: 1823700
+  slot: feet
+  type: armor
+g_medium_feet_45:
+  armor_weight: medium
+  bonus:
+    defense: 10
+    dex: 3
+  desc: +10 к защите, medium. Уровень 45+.
+  emoji: 🥾
+  level_req: 45
+  name: Рунный сапоги (кольчуга)
+  price: 3339500
+  slot: feet
+  type: armor
+g_medium_feet_60:
+  armor_weight: medium
+  bonus:
+    defense: 13
+    dex: 4
+  desc: +13 к защите, medium. Уровень 60+.
+  emoji: 🥾
+  level_req: 60
+  name: Мифрильный сапоги (кольчуга)
+  price: 3318200
+  slot: feet
+  type: armor
+g_medium_feet_75:
+  armor_weight: medium
+  bonus:
+    defense: 16
+    dex: 5
+  desc: +16 к защите, medium. Уровень 56+.
+  emoji: 🥾
+  level_req: 56
+  remort_req: 1
+  name: Драконий сапоги (кольчуга)
+  price: 3369600
+  slot: feet
+  type: armor
+g_medium_feet_90:
+  armor_weight: medium
+  bonus:
+    defense: 19
+    dex: 6
+  desc: +19 к защите, medium. Уровень 59+.
+  emoji: 🥾
+  level_req: 59
+  remort_req: 2
+  name: Эфирный сапоги (кольчуга)
+  price: 3405300
+  slot: feet
+  type: armor
+g_medium_hands_1:
+  armor_weight: medium
+  bonus:
+    defense: 1
+    dex: 1
+  desc: +1 к защите, medium. Уровень 1+.
+  emoji: 🧤
+  level_req: 1
+  name: Грубый перчатки (кольчуга)
+  price: 181300
+  slot: hands
+  type: armor
+g_medium_hands_15:
+  armor_weight: medium
+  bonus:
+    defense: 4
+    dex: 1
+  desc: +4 к защите, medium. Уровень 15+.
+  emoji: 🧤
+  level_req: 15
+  name: Калёный перчатки (кольчуга)
+  price: 1245600
+  slot: hands
+  type: armor
+g_medium_hands_30:
+  armor_weight: medium
+  bonus:
+    defense: 7
+    dex: 2
+  desc: +7 к защите, medium. Уровень 30+.
+  emoji: 🧤
+  level_req: 30
+  name: Закалённый перчатки (кольчуга)
+  price: 1823700
+  slot: hands
+  type: armor
+g_medium_hands_45:
+  armor_weight: medium
+  bonus:
+    defense: 10
+    dex: 3
+  desc: +10 к защите, medium. Уровень 45+.
+  emoji: 🧤
+  level_req: 45
+  name: Рунный перчатки (кольчуга)
+  price: 3339500
+  slot: hands
+  type: armor
+g_medium_hands_60:
+  armor_weight: medium
+  bonus:
+    defense: 13
+    dex: 4
+  desc: +13 к защите, medium. Уровень 60+.
+  emoji: 🧤
+  level_req: 60
+  name: Мифрильный перчатки (кольчуга)
+  price: 3318200
+  slot: hands
+  type: armor
+g_medium_hands_75:
+  armor_weight: medium
+  bonus:
+    defense: 16
+    dex: 5
+  desc: +16 к защите, medium. Уровень 56+.
+  emoji: 🧤
+  level_req: 56
+  remort_req: 1
+  name: Драконий перчатки (кольчуга)
+  price: 3369600
+  slot: hands
+  type: armor
+g_medium_hands_90:
+  armor_weight: medium
+  bonus:
+    defense: 19
+    dex: 6
+  desc: +19 к защите, medium. Уровень 59+.
+  emoji: 🧤
+  level_req: 59
+  remort_req: 2
+  name: Эфирный перчатки (кольчуга)
+  price: 3405300
+  slot: hands
+  type: armor
+g_medium_head_1:
+  armor_weight: medium
+  bonus:
+    defense: 1
+    dex: 1
+  desc: +1 к защите, medium. Уровень 1+.
+  emoji: ⛑
+  level_req: 1
+  name: Грубый шлем (кольчуга)
+  price: 181300
+  slot: head
+  type: armor
+g_medium_head_15:
+  armor_weight: medium
+  bonus:
+    defense: 5
+    dex: 2
+  desc: +5 к защите, medium. Уровень 15+.
+  emoji: ⛑
+  level_req: 15
+  name: Калёный шлем (кольчуга)
+  price: 1811800
+  slot: head
+  type: armor
+g_medium_head_30:
+  armor_weight: medium
+  bonus:
+    defense: 8
+    dex: 3
+  desc: +8 к защите, medium. Уровень 30+.
+  emoji: ⛑
+  level_req: 30
+  name: Закалённый шлем (кольчуга)
+  price: 2279600
+  slot: head
+  type: armor
+g_medium_head_45:
+  armor_weight: medium
+  bonus:
+    defense: 12
+    dex: 4
+  desc: +12 к защите, medium. Уровень 45+.
+  emoji: ⛑
+  level_req: 45
+  name: Рунный шлем (кольчуга)
+  price: 4145600
+  slot: head
+  type: armor
+g_medium_head_60:
+  armor_weight: medium
+  bonus:
+    defense: 16
+    dex: 5
+  desc: +16 к защите, medium. Уровень 60+.
+  emoji: ⛑
+  level_req: 60
+  name: Мифрильный шлем (кольчуга)
+  price: 4104100
+  slot: head
+  type: armor
+g_medium_head_75:
+  armor_weight: medium
+  bonus:
+    defense: 20
+    dex: 6
+  desc: +20 к защите, medium. Уровень 56+.
+  emoji: ⛑
+  level_req: 56
+  remort_req: 1
+  name: Драконий шлем (кольчуга)
+  price: 4158200
+  slot: head
+  type: armor
+g_medium_head_90:
+  armor_weight: medium
+  bonus:
+    defense: 24
+    dex: 7
+  desc: +24 к защите, medium. Уровень 59+.
+  emoji: ⛑
+  level_req: 59
+  remort_req: 2
+  name: Эфирный шлем (кольчуга)
+  price: 4195800
+  slot: head
+  type: armor
+g_medium_legs_1:
+  armor_weight: medium
+  bonus:
+    defense: 2
+    dex: 1
+  desc: +2 к защите, medium. Уровень 1+.
+  emoji: 👖
+  level_req: 1
+  name: Грубый поножи (кольчуга)
+  price: 253800
+  slot: legs
+  type: armor
+g_medium_legs_15:
+  armor_weight: medium
+  bonus:
+    defense: 7
+    dex: 2
+  desc: +7 к защите, medium. Уровень 15+.
+  emoji: 👖
+  level_req: 15
+  name: Калёный поножи (кольчуга)
+  price: 2264700
+  slot: legs
+  type: armor
+g_medium_legs_30:
+  armor_weight: medium
+  bonus:
+    defense: 12
+    dex: 4
+  desc: +12 к защите, medium. Уровень 30+.
+  emoji: 👖
+  level_req: 30
+  name: Закалённый поножи (кольчуга)
+  price: 3282600
+  slot: legs
+  type: armor
+g_medium_legs_45:
+  armor_weight: medium
+  bonus:
+    defense: 17
+    dex: 5
+  desc: +17 к защите, medium. Уровень 45+.
+  emoji: 👖
+  level_req: 45
+  name: Рунный поножи (кольчуга)
+  price: 5642700
+  slot: legs
+  type: armor
+g_medium_legs_60:
+  armor_weight: medium
+  bonus:
+    defense: 22
+    dex: 7
+  desc: +22 к защите, medium. Уровень 60+.
+  emoji: 👖
+  level_req: 60
+  name: Мифрильный поножи (кольчуга)
+  price: 5675900
+  slot: legs
+  type: armor
+g_medium_legs_75:
+  armor_weight: medium
+  bonus:
+    defense: 28
+    dex: 8
+  desc: +28 к защите, medium. Уровень 57+.
+  emoji: 👖
+  level_req: 57
+  remort_req: 1
+  name: Драконий поножи (кольчуга)
+  price: 5735400
+  slot: legs
+  type: armor
+g_medium_legs_90:
+  armor_weight: medium
+  bonus:
+    defense: 33
+    dex: 10
+  desc: +33 к защите, medium. Уровень 59+.
+  emoji: 👖
+  level_req: 59
+  remort_req: 2
+  name: Эфирный поножи (кольчуга)
+  price: 5837600
+  slot: legs
+  type: armor
+g_shield_1:
+  bonus:
+    defense: 3
+    str: 1
+  desc: +3 к защите. Уровень 1+.
+  emoji: 🛡
+  level_req: 1
+  name: Грубый щит
+  price: 326300
+  slot: shield
+  type: weapon
+  weapon_class: shield
+g_shield_15:
+  bonus:
+    defense: 10
+    str: 1
+  desc: +10 к защите. Уровень 15+.
+  emoji: 🛡
+  level_req: 15
+  name: Калёный щит
+  price: 2604400
+  slot: shield
+  type: weapon
+  weapon_class: shield
+g_shield_30:
+  bonus:
+    defense: 16
+    str: 3
+  desc: +16 к защите. Уровень 30+.
+  emoji: 🛡
+  level_req: 30
+  name: Закалённый щит
+  price: 3738600
+  slot: shield
+  type: weapon
+  weapon_class: shield
+g_shield_45:
+  bonus:
+    defense: 23
+    str: 4
+  desc: +23 к защите. Уровень 45+.
+  emoji: 🛡
+  level_req: 45
+  name: Рунный щит
+  price: 6679100
+  slot: shield
+  type: weapon
+  weapon_class: shield
+g_shield_60:
+  bonus:
+    defense: 30
+    str: 6
+  desc: +30 к защите. Уровень 60+.
+  emoji: 🛡
+  level_req: 60
+  name: Мифрильный щит
+  price: 6811100
+  slot: shield
+  type: weapon
+  weapon_class: shield
+g_shield_75:
+  bonus:
+    defense: 37
+    str: 7
+  desc: +37 к защите. Уровень 57+.
+  emoji: 🛡
+  level_req: 57
+  remort_req: 1
+  name: Драконий щит
+  price: 6810800
+  slot: shield
+  type: weapon
+  weapon_class: shield
+g_shield_90:
+  bonus:
+    defense: 44
+    str: 9
+  desc: +44 к защите. Уровень 60+.
+  emoji: 🛡
+  level_req: 60
+  remort_req: 2
+  name: Эфирный щит
+  price: 6993000
+  slot: shield
+  type: weapon
+  weapon_class: shield
+g_staff_1:
+  bonus:
+    atk: 4
+    int: 1
+  desc: +4 к атаке. Уровень 1+.
+  emoji: 🪄
+  level_req: 1
+  name: Грубый посох
+  price: 398900
+  slot: weapon
+  type: weapon
+  weapon_class: staff
+g_staff_15:
+  bonus:
+    atk: 16
+    int: 2
+  desc: +16 к атаке. Уровень 15+.
+  emoji: 🪄
+  level_req: 15
+  name: Калёный посох
+  price: 4302900
+  slot: weapon
+  type: weapon
+  weapon_class: staff
+g_staff_30:
+  bonus:
+    atk: 28
+    int: 4
+  desc: +28 к атаке. Уровень 30+.
+  emoji: 🪄
+  level_req: 30
+  name: Закалённый посох
+  price: 6200500
+  slot: weapon
+  type: weapon
+  weapon_class: staff
+g_staff_45:
+  bonus:
+    atk: 40
+    int: 6
+  desc: +40 к атаке. Уровень 45+.
+  emoji: 🪄
+  level_req: 45
+  name: Рунный посох
+  price: 11285300
+  slot: weapon
+  type: weapon
+  weapon_class: staff
+g_staff_60:
+  bonus:
+    atk: 52
+    int: 9
+  desc: +52 к атаке. Уровень 60+.
+  emoji: 🪄
+  level_req: 60
+  name: Мифрильный посох
+  price: 11439200
+  slot: weapon
+  type: weapon
+  weapon_class: staff
+g_staff_75:
+  bonus:
+    atk: 64
+    int: 11
+  desc: +64 к атаке. Уровень 58+.
+  emoji: 🪄
+  level_req: 58
+  remort_req: 1
+  name: Драконий посох
+  price: 11542500
+  slot: weapon
+  type: weapon
+  weapon_class: staff
+g_staff_90:
+  bonus:
+    atk: 76
+    int: 13
+  desc: +76 к атаке. Уровень 60+.
+  emoji: 🪄
+  level_req: 60
+  remort_req: 2
+  name: Эфирный посох
+  price: 11614400
+  slot: weapon
+  type: weapon
+  weapon_class: staff
+g_sword_1:
+  bonus:
+    atk: 6
+  desc: +6 к атаке. Уровень 1+.
+  emoji: 🗡
+  level_req: 1
+  name: Грубый меч
+  price: 435100
+  slot: weapon
+  type: weapon
+  weapon_class: sword
+g_sword_15:
+  bonus:
+    atk: 18
+  desc: +18 к атаке. Уровень 15+.
+  emoji: 🗡
+  level_req: 15
+  name: Калёный меч
+  price: 4076500
+  slot: weapon
+  type: weapon
+  weapon_class: sword
+g_sword_30:
+  bonus:
+    atk: 32
+  desc: +32 к атаке. Уровень 30+.
+  emoji: 🗡
+  level_req: 30
+  name: Закалённый меч
+  price: 5835800
+  slot: weapon
+  type: weapon
+  weapon_class: sword
+g_sword_45:
+  bonus:
+    atk: 46
+  desc: +46 к атаке. Уровень 45+.
+  emoji: 🗡
+  level_req: 45
+  name: Рунный меч
+  price: 10594400
+  slot: weapon
+  type: weapon
+  weapon_class: sword
+g_sword_60:
+  bonus:
+    atk: 59
+  desc: +59 к атаке. Уровень 60+.
+  emoji: 🗡
+  level_req: 60
+  name: Мифрильный меч
+  price: 10304000
+  slot: weapon
+  type: weapon
+  weapon_class: sword
+g_sword_75:
+  bonus:
+    atk: 72
+  desc: +72 к атаке. Уровень 58+.
+  emoji: 🗡
+  level_req: 58
+  remort_req: 1
+  name: Драконий меч
+  price: 10323700
+  slot: weapon
+  type: weapon
+  weapon_class: sword
+g_sword_90:
+  bonus:
+    atk: 86
+  desc: +86 к атаке. Уровень 60+.
+  emoji: 🗡
+  level_req: 60
+  remort_req: 2
+  name: Эфирный меч
+  price: 10459100
+  slot: weapon
+  type: weapon
+  weapon_class: sword
+g_two_handed_1:
+  bonus:
+    atk: 12
+    str: 1
+  desc: +12 к атаке. Уровень 1+.
+  emoji: ⚔️
+  level_req: 1
+  name: Грубый двуручный меч
+  price: 979000
+  slot: weapon
+  type: weapon
+  weapon_class: two_handed
+g_two_handed_15:
+  bonus:
+    atk: 31
+    str: 2
+  desc: +31 к атаке. Уровень 15+.
+  emoji: ⚔️
+  level_req: 15
+  name: Калёный двуручный меч
+  price: 7700000
+  slot: weapon
+  type: weapon
+  weapon_class: two_handed
+g_two_handed_30:
+  bonus:
+    atk: 51
+    str: 4
+  desc: +51 к атаке. Уровень 30+.
+  emoji: ⚔️
+  level_req: 30
+  name: Закалённый двуручный меч
+  price: 10395000
+  slot: weapon
+  type: weapon
+  weapon_class: two_handed
+g_two_handed_45:
+  bonus:
+    atk: 71
+    str: 6
+  desc: +71 к атаке. Уровень 45+.
+  emoji: ⚔️
+  level_req: 45
+  name: Рунный двуручный меч
+  price: 18425000
+  slot: weapon
+  type: weapon
+  weapon_class: two_handed
+g_two_handed_60:
+  bonus:
+    atk: 92
+    str: 9
+  desc: +92 к атаке. Уровень 60+.
+  emoji: ⚔️
+  level_req: 60
+  name: Мифрильный двуручный меч
+  price: 18425000
+  slot: weapon
+  type: weapon
+  weapon_class: two_handed
+g_two_handed_75:
+  bonus:
+    atk: 112
+    str: 11
+  desc: +112 к атаке. Уровень 58+.
+  emoji: ⚔️
+  level_req: 58
+  remort_req: 1
+  name: Драконий двуручный меч
+  price: 18425000
+  slot: weapon
+  type: weapon
+  weapon_class: two_handed
+g_two_handed_90:
+  bonus:
+    atk: 132
+    str: 13
+  desc: +132 к атаке. Уровень 60+.
+  emoji: ⚔️
+  level_req: 60
+  remort_req: 2
+  name: Эфирный двуручный меч
+  price: 18425000
+  slot: weapon
+  type: weapon
+  weapon_class: two_handed

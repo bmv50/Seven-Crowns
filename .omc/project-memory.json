@@ -1,0 +1,265 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1783433645587,
+  "projectRoot": "C:\\Users\\admin\\Claude\\Projects\\TeleMud\\echo_of_the_deep\\echo_of_the_deep",
+  "techStack": {
+    "languages": [
+      {
+        "name": "Python",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "requirements.txt"
+        ]
+      }
+    ],
+    "frameworks": [],
+    "packageManager": "pip",
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": null,
+    "testCommand": null,
+    "lintCommand": null,
+    "devCommand": null,
+    "scripts": {}
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "docs",
+      "scripts"
+    ],
+    "gitBranches": null
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "ai": {
+      "path": "ai",
+      "purpose": null,
+      "fileCount": 8,
+      "lastAccessed": 1783433645561,
+      "keyFiles": [
+        "actions.py",
+        "cost.py",
+        "god.py",
+        "npc_ai.py",
+        "provider.py"
+      ]
+    },
+    "bot": {
+      "path": "bot",
+      "purpose": null,
+      "fileCount": 7,
+      "lastAccessed": 1783433645561,
+      "keyFiles": [
+        "commands.py",
+        "item_images.py",
+        "main.py",
+        "mapgen.py",
+        "mudnames.py"
+      ]
+    },
+    "data": {
+      "path": "data",
+      "purpose": "Data files",
+      "fileCount": 26,
+      "lastAccessed": 1783433645562,
+      "keyFiles": [
+        "achievements.yaml",
+        "classes.yaml",
+        "collections.yaml",
+        "daily.yaml",
+        "dungeons.yaml"
+      ]
+    },
+    "docs": {
+      "path": "docs",
+      "purpose": "Documentation",
+      "fileCount": 15,
+      "lastAccessed": 1783433645562,
+      "keyFiles": [
+        "ARCHITECTURE.md",
+        "CONTENT_SCHEMA.md",
+        "GAME_MECHANICS_PROPOSAL.md",
+        "image_generation.md",
+        "LOOT_RARITY.md"
+      ]
+    },
+    "engine": {
+      "path": "engine",
+      "purpose": null,
+      "fileCount": 44,
+      "lastAccessed": 1783433645563,
+      "keyFiles": [
+        "achievements.py",
+        "arena.py",
+        "auction.py",
+        "bestiary.py",
+        "catchup.py"
+      ]
+    },
+    "graphify-out": {
+      "path": "graphify-out",
+      "purpose": null,
+      "fileCount": 5,
+      "lastAccessed": 1783433645564,
+      "keyFiles": [
+        "graph.html",
+        "graph.json",
+        "GRAPH_REPORT.md",
+        "manifest.json"
+      ]
+    },
+    "images": {
+      "path": "images",
+      "purpose": null,
+      "fileCount": 3,
+      "lastAccessed": 1783433645565,
+      "keyFiles": [
+        "image_seeds.json",
+        "prompts.json",
+        "_map_preview.png"
+      ]
+    },
+    "Instruction": {
+      "path": "Instruction",
+      "purpose": null,
+      "fileCount": 6,
+      "lastAccessed": 1783433645565,
+      "keyFiles": [
+        "Генерация_изображений.md",
+        "Дикие_зоны.md",
+        "Живые_NPC.md",
+        "Ленивая_симуляция.md",
+        "Мировые_события_и_сезоны.md"
+      ]
+    },
+    "scripts": {
+      "path": "scripts",
+      "purpose": "Build/utility scripts",
+      "fileCount": 6,
+      "lastAccessed": 1783433645566,
+      "keyFiles": [
+        "gemini_peer.py",
+        "gen_items.py",
+        "gen_item_images.py",
+        "gen_wild_preview.py",
+        "gen_world_images.py"
+      ]
+    },
+    "TeleMud": {
+      "path": "TeleMud",
+      "purpose": null,
+      "fileCount": 4,
+      "lastAccessed": 1783433645566,
+      "keyFiles": [
+        "go.mod",
+        "play.bat",
+        "play.py",
+        "README.md"
+      ]
+    },
+    "__pycache__": {
+      "path": "__pycache__",
+      "purpose": null,
+      "fileCount": 5,
+      "lastAccessed": 1783433645567,
+      "keyFiles": [
+        "gen_images_openai.cpython-310.pyc",
+        "sim_compare.cpython-310.pyc",
+        "sim_endgame.cpython-310.pyc",
+        "sim_loot.cpython-310.pyc",
+        "sim_player.cpython-310.pyc"
+      ]
+    },
+    "~": {
+      "path": "~",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1783433645567,
+      "keyFiles": []
+    },
+    "TeleMud\\docs": {
+      "path": "TeleMud\\docs",
+      "purpose": "Documentation",
+      "fileCount": 7,
+      "lastAccessed": 1783433645570,
+      "keyFiles": [
+        "architecture.md",
+        "data_flow.md",
+        "modules.md"
+      ]
+    }
+  },
+  "hotPaths": [
+    {
+      "path": "ai\\provider.py",
+      "accessCount": 1,
+      "lastAccessed": 1783433876097,
+      "type": "file"
+    },
+    {
+      "path": "ai\\__init__.py",
+      "accessCount": 1,
+      "lastAccessed": 1783433876483,
+      "type": "file"
+    },
+    {
+      "path": "ai\\cost.py",
+      "accessCount": 1,
+      "lastAccessed": 1783433883338,
+      "type": "file"
+    },
+    {
+      "path": "ai\\actions.py",
+      "accessCount": 1,
+      "lastAccessed": 1783433883792,
+      "type": "file"
+    },
+    {
+      "path": "engine\\notify.py",
+      "accessCount": 1,
+      "lastAccessed": 1783433884164,
+      "type": "file"
+    },
+    {
+      "path": "bot\\main.py",
+      "accessCount": 1,
+      "lastAccessed": 1783433890846,
+      "type": "file"
+    },
+    {
+      "path": "engine\\rarity.py",
+      "accessCount": 1,
+      "lastAccessed": 1783433891716,
+      "type": "file"
+    },
+    {
+      "path": "engine\\persist.py",
+      "accessCount": 1,
+      "lastAccessed": 1783433892044,
+      "type": "file"
+    },
+    {
+      "path": "engine\\sockets.py",
+      "accessCount": 1,
+      "lastAccessed": 1783433897482,
+      "type": "file"
+    },
+    {
+      "path": "engine\\money.py",
+      "accessCount": 1,
+      "lastAccessed": 1783433898229,
+      "type": "file"
+    }
+  ],
+  "userDirectives": []
+}

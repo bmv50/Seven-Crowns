@@ -1,0 +1,86 @@
+# =====================================================================
+#  РАСЫ
+#  attr_mod: модификаторы к базовым атрибутам класса (плоские)
+#  hp_mod / mp_mod: множители к макс. HP / MP (1.0 = без изменений)
+#  passives: пассивные бонусы расы:
+#    crit, dodge, damage_reduction — плюсуются к классовым
+#    xp_bonus — множитель опыта (1.1 = +10%)
+#    gold_find — множитель золота с мобов
+#    lifesteal — доля урона, возвращаемая как HP (вампиризм)
+#    regen — HP, восстанавливаемые за каждый боевой тик вне урона
+#  resist: снижение урона определённого вида (пока флейвор-задел)
+# =====================================================================
+
+human:
+  name: "Человек"
+  start_room: village
+  respawn_room: temple   # возрождение в святилище у площади
+  emoji: "🧑"
+  desc: "Универсалы и быстрые ученики. Сбалансированы во всём и получают больше опыта."
+  attr_mod: { str: 1, dex: 1, int: 1, spi: 1 }
+  hp_mod: 1.0
+  mp_mod: 1.0
+  passives:
+    xp_bonus: 1.15
+  allowed_classes: [warrior, mage, rogue, priest, paladin, necromancer]
+
+orc:
+  name: "Орк"
+  start_room: orc_camp
+  respawn_room: orc_warlord_tent
+  emoji: "🧌"
+  desc: "Свирепые гиганты. Огромный запас здоровья и сила, но магия даётся туго."
+  attr_mod: { str: 3, dex: 0, int: -2, spi: -1 }
+  hp_mod: 1.25
+  mp_mod: 0.8
+  passives:
+    damage_reduction: 0.05
+    xp_bonus: 0.85
+    atk_pct: 0.20
+  allowed_classes: [warrior, rogue, priest, paladin, necromancer]
+
+elf:
+  name: "Эльф"
+  start_room: elf_glade
+  respawn_room: elf_moonspring
+  emoji: "🧝"
+  desc: "Дети леса с врождённой магией и меткостью. Хрупки телом, но ловки и мудры."
+  attr_mod: { str: -1, dex: 2, int: 2, spi: 1 }
+  hp_mod: 0.9
+  mp_mod: 1.2
+  passives:
+    crit: 0.05
+    dodge: 0.05
+    xp_bonus: 1.0
+  allowed_classes: [warrior, mage, rogue, priest, paladin, necromancer]
+
+dwarf:
+  name: "Гном"
+  start_room: dwarf_hold
+  respawn_room: dwarf_tavern
+  emoji: "🧔"
+  desc: "Кряжистые мастера подземелий. Прочны, как камень, и богатеют быстрее прочих."
+  attr_mod: { str: 2, dex: -1, int: 0, spi: 2 }
+  hp_mod: 1.15
+  mp_mod: 1.0
+  passives:
+    damage_reduction: 0.08
+    gold_find: 1.25
+    xp_bonus: 0.9
+  allowed_classes: [warrior, mage, priest, paladin, necromancer]
+
+goblin:
+  name: "Гоблин"
+  start_room: goblin_warren
+  respawn_room: gob_nochlezhka
+  emoji: "👺"
+  desc: "Юркие хитрецы. Слабы в лоб, но увёртливы, удачливы на добычу и больно бьют исподтишка."
+  attr_mod: { str: -1, dex: 3, int: 1, spi: -1 }
+  hp_mod: 0.85
+  mp_mod: 1.0
+  passives:
+    crit: 0.08
+    dodge: 0.08
+    gold_find: 1.15
+    xp_bonus: 1.05
+  allowed_classes: [mage, rogue, necromancer]

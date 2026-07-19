@@ -1,0 +1,72 @@
+# Достижения: id -> {name, desc, type, target, title, gold(бронза)}
+# type: kills (всего убийств) | level | gold | quests (выполнено)
+первая_кровь:
+  name: "Первая кровь"
+  desc: "Одолей своего первого врага."
+  type: kills
+  target: 1
+  title: "Новобранец"
+  gold: 1000
+охотник:
+  name: "Охотник"
+  desc: "Одолей 50 врагов."
+  type: kills
+  target: 50
+  title: "Охотник"
+  gold: 5000
+истребитель:
+  name: "Истребитель"
+  desc: "Одолей 250 врагов."
+  type: kills
+  target: 250
+  title: "Истребитель"
+  gold: 20000
+легенда_боя:
+  name: "Легенда боя"
+  desc: "Одолей 1000 врагов."
+  type: kills
+  target: 1000
+  title: "Легенда"
+  gold: 100000
+испытанный:
+  name: "Испытанный"
+  desc: "Достигни 10 уровня."
+  type: level
+  target: 10
+  title: "Испытанный"
+  gold: 3000
+ветеран:
+  name: "Ветеран"
+  desc: "Достигни 30 уровня."
+  type: level
+  target: 30
+  title: "Ветеран"
+  gold: 12000
+мастер:
+  name: "Мастер"
+  desc: "Достигни 60 уровня."
+  type: level
+  target: 60
+  title: "Мастер"
+  gold: 50000
+доброволец:
+  name: "Доброволец"
+  desc: "Выполни 5 заданий."
+  type: quests
+  target: 5
+  title: "Доброволец"
+  gold: 4000
+герой_народа:
+  name: "Герой народа"
+  desc: "Выполни 25 заданий."
+  type: quests
+  target: 25
+  title: "Герой народа"
+  gold: 25000
+богач:
+  name: "Богач"
+  desc: "Накопи 5 золотых одновременно."
+  type: gold
+  target: 50000
+  title: "Богач"
+  gold: 0

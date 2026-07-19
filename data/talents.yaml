@@ -1,0 +1,26 @@
+# Таланты по классам. per_rank: atk_pct, hp_pct, crit, dmgred, lifesteal.
+# Очко таланта даётся за каждый уровень. Сброс бесплатный.
+# ── воин ──
+war_berserk:   {class: warrior, name: "Берсерк", desc: "+3% к атаке за ранг.", max_rank: 5, per_rank: {atk_pct: 0.03}}
+war_tough:     {class: warrior, name: "Несокрушимость", desc: "+3% к здоровью за ранг.", max_rank: 5, per_rank: {hp_pct: 0.03}}
+war_hide:      {class: warrior, name: "Толстая шкура", desc: "+2% снижения урона за ранг.", max_rank: 5, per_rank: {dmgred: 0.02}}
+# ── маг ──
+mage_arcana:   {class: mage, name: "Чародейство", desc: "+4% к атаке за ранг.", max_rank: 5, per_rank: {atk_pct: 0.04}}
+mage_focus:    {class: mage, name: "Сосредоточение", desc: "+2% крита за ранг.", max_rank: 5, per_rank: {crit: 0.02}}
+mage_ward:     {class: mage, name: "Мана-щит", desc: "+1.5% снижения урона за ранг.", max_rank: 5, per_rank: {dmgred: 0.015}}
+# ── разбойник ──
+rog_deadly:    {class: rogue, name: "Смертельность", desc: "+3% крита за ранг.", max_rank: 5, per_rank: {crit: 0.03}}
+rog_carve:     {class: rogue, name: "Резня", desc: "+3% к атаке за ранг.", max_rank: 5, per_rank: {atk_pct: 0.03}}
+rog_leech:     {class: rogue, name: "Кровопийца", desc: "+2% вампиризма за ранг.", max_rank: 5, per_rank: {lifesteal: 0.02}}
+# ── жрец ──
+pri_grace:     {class: priest, name: "Благодать", desc: "+3% к здоровью за ранг.", max_rank: 5, per_rank: {hp_pct: 0.03}}
+pri_light:     {class: priest, name: "Светлая сила", desc: "+3% к атаке за ранг.", max_rank: 5, per_rank: {atk_pct: 0.03}}
+pri_faith:     {class: priest, name: "Защита веры", desc: "+2% снижения урона за ранг.", max_rank: 5, per_rank: {dmgred: 0.02}}
+# ── паладин ──
+pal_might:     {class: paladin, name: "Святая мощь", desc: "+3% к атаке за ранг.", max_rank: 5, per_rank: {atk_pct: 0.03}}
+pal_shield:    {class: paladin, name: "Щит света", desc: "+2.5% снижения урона за ранг.", max_rank: 5, per_rank: {dmgred: 0.025}}
+pal_resolve:   {class: paladin, name: "Стойкость", desc: "+3% к здоровью за ранг.", max_rank: 5, per_rank: {hp_pct: 0.03}}
+# ── некромант ──
+nec_dark:      {class: necromancer, name: "Тёмная магия", desc: "+4% к атаке за ранг.", max_rank: 5, per_rank: {atk_pct: 0.04}}
+nec_vamp:      {class: necromancer, name: "Жажда жизни", desc: "+3% вампиризма за ранг.", max_rank: 5, per_rank: {lifesteal: 0.03}}
+nec_bone:      {class: necromancer, name: "Костяная броня", desc: "+1.5% снижения урона за ранг.", max_rank: 5, per_rank: {dmgred: 0.015}}

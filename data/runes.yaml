@@ -1,0 +1,96 @@
+rune_crit_greater:
+  desc: 'Руна для сокета: +7 к крита. Вставляется в гнездо снаряжения.'
+  emoji: ⚫
+  name: Большая руна Крита
+  price: 60000
+  rune_bonus:
+    crit: 7
+  type: rune
+rune_crit_lesser:
+  desc: 'Руна для сокета: +3 к крита. Вставляется в гнездо снаряжения.'
+  emoji: ⚫
+  name: Малая руна Крита
+  price: 15000
+  rune_bonus:
+    crit: 3
+  type: rune
+rune_def_greater:
+  desc: 'Руна для сокета: +7 к защиты. Вставляется в гнездо снаряжения.'
+  emoji: 🟡
+  name: Большая руна Защиты
+  price: 60000
+  rune_bonus:
+    defense: 7
+  type: rune
+rune_def_lesser:
+  desc: 'Руна для сокета: +3 к защиты. Вставляется в гнездо снаряжения.'
+  emoji: 🟡
+  name: Малая руна Защиты
+  price: 15000
+  rune_bonus:
+    defense: 3
+  type: rune
+rune_dex_greater:
+  desc: 'Руна для сокета: +7 к ловкости. Вставляется в гнездо снаряжения.'
+  emoji: 🟢
+  name: Большая руна Ловкости
+  price: 60000
+  rune_bonus:
+    dex: 7
+  type: rune
+rune_dex_lesser:
+  desc: 'Руна для сокета: +3 к ловкости. Вставляется в гнездо снаряжения.'
+  emoji: 🟢
+  name: Малая руна Ловкости
+  price: 15000
+  rune_bonus:
+    dex: 3
+  type: rune
+rune_int_greater:
+  desc: 'Руна для сокета: +7 к интеллекта. Вставляется в гнездо снаряжения.'
+  emoji: 🔵
+  name: Большая руна Интеллекта
+  price: 60000
+  rune_bonus:
+    int: 7
+  type: rune
+rune_int_lesser:
+  desc: 'Руна для сокета: +3 к интеллекта. Вставляется в гнездо снаряжения.'
+  emoji: 🔵
+  name: Малая руна Интеллекта
+  price: 15000
+  rune_bonus:
+    int: 3
+  type: rune
+rune_spi_greater:
+  desc: 'Руна для сокета: +7 к духа. Вставляется в гнездо снаряжения.'
+  emoji: 🟣
+  name: Большая руна Духа
+  price: 60000
+  rune_bonus:
+    spi: 7
+  type: rune
+rune_spi_lesser:
+  desc: 'Руна для сокета: +3 к духа. Вставляется в гнездо снаряжения.'
+  emoji: 🟣
+  name: Малая руна Духа
+  price: 15000
+  rune_bonus:
+    spi: 3
+  type: rune
+rune_str_greater:
+  desc: 'Руна для сокета: +7 к силы. Вставляется в гнездо снаряжения.'
+  emoji: 🔴
+  name: Большая руна Силы
+  price: 60000
+  rune_bonus:
+    str: 7
+  type: rune
+rune_str_lesser:
+  desc: 'Руна для сокета: +3 к силы. Вставляется в гнездо снаряжения.'
+  emoji: 🔴
+  name: Малая руна Силы
+  price: 15000
+  rune_bonus:
+    str: 3
+  type: rune

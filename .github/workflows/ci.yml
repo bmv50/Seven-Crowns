@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONIOENCODING: utf-8
+      PYTHONUTF8: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt -c constraints.txt
+
+      - name: Scan for secrets
+        run: python scripts/check_secrets.py
+
+      - name: Validate content (YAML/ссылочная целостность)
+        run: python -m engine.content
+
+      - name: Compile check (engine/bot/ai/scripts)
+        run: python -m compileall engine bot ai scripts -q
+
+      - name: Run tests
+        run: python run_tests.py

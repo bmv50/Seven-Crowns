@@ -1,0 +1,95 @@
+# Недельные наборы заданий (ротация по ISO-неделе, engine/weekly.py:_pick).
+# type: kill_any | kill_boss | daily_claims | heal_ally | dungeon_group |
+#       explore | craft_item | sell_lot | faction_rep | dtype_kill | event_talk.
+#
+# Этап 6.1: разнообразие целей — в каждом наборе НЕ БОЛЕЕ ОДНОЙ kill-задачи
+# (kill_any/kill_boss), плюс ОДНА daily_claims (не грайндовая, держит суточный
+# ритм — есть в КАЖДОМ наборе, см. ниже почему) и ДВЕ задачи из новых типов
+# (помощь союзнику, групповой данж, исследование, крафт, торговля, репутация,
+# точный удар по уязвимости, разговор во время события).
+#
+# ВАЖНО: daily_claims присутствует в КАЖДОМ из 8 наборов (не только «на удачу»)
+# — это не отступление от разнообразия, а требование существующего теста
+# test_retention.py [14] («Интеграция: daily.claim -> weekly.on_daily_claim»):
+# daily.claim() зовёт weekly.on_daily_claim(ch) БЕЗ today=..., то есть всегда
+# по РЕАЛЬНОЙ сегодняшней дате — а значит какой бы набор ни выпал на реальную
+# сегодняшнюю неделю в момент прогона теста, в нём обязана быть daily_claims-
+# задача, иначе тест ловит гонку (см. отчёт синтеза Этапа 6.1).
+#
+# ВАЖНО: week_hunt намеренно оставлен в исходном виде (2 kill-задачи, без
+# добавления новых типов) и стоит ТРЕТЬИМ по счёту в этом файле — так
+# _pick(week) по-прежнему выбирает его для ISO-недели 2026-W28, на что
+# завязаны существующие проверки test_retention.py [10]/[11]/[12]
+# (today="2026-07-06"). Остальные 5 старых наборов переписаны под новое
+# правило, плюс добавлены 2 новых (week_market, week_pilgrim).
+
+week_bosses:
+  name: "Охота на боссов"
+  tasks:
+    - {id: boss, type: kill_boss, count: 1, name: "Сразить любого босса"}
+    - {id: daily2, type: daily_claims, count: 2, name: "Забрать 2 ежедневные награды"}
+    - {id: heal, type: heal_ally, count: 8, name: "Исцелить союзников заклинанием 8 раз"}
+    - {id: rep, type: faction_rep, count: 40, name: "Заслужить 40 очков репутации любой фракции"}
+  reward: {xp: 1200, gold: 20000, items: [эликсир]}
+
+week_cull:
+  name: "Большая зачистка"
+  tasks:
+    - {id: kills, type: kill_any, count: 90, name: "Одолеть 90 врагов"}
+    - {id: daily5, type: daily_claims, count: 5, name: "Забрать 5 ежедневных наград"}
+    - {id: craft, type: craft_item, count: 3, name: "Сковать 3 предмета у кузнеца"}
+    - {id: explore, type: explore, count: 12, name: "Обойти 12 новых уголков мира"}
+  reward: {xp: 900, gold: 16000, items: [большое_зелье]}
+
+week_hunt:
+  name: "Неделя охоты"
+  tasks:
+    - {id: kills, type: kill_any, count: 60, name: "Одолеть 60 врагов"}
+    - {id: boss, type: kill_boss, count: 1, name: "Сразить любого босса"}
+    - {id: daily3, type: daily_claims, count: 3, name: "Забрать 3 ежедневные награды"}
+  reward: {xp: 800, gold: 15000, items: [большое_зелье]}
+
+week_expedition:
+  name: "Экспедиция глубин"
+  tasks:
+    - {id: daily3, type: daily_claims, count: 3, name: "Забрать 3 ежедневные награды"}
+    - {id: dungeon, type: dungeon_group, count: 1, name: "Пройти подземелье в группе (≥2 героя)"}
+    - {id: dtype, type: dtype_kill, count: 8, name: "Одолеть 8 врагов их уязвимостью"}
+    - {id: talk, type: event_talk, count: 1, name: "Поговорить с NPC во время мирового события"}
+  reward: {xp: 1000, gold: 18000, items: [эликсир]}
+
+week_veteran:
+  name: "Испытание ветерана"
+  tasks:
+    - {id: bosses, type: kill_boss, count: 2, name: "Сразить 2 боссов"}
+    - {id: daily4, type: daily_claims, count: 4, name: "Забрать 4 ежедневные награды"}
+    - {id: sell, type: sell_lot, count: 1, name: "Продать лот на аукционе"}
+    - {id: rep, type: faction_rep, count: 60, name: "Заслужить 60 очков репутации любой фракции"}
+  reward: {xp: 1500, gold: 25000, items: [осколок_первотумана]}
+
+week_patrol:
+  name: "Дозор рубежей"
+  tasks:
+    - {id: kills, type: kill_any, count: 50, name: "Одолеть 50 врагов"}
+    - {id: daily3, type: daily_claims, count: 3, name: "Забрать 3 ежедневные награды"}
+    - {id: explore, type: explore, count: 10, name: "Обойти 10 новых уголков мира"}
+    - {id: heal, type: heal_ally, count: 6, name: "Исцелить союзников заклинанием 6 раз"}
+  reward: {xp: 750, gold: 14000, items: [большое_зелье]}
+
+week_market:
+  name: "Ярмарка и ремесло"
+  tasks:
+    - {id: daily2, type: daily_claims, count: 2, name: "Забрать 2 ежедневные награды"}
+    - {id: craft, type: craft_item, count: 2, name: "Сковать 2 предмета у кузнеца"}
+    - {id: sell, type: sell_lot, count: 1, name: "Продать лот на аукционе"}
+    - {id: rep, type: faction_rep, count: 30, name: "Заслужить 30 очков репутации любой фракции"}
+  reward: {xp: 850, gold: 15500, items: [эликсир]}
+
+week_pilgrim:
+  name: "Паломничество странника"
+  tasks:
+    - {id: daily3, type: daily_claims, count: 3, name: "Забрать 3 ежедневные награды"}
+    - {id: explore, type: explore, count: 15, name: "Обойти 15 новых уголков мира"}
+    - {id: talk, type: event_talk, count: 1, name: "Поговорить с NPC во время мирового события"}
+    - {id: dtype, type: dtype_kill, count: 6, name: "Одолеть 6 врагов их слабостью"}
+  reward: {xp: 950, gold: 16500, items: [большое_зелье]}

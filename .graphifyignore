@@ -1,0 +1,12 @@
+# Граф только по коду (внешние LLM-API недоступны из песочницы)
+docs/
+images/
+graphify-out/
+__pycache__/
+*.md
+*.yaml
+*.yml
+*.json
+*.txt
+*.png
+*.jpg

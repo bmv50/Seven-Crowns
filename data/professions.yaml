@@ -1,0 +1,18 @@
+# Профессии-добыча: уровень навыка растёт за сбор; узлы привязаны к комнатам.
+professions:
+  mining:     {name: "Горное дело",  emoji: "⛏", desc: "Добыча руды и самоцветов в шахтах и пещерах (Штольни, Глубокая шахта, Кристальная пещера). Узлы появляются по мере роста навыка."}
+  herbalism:  {name: "Травничество", emoji: "🌿", desc: "Сбор трав и эфирной пыли в болотах и лесных полянах."}
+  fishing:    {name: "Рыбная ловля", emoji: "🎣", desc: "Ловля жемчуга и рыбы у воды — колодцы, заводи, гавань."}
+nodes:
+  mine_shaft:
+    - {prof: mining, item: железная_руда, skill_req: 1, xp: 15, cd: 45}
+  mine_deep:
+    - {prof: mining, item: самоцвет, skill_req: 8, xp: 35, cd: 90}
+  crystal_cave:
+    - {prof: mining, item: осколок_голема, skill_req: 5, xp: 25, cd: 60}
+  swamp_heart:
+    - {prof: herbalism, item: болотный_цветок, skill_req: 1, xp: 15, cd: 45}
+  forest_glade:
+    - {prof: herbalism, item: эфирная_пыль, skill_req: 3, xp: 20, cd: 60}
+  well:
+    - {prof: fishing, item: солёный_жемчуг, skill_req: 1, xp: 18, cd: 50}

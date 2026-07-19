@@ -1,0 +1,9 @@
+# Точные версии зависимостей (см. requirements.txt для диапазонов).
+# Зафиксировано на 2026-07-11 по последним стабильным релизам PyPI.
+# Использование: pip install -r requirements.txt -c constraints.txt
+aiogram==3.29.1
+asyncpg==0.31.0
+PyYAML==6.0.3
+python-dotenv==1.2.2
+aiohttp-socks==0.11.0
+Pillow==12.3.0

@@ -1,0 +1,48 @@
+# Секреты и конфиги
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Локальные данные/логи
+*.log
+saves.json
+
+# Кэш симуляций (воспроизводится sim_rules2.py)
+.sim_rules2_cache.json
+
+# Сгенерированные изображения (240+ МБ; воспроизводятся gen_images*.py)
+images/**/*.png
+
+# Редакторы
+.vscode/
+.idea/
+*.swp
+
+# ОС
+.DS_Store
+Thumbs.db
+
+# Рантайм-данные dev-режима (в проде живут в PostgreSQL)
+guilds.json
+auction.json
+territory.json
+
+# Кэши инструментов анализа/тестов (воспроизводимы)
+graphify-out/
+.pytest_cache/
+
+# Артефакт-папка "~" (случайно созданная, не код проекта)
+~/
+
+# Дампы БД (создаются scripts/backup.sh и compose-контейнером backup)
+backups/
+
+# Go-референс TeleMud: лицензия неизвестна — не публикуем в открытый репозиторий.
+# Если захочешь включить его в репо, убери строку ниже, проверив происхождение.
+TeleMud/

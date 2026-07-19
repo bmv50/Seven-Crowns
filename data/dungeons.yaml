@@ -1,0 +1,77 @@
+# Подземелья: цепочка комнат с мини-боссом. Вход с кулдауном, бонус-награда за босса.
+mines:
+  name: "Рудники Каменолома"
+  desc: "Заброшенные шахты, где пробудился кристальный голем."
+  entrance_room: mine_entrance
+  start_room: mine_shaft
+  boss_mob: кристальный_голем
+  boss_room: mine_deep
+  cooldown: 1800       # 30 минут между забегами
+  min_level: 5
+  reward: {gold: 15500, xp: 800}
+
+forest:
+  name: "Логово Вожака"
+  desc: "В глубине Шепчущего леса засел падший король волков."
+  entrance_room: forest_edge
+  start_room: forest_deep
+  boss_mob: падший_король
+  boss_room: forest_deep
+  cooldown: 2400
+  min_level: 8
+  reward: {gold: 15500, xp: 1400}
+
+swamp:
+  name: "Гнилое Сердце"
+  desc: "В стоячей воде Гнилотопи что-то тянет утопленников на глубину."
+  entrance_room: swamp_road
+  start_room: swamp_heart
+  boss_mob: утопленник
+  boss_room: swamp_heart
+  cooldown: 1800
+  min_level: 5
+  reward: {gold: 15500, xp: 900, item: эликсир}
+
+windpass:
+  name: "Гнездо Изгоев"
+  desc: "На вершине Перевала засел главарь горных изгоев со своей стаей."
+  entrance_room: windpass_low
+  start_room: windpass_gorge
+  boss_mob: главарь_изгоев
+  boss_room: windpass_summit
+  cooldown: 2400
+  min_level: 8
+  reward: {gold: 15500, xp: 1600}
+
+ruins:
+  name: "Тронный Зал Эха"
+  desc: "Среди Руин Эха на истлевшем троне пробудился падший король."
+  entrance_room: ruin_gate
+  start_room: throne
+  boss_mob: падший_король
+  boss_room: throne
+  cooldown: 3000
+  min_level: 10
+  reward: {gold: 24000, xp: 2400, item: большое_зелье}
+
+ashwaste:
+  name: "Чертог Пепельного Легиона"
+  desc: "В зале лейтенанта Пепельных Пустошей ждёт закованный в пепел рыцарь."
+  entrance_room: ash_waste_edge
+  start_room: ash_pyre_court
+  boss_mob: пепельный_рыцарь
+  boss_room: ash_lieutenant_hall
+  cooldown: 3000
+  min_level: 12
+  reward: {gold: 24000, xp: 3200, item: эликсир}
+
+deepcity:
+  name: "Затонувший Престол"
+  desc: "На дне Затонувшего Города бьётся Сердце Глуби — и оно голодно."
+  entrance_room: deep_descent
+  start_room: deep_plaza
+  boss_mob: сердце_глуби
+  boss_room: deep_throne
+  cooldown: 3600
+  min_level: 14
+  reward: {gold: 36500, xp: 4400, item: большое_зелье}

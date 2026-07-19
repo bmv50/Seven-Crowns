@@ -1,0 +1,36 @@
+# Мировые и РЕЙД-боссы (raid: true → гарантированный 🔴 божественный дроп при групповом убийстве).
+- boss: падший_король
+  room: forest_deep
+  interval: 1800
+- boss: пепельный_рыцарь
+  room: mine_deep
+  interval: 2100
+- boss: острожный_буревестник
+  room: swamp_heart
+  interval: 2400
+- boss: сердце_глуби
+  room: deep_throne
+  interval: 5400
+  raid: true
+- boss: верховный_жрец_глуби
+  room: deep_temple
+  interval: 4800
+  raid: true
+- boss: бездонная_тварь
+  room: deep_abyss
+  interval: 4200
+  raid: true
+
+# Сердце Бездны (эндгейм) — рейд-боссы
+- boss: глашатай_бездны
+  room: abyss_warrens
+  interval: 2400
+  raid: true
+- boss: титан_первотумана
+  room: abyss_sanctum
+  interval: 3000
+  raid: true
+- boss: предвечная_бездна
+  room: abyss_core
+  interval: 3600
+  raid: true
