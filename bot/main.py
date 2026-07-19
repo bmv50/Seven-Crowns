@@ -379,10 +379,21 @@ async def send(uid: int, text: str):
     try:
         await bot.send_message(uid, text, parse_mode="Markdown")
     except Exception as e:
-        # 403/blocked/deactivated — ожидаемо (игрок закрыл бота), не шумим;
-        # прочее (BadRequest разметки, сеть) — логируем с контекстом.
         _note_tg_error(e)   # 429 -> счётчик Health
         _msg = str(e).lower()
+        # Битая Markdown-разметка (незакрытая сущность из-за _ или * в контенте)
+        # НЕ должна приводить к потере сообщения: повторяем без разметки.
+        # (Живой прогон: audit_log в тексте админки ломал парсер Telegram.)
+        if "can't parse entities" in _msg:
+            try:
+                await bot.send_message(uid, text)
+                _elog.log_err(_log, "send_markdown_fallback", None, uid=uid)
+                await _touch_seen(uid)
+                return
+            except Exception as e2:
+                e, _msg = e2, str(e2).lower()
+        # 403/blocked/deactivated — ожидаемо (игрок закрыл бота), не шумим;
+        # прочее (сеть и т.п.) — логируем с контекстом.
         if not ("blocked" in _msg or "forbidden" in _msg or "deactivated" in _msg
                 or "chat not found" in _msg):
             _elog.log_err(_log, "send_failed", e, uid=uid, cid=_cid_var.get())
@@ -3190,7 +3201,7 @@ def _admin_menu_text() -> str:
     return ("🛠 *Админка «Семь Корон»*\n\n"
             f"Торговля: {'🟢 включена' if TRADING_ENABLED else '🔴 выключена'}\n"
             f"Игроков в памяти: {len(chars)}\n\n"
-            "_Все действия журналируются (audit_log)._")
+            "_Все действия журналируются в журнале аудита._")
 
 
 def _admin_menu_kb() -> InlineKeyboardMarkup:
@@ -4702,7 +4713,7 @@ async def watchdog_worker(interval: float = 60.0):
                 _elog.log_err(_log, "worker_restart_exhausted", worker=name,
                               restarts_last_hour=len(rec["restarts"]))
                 await _alert_admins(
-                    f"⚠️ Воркер *{name}* упал и превысил лимит перезапусков "
+                    f"⚠️ Воркер {name} упал и превысил лимит перезапусков "
                     f"({_WORKER_MAX_RESTARTS_PER_HOUR}/час). Требуется вмешательство "
                     f"— проверьте логи процесса.")
         await asyncio.sleep(interval)
