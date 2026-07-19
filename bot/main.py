@@ -3528,13 +3528,32 @@ async def _admin_on_text(message: Message, uid: int, text: str):
 
 
 def _quest_brief(qid: str) -> str:
-    """Краткое описание квеста для показа ДО взятия: цель + награда."""
+    """Краткое описание квеста для показа ДО взятия: цель + награда.
+    Поддерживает ВСЕ типы целей (kill/collect/talk/reach/use/choose — этап 5.1);
+    неизвестный тип или битая ссылка не роняют диалог (баг живого прогона:
+    collect-квест без 'item' валил весь разговор с NPC через KeyError)."""
     q = QUESTS[qid]
-    obj = q["objective"]
-    if obj["type"] == "kill":
-        goal = f"🎯 Убить: {MOBS[obj['mob']]['name']} ×{obj['count']}"
+    obj = q.get("objective", {}) or {}
+    typ = obj.get("type")
+    cnt = obj.get("count", 1)
+    if typ == "kill":
+        nm = MOBS.get(obj.get("mob"), {}).get("name", obj.get("mob", "?"))
+        goal = f"🎯 Убить: {nm} ×{cnt}"
+    elif typ == "collect":
+        nm = ITEMS.get(obj.get("item"), {}).get("name", obj.get("item", "?"))
+        goal = f"🎯 Собрать: {nm} ×{cnt}"
+    elif typ == "talk":
+        goal = f"🎯 Поговорить: {npclib.display_name(obj.get('npc', '?'))}"
+    elif typ == "reach":
+        nm = WORLD.get(obj.get("room"), {}).get("name", obj.get("room", "?"))
+        goal = f"🎯 Дойти до: {nm}"
+    elif typ == "use":
+        nm = ITEMS.get(obj.get("item"), {}).get("name", obj.get("item", "?"))
+        goal = f"🎯 Использовать: {nm}"
+    elif typ == "choose":
+        goal = "🎯 Сделать выбор"
     else:
-        goal = f"🎯 Собрать: {ITEMS[obj['item']]['name']} ×{obj['count']}"
+        goal = "🎯 Задание"
     rw = q.get("reward", {})
     rparts = []
     if rw.get("xp"):
