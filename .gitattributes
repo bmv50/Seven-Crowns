@@ -1,0 +1,13 @@
+# Единые переводы строк: в репозитории всегда LF.
+# Критично для scripts/*.sh (CRLF ломает их внутри Linux-контейнеров)
+# и полезно для воспроизводимости py/yaml между Windows и VPS.
+* text=auto eol=lf
+*.sh text eol=lf
+*.py text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.md text eol=lf
+
+# Бинарные — не трогать
+*.png binary
+*.dump binary
