@@ -15,6 +15,13 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
+# Шрифты с кириллицей для PNG-карты (bot/mapgen.py ищет DejaVuSans-Bold.ttf в
+# /usr/share/fonts/truetype/dejavu/). В python:*-slim шрифтов нет вовсе —
+# фолбэк PIL не умеет кириллицу, карта рисовалась кракозябрами (баг с VPS).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends fonts-dejavu-core \
+    && rm -rf /var/lib/apt/lists/*
+
 # Зависимости отдельным слоем (кэшируется, пока не менялись requirements/constraints).
 COPY requirements.txt constraints.txt ./
 RUN pip install --no-cache-dir -r requirements.txt -c constraints.txt

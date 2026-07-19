@@ -1255,7 +1255,10 @@ async def cmd_admin(message: Message):
     свободных команд с аргументами — всё через инлайн-меню (кроме поиска игрока)."""
     uid = message.from_user.id
     if not is_admin(uid):
-        # молча — не раскрываем существование админки посторонним
+        # молча — не раскрываем существование админки посторонним; но фиксируем
+        # попытку в лог (аудит + диагностика «/admin не работает»: в логе виден
+        # фактический uid — сверить с ADMIN_IDS)
+        _elog.log_err(_log, "admin_access_denied", None, uid=uid)
         return
     admin_await.pop(uid, None)
     await message.answer(_admin_menu_text(), parse_mode="Markdown",
