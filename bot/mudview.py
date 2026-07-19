@@ -126,10 +126,24 @@ def render_room(ch, world, others) -> str:
     return "\n".join(L)
 
 
-def _bar10(cur, mx):
+def _bar10(cur, mx, fill="🟩"):
+    """Шкала из 10 клеток. fill — цвет заполнения (🟥 HP, 🟧 ярость, 🟦 мана,
+    🟩 опыт, 🟨 энергия). Клетки-эмодзи одинаковой ширины, поэтому шкалы,
+    стоящие В НАЧАЛЕ строки, выравниваются идеально (фидбек владельца:
+    подписи разной длины перед шкалой разваливали выравнивание).
+    Сплошных ЦВЕТНЫХ полос в тексте Telegram не существует — сплошные
+    символы (█▰) монохромны; цвет дают только клетки-эмодзи."""
     cur = max(0, cur); mx = max(1, mx)
     f = max(0, min(10, int(cur / mx * 10)))
-    return "🟩" * f + "⬛" * (10 - f)
+    return fill * f + "⬛" * (10 - f)
+
+
+# цвет шкалы ресурса по его типу (у классов ресурсы разные)
+_RES_FILL = {"Мана": "🟦", "Ярость": "🟧", "Энергия": "🟨"}
+
+
+def _res_fill(name: str) -> str:
+    return _RES_FILL.get(name, "🟦")
 
 
 def render_score(ch) -> str:
@@ -145,10 +159,13 @@ def render_score(ch) -> str:
     L.append(f"{rc['name']} · {c['name']}  ·  ⭐ *Уровень {ch.level}*")
     L.append("━━━━━━━━━━━━━━━━━━")
 
-    # шкалы
-    L.append(f"❤️ *HP*  {_bar10(ch.hp, ch.max_hp)}  {ch.hp}/{ch.max_hp}")
-    L.append(f"{ch.resource_emoji} *{ch.resource_name}*  {_bar10(ch.mp, ch.max_resource)}  {ch.mp}/{ch.max_resource}")
-    L.append(f"✨ *Опыт*  {_bar10(ch.xp, ch.xp_to_next)}  {ch.xp}/{ch.xp_to_next}")
+    # шкалы: полоса всегда с начала строки (клетки равной ширины → ровные
+    # столбцы), подпись и цифры — после; цвет по ресурсу (HP 🟥, мана 🟦,
+    # ярость 🟧, опыт 🟩)
+    L.append(f"{_bar10(ch.hp, ch.max_hp, '🟥')} ❤️ {ch.hp}/{ch.max_hp}")
+    L.append(f"{_bar10(ch.mp, ch.max_resource, _res_fill(ch.resource_name))} "
+             f"{ch.resource_emoji} {ch.mp}/{ch.max_resource}")
+    L.append(f"{_bar10(ch.xp, ch.xp_to_next, '🟩')} ✨ {ch.xp}/{ch.xp_to_next}")
     L.append("━━━━━━━━━━━━━━━━━━")
 
     # боевые
