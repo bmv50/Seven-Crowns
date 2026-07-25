@@ -17,6 +17,7 @@ import time as _time
 from typing import Awaitable, Callable, Optional, Set
 
 from . import log as _log
+from .lifecycle_errors import StaleCharacterWrite
 
 
 class CharDirtySet:
@@ -76,14 +77,22 @@ async def flush_dirty(
     save: Callable[[object], Awaitable[None]],
     logger=None,
     event: str = "char_flush_failed",
+    on_stale: Optional[Callable[[int], None]] = None,
 ) -> tuple:
     """Записать всех накопившихся грязных персонажей батчем.
 
     get_char(uid) -> персонаж | None (пропущенные None не считаются провалом);
     save(ch)      -> корутина записи в БД (может бросить исключение).
 
-    Провалившиеся uid возвращаются в набор (dirty.mark) — их добьёт следующий
-    проход/ретрай, данные не теряются. Возвращает (ok, failed)."""
+    Обычный провал (ошибка БД): uid ВОЗВРАЩАЕТСЯ в набор (dirty.mark) — его добьёт
+    следующий проход/ретрай, данные не теряются.
+
+    StaleCharacterWrite (Аудит-2а.1): объект устарел (персонаж сброшен/поднят в
+    новом поколении). Его uid НЕ возвращаем в набор — иначе вечный ретрай мёртвой
+    записи. Вместо этого зовём on_stale(uid) (если задан), чтобы вызывающий
+    выбросил протухший объект из памяти, и НЕ считаем это провалом (failed++).
+
+    Возвращает (ok, failed)."""
     ok = 0
     failed = 0
     for uid in dirty.drain():
@@ -93,6 +102,16 @@ async def flush_dirty(
         try:
             await save(ch)
             ok += 1
+        except StaleCharacterWrite as e:
+            # НЕ возвращаем в набор и НЕ считаем провалом: запись мёртвая, ретрай
+            # бессмыслен. Выкидываем протухший объект из памяти через on_stale.
+            if logger is not None:
+                _log.log_err(logger, "char_flush_stale", e, uid=uid)
+            if on_stale is not None:
+                try:
+                    on_stale(uid)
+                except Exception:           # noqa: BLE001 — уборка не должна ронять флашер
+                    pass
         except Exception as e:              # noqa: BLE001 — намеренно широкий: не роняем флашер
             dirty.mark(uid)                 # вернуть uid — не теряем прогресс игрока
             failed += 1

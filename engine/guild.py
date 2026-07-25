@@ -100,6 +100,67 @@ class GuildManager:
     def is_leader(self, uid: int) -> bool:
         return self.rank(uid) == "leader"
 
+    # ── чистые проверки управления составом (Аудит-2а.2) ──
+    # Дефект внешнего аудита: kick() проверял can_withdraw (право снимать из
+    # банка, до офицера включительно) вместо can_admin (лидер/зам) — офицер
+    # мог исключать сослуживцев, хотя составом управлять не должен ("Права по
+    # уровню" в шапке файла всегда требовали именно admin для кика/рангов).
+    # Ниже — чистые методы (состояние НЕ меняют, только отвечают bool), общие
+    # для kick/promote/demote И для server-side guard в bot/main.py — колбэк
+    # обязан звать их заново перед мутацией, а не доверять тому, что кнопка
+    # была видна в момент рендера меню (кнопки могли устареть).
+    def _can_manage_target(self, by: int, target: int) -> bool:
+        """База для kick/promote/demote: не на себя; инициатор администрирует
+        состав (can_admin — лидер/зам); обе стороны в ОДНОЙ гильдии; инициатор
+        строго выше цели по рангу; лидера трогать нельзя (ни кикнуть, ни
+        понизить, ни назначить поверх)."""
+        if target == by:
+            return False
+        if not self.can_admin(by):
+            return False
+        if self.guild_of(by) is None or self.gid_of(by) != self.gid_of(target):
+            return False
+        if self._ri(by) >= self._ri(target):
+            return False
+        if self.rank(target) == "leader":
+            return False
+        return True
+
+    def _valid_new_rank(self, by: int, new_rank: str) -> bool:
+        """Назначаемый ранг должен существовать, не быть 'leader' (лидерство
+        не раздаётся set_rank'ом) и быть строго НИЖЕ ранга инициатора —
+        нельзя назначить ранг ≥ ранга инициатора (иначе цель сравняется или
+        превзойдёт назначающего)."""
+        if new_rank not in RANK_ORDER or new_rank == "leader":
+            return False
+        return _idx(new_rank) > self._ri(by)
+
+    def can_kick(self, by: int, target: int) -> bool:
+        """Может ли by исключить target из гильдии прямо сейчас (без побочных
+        эффектов) — используется и внутри kick(), и как server-side guard в
+        bot/main.py перед любым обращением к БД/памяти."""
+        return self._can_manage_target(by, target)
+
+    def can_promote(self, by: int, target: int, new_rank: Optional[str] = None) -> bool:
+        """Может ли by повысить target. Без new_rank проверяется рангом,
+        который выдал бы promote() (на ступень выше, не выше заместителя);
+        с явным new_rank — назначение конкретного ранга (используется и
+        set_rank для проверки направления-агностичного назначения)."""
+        if not self._can_manage_target(by, target):
+            return False
+        if new_rank is None:
+            new_rank = RANK_ORDER[max(self._ri(target) - 1, _ADMIN_MAX)]
+        return self._valid_new_rank(by, new_rank)
+
+    def can_demote(self, by: int, target: int, new_rank: Optional[str] = None) -> bool:
+        """Может ли by понизить target. Без new_rank — ранг на ступень ниже
+        (не ниже 'member')."""
+        if not self._can_manage_target(by, target):
+            return False
+        if new_rank is None:
+            new_rank = RANK_ORDER[min(self._ri(target) + 1, _idx("member"))]
+        return self._valid_new_rank(by, new_rank)
+
     # ── жизненный цикл ──
     def create(self, leader: int, name: str) -> str:
         gid = str(self._next); self._next += 1
@@ -154,39 +215,66 @@ class GuildManager:
         return gid
 
     def kick(self, by: int, target: int) -> bool:
-        g = self.guild_of(by)
-        if not g or target not in g["members"] or target == by:
+        """Исключить target из гильдии. Управляют составом ТОЛЬКО лидер и
+        заместитель (can_admin) — см. can_kick. Офицер (can_withdraw без
+        admin) кикать не может, даже если стоит выше цели по рангу."""
+        if not self.can_kick(by, target):
             return False
-        # исключать может тот, кто умеет снимать из банка и стоит выше цели
-        if self.can_withdraw(by) and self._ri(by) < self._ri(target):
-            self.leave(target)
-            return True
-        return False
+        self.leave(target)
+        return True
 
     def set_rank(self, by: int, target: int, rank: str) -> bool:
-        """Назначить ранг (лидер/зам). Ранг строго ниже ранга назначающего."""
-        if not self.can_admin(by) or rank not in RANK_ORDER or rank == "leader":
+        """Назначить ранг напрямую (произвольный скачок, направление не
+        важно) — базовый примитив, которым пользуются promote()/demote() и
+        которым может воспользоваться вызывающая сторона (напр. bot/main.py
+        после успешной guild_tx-транзакции) для явного значения ранга."""
+        if not self.can_promote(by, target, new_rank=rank):
             return False
         g = self.guild_of(by)
-        if not g or target not in g["members"] or target == by:
-            return False
-        if _idx(rank) <= self._ri(by) or self._ri(target) <= self._ri(by):
-            return False
         g["ranks"][str(target)] = rank
         self.save()
         return True
 
     def promote(self, by: int, target: int) -> bool:
-        new = max(self._ri(target) - 1, _ADMIN_MAX)   # не выше заместителя
-        if new <= self._ri(by):
+        if not self.can_promote(by, target):
             return False
+        new = max(self._ri(target) - 1, _ADMIN_MAX)   # не выше заместителя
         return self.set_rank(by, target, RANK_ORDER[new])
 
     def demote(self, by: int, target: int) -> bool:
+        if not self.can_demote(by, target):
+            return False
         new = min(self._ri(target) + 1, _idx("member"))
         if new == self._ri(target):
             return True
         return self.set_rank(by, target, RANK_ORDER[new])
+
+    def preview_promote(self, target: int) -> str:
+        """Ранг, который получит target при promote() — ЧИСТЫЙ расчёт (без
+        проверки прав, без мутации). Нужен вызывающей стороне (bot/main.py),
+        чтобы в БД-режиме сначала записать точный будущий ранг транзакцией
+        guild_tx.set_rank и ТОЛЬКО ПОСЛЕ её успеха применить его к памяти —
+        без этого пришлось бы либо мутировать guild_mgr раньше БД, либо
+        гадать, какой ранг записывать в БД."""
+        return RANK_ORDER[max(self._ri(target) - 1, _ADMIN_MAX)]
+
+    def preview_demote(self, target: int) -> str:
+        """Симметрично preview_promote — для demote()."""
+        return RANK_ORDER[min(self._ri(target) + 1, _idx("member"))]
+
+    def _force_rank(self, target: int, rank: str) -> bool:
+        """Применить УЖЕ ПОДТВЕРЖДЁННЫЙ ранг напрямую в память, без повторной
+        проверки прав инициатора — последний шаг конвейера «право → БД →
+        память» в bot/main.py, когда guild_tx-транзакция уже закоммичена.
+        Единственная защита здесь — target всё ещё должен состоять в гильдии
+        (мог успеть выйти/быть кикнут, пока шла БД-транзакция); в этом случае
+        — честный отказ, а не тихая порча состояния."""
+        g = self.guild_of(target)
+        if not g:
+            return False
+        g["ranks"][str(target)] = rank
+        self.save()
+        return True
 
     def members(self, uid: int):
         g = self.guild_of(uid)

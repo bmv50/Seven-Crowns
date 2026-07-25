@@ -7,6 +7,13 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      # Аудит-2а.2: матрица 3.12 (текущий рантайм проекта) + 3.14 (get_event_loop()
+      # без работающего цикла больше не создаёт новый неявно — ловим регрессии
+      # заранее, а не когда прод-окружение однажды обновит интерпретатор).
+      matrix:
+        python-version: ["3.12", "3.14"]
     env:
       PYTHONIOENCODING: utf-8
       PYTHONUTF8: "1"
@@ -14,10 +21,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python 3.12
+      - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
         run: pip install -r requirements.txt -c constraints.txt

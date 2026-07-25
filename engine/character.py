@@ -45,6 +45,10 @@ class Character:
     effects: List[dict] = field(default_factory=list)
     quests: Dict[str, str] = field(default_factory=dict)
     flags: Dict[str, bool] = field(default_factory=dict)
+    # Поколение записи (Аудит-2а.1): счётчик пересозданий персонажа под этим uid.
+    # Растёт при /reset и при создании поверх удалённого. Защищает от stale-записи:
+    # save() пишет ТОЛЬКО строку своего поколения (см. engine/db.py).
+    generation: int = 1
     # умения: выученные и выбранные в боевую панель (до 5)
     learned: List[str] = field(default_factory=list)
     loadout: List[str] = field(default_factory=list)

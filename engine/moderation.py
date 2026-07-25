@@ -11,21 +11,34 @@
 Модель:
   • Источник истины по банам/мутам — таблица moderation в PostgreSQL, но в
     рантайме читаем из кэша в памяти (_state): гейты дёргаются на каждое действие
-    игрока, ходить в БД накладно. ban/mute/… мутируют кэш СРАЗУ и персистят в БД
-    (idempotent upsert) + пишут audit_log. При старте load() поднимает кэш из БД.
-  • Без пула (dev, pool=None) кэш — единственное хранилище (get/set в db.py тихо
-    деградируют): игра работает, состояние живёт до перезапуска.
+    игрока, ходить в БД накладно. При старте load() поднимает кэш из БД.
+  • Без пула (dev, pool=None) кэш — единственное хранилище (db.py-методы тихо
+    деградируют в no-op): игра работает, состояние живёт до перезапуска — это
+    ОСОЗНАННАЯ деградация, не путать с fail-open ниже.
+  • FAIL-CLOSED (Аудит-2а.2): раньше ban/unban/mute/unmute мутировали кэш
+    СРАЗУ, а персист (set_moderation) и аудит (add_audit) звались по отдельности
+    и оба глотали исключения (`except Exception: pass`) — при сбое БД кэш уже
+    считал действие применённым, хотя в БД могло не остаться следа (рестарт
+    тихо «прощал» бан). Теперь: персист+аудит — ОДНОЙ транзакцией
+    (db.set_moderation_with_audit), а кэш меняется ТОЛЬКО ПОСЛЕ успешного
+    commit; ошибка БД не проглатывается — исключение уходит наружу
+    вызывающему (bot/main.py решает, как ответить игроку/админу).
   • Чат-rate-limit — чистое скользящее окно в памяти (chat_allowed): ≤ CHAT_MAX
     сообщений за CHAT_WINDOW секунд на игрока. Спам-защита рантайма, в БД не пишем.
 
 Экспорт:
   set_db(db) / load() / reset()
   is_banned(uid) / is_muted(uid, now) / muted_until(uid)          — синхронные гейты
-  ban / unban / mute / unmute                                     — async, с аудитом
+  ban / unban / mute / unmute                                     — async, с аудитом,
+                                                                     fail-closed
   chat_allowed(uid, now)                                          — окно спама
 """
 import time
 from collections import deque
+
+from . import log as _elog
+
+_log = _elog.get("engine.moderation")
 
 # ───────── настройки чат-лимита ─────────
 CHAT_MAX = 5          # не более стольких сообщений...
@@ -57,13 +70,18 @@ def _blank() -> dict:
 
 
 async def load():
-    """Поднять кэш банов/мутов из БД при старте. Без пула — кэш остаётся пустым."""
+    """Поднять кэш банов/мутов из БД при старте. Без пула — кэш остаётся
+    пустым (ожидаемо: dev без БД работает только в памяти).
+
+    С пулом ошибка ЗАГРУЗКИ теперь НЕ проглатывается (Аудит-2а.2): подняться
+    с молча пустым кэшем банов значит временно снять все ограничения с
+    забаненных игроков. Решение «упасть или продолжить» — не дело engine/
+    (тут нет понятия PROD) — исключение уходит наружу вызывающему
+    (bot/main.py: PROD → критический лог + sys.exit(1); dev → warning и
+    продолжить, см. вызов _mod.load() в main())."""
     if _db is None:
         return
-    try:
-        rows = await _db.load_moderation()
-    except Exception:
-        return
+    rows = await _db.load_moderation()
     for r in rows or []:
         uid = int(r["uid"])
         _state[uid] = {
@@ -100,70 +118,68 @@ def is_muted(uid: int, now: float = None) -> bool:
     return muted_until(uid) > now
 
 
-# ───────── мутирующие действия (async, с аудитом) ─────────
-async def _persist(uid: int):
-    """Записать текущее состояние игрока в БД (idempotent upsert). Без пула — no-op."""
-    if _db is None:
-        return
-    r = _state.get(uid) or _blank()
-    try:
-        await _db.set_moderation(uid, bool(r["banned"]), float(r["muted_until"]),
-                                 r.get("reason") or "", int(r.get("by") or 0))
-    except Exception:
-        pass
+# ───────── мутирующие действия (async, с аудитом, fail-closed) ─────────
+def _snapshot(uid: int) -> dict:
+    """Копия текущей записи игрока (или пустой бланк, если её ещё нет) — НЕ
+    мутирует _state. Действия ниже считают новое состояние поверх этой копии
+    и применяют его к кэшу только после успешного commit в БД."""
+    r = _state.get(uid)
+    return dict(r) if r else _blank()
 
 
-async def _audit(action: str, uid: int, details: dict):
-    if _db is None:
-        return
-    try:
-        await _db.add_audit(uid, action, details)
-    except Exception:
-        pass
+async def _apply(uid: int, new: dict, action: str, details: dict):
+    """Персист+аудит ОДНОЙ транзакцией (db.set_moderation_with_audit), кэш —
+    ТОЛЬКО ПОСЛЕ успеха (Аудит-2а.2, fail-closed).
+
+    Раньше запись в БД (set_moderation) и аудит (add_audit) звались отдельно
+    ПОСЛЕ мутации кэша, и оба глотали исключения — кэш «врал», что действие
+    применено, даже если в БД не осталось следа. Теперь: кэш собирается в
+    `new` ЗАРАНЕЕ (без побочных эффектов), затем одна транзакция; при ошибке
+    БД кэш НЕ трогаем (никакого отката не нужно — мы ничего не меняли) и
+    исключение уходит НАРУЖУ вызывающему — тот решает, как ответить игроку.
+
+    Без пула (_db is None или db.pool is None) — set_moderation_with_audit
+    сама делает no-op без исключения (осознанная деградация в память, dev)."""
+    if _db is not None:
+        try:
+            await _db.set_moderation_with_audit(
+                uid, bool(new["banned"]), float(new["muted_until"]),
+                new.get("reason") or "", int(new.get("by") or 0), action, details)
+        except Exception as e:
+            _elog.log_err(_log, "moderation_persist_failed", e, uid=uid, action=action)
+            raise
+    _state[uid] = new
 
 
 async def ban(uid: int, reason: str = "", by: int = 0):
-    """Забанить игрока (полный запрет). Мутирует кэш, персистит, пишет аудит."""
-    r = record(uid)
-    r["banned"] = True
-    r["reason"] = reason or ""
-    r["by"] = int(by)
-    r["updated"] = time.time()
-    await _persist(uid)
-    await _audit("mod_ban", uid, {"reason": reason or "", "by": int(by)})
+    """Забанить игрока (полный запрет). Fail-closed: см. _apply."""
+    new = _snapshot(uid)
+    new.update(banned=True, reason=reason or "", by=int(by), updated=time.time())
+    await _apply(uid, new, "mod_ban", {"reason": reason or "", "by": int(by)})
 
 
 async def unban(uid: int, by: int = 0):
-    """Снять бан."""
-    r = record(uid)
-    r["banned"] = False
-    r["by"] = int(by)
-    r["updated"] = time.time()
-    await _persist(uid)
-    await _audit("mod_unban", uid, {"by": int(by)})
+    """Снять бан. Fail-closed: см. _apply."""
+    new = _snapshot(uid)
+    new.update(banned=False, by=int(by), updated=time.time())
+    await _apply(uid, new, "mod_unban", {"by": int(by)})
 
 
 async def mute(uid: int, minutes: float, reason: str = "", by: int = 0, now: float = None):
-    """Замутить игрока на minutes минут (запрет писать в чат)."""
+    """Замутить игрока на minutes минут (запрет писать в чат). Fail-closed: см. _apply."""
     now = time.time() if now is None else now
-    r = record(uid)
-    r["muted_until"] = now + float(minutes) * 60.0
-    r["reason"] = reason or ""
-    r["by"] = int(by)
-    r["updated"] = now
-    await _persist(uid)
-    await _audit("mod_mute", uid,
-                 {"minutes": float(minutes), "reason": reason or "", "by": int(by)})
+    new = _snapshot(uid)
+    new.update(muted_until=now + float(minutes) * 60.0, reason=reason or "",
+               by=int(by), updated=now)
+    await _apply(uid, new, "mod_mute",
+                {"minutes": float(minutes), "reason": reason or "", "by": int(by)})
 
 
 async def unmute(uid: int, by: int = 0):
-    """Снять мут досрочно."""
-    r = record(uid)
-    r["muted_until"] = 0.0
-    r["by"] = int(by)
-    r["updated"] = time.time()
-    await _persist(uid)
-    await _audit("mod_unmute", uid, {"by": int(by)})
+    """Снять мут досрочно. Fail-closed: см. _apply."""
+    new = _snapshot(uid)
+    new.update(muted_until=0.0, by=int(by), updated=time.time())
+    await _apply(uid, new, "mod_unmute", {"by": int(by)})
 
 
 # ───────── чат-rate-limit (чистое окно в памяти) ─────────

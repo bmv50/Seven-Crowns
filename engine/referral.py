@@ -14,7 +14,9 @@
 """
 import re
 
-REWARD_LEVEL = 5                                    # уровень приглашённого, дающий награду
+from . import textsafe            # Аудит-2б.1: esc_md имени друга в уведомлении реферера
+
+REWARD_LEVEL = 5                                   # уровень приглашённого, дающий награду
 NEW_PLAYER_REWARD = {"gold": 2000, "items": ["эликсир"]}   # награда новому игроку
 REFERRER_REWARD = {"gold": 10000}                   # награда рефереру
 MAX_REWARDED = 20                                   # макс. оплаченных приглашений на реферера
@@ -58,7 +60,7 @@ def on_level(ch, referrer_or_none):
         if ref_count < MAX_REWARDED:
             referrer_or_none.gold += REFERRER_REWARD.get("gold", 0)
             referrer_or_none.flags["ref_count"] = ref_count + 1
-            referrer_line = (f"🤝 Ваш друг {ch.name} достиг {REWARD_LEVEL} уровня! "
+            referrer_line = (f"🤝 Ваш друг {textsafe.esc_md(ch.name)} достиг {REWARD_LEVEL} уровня! "
                              f"+{REFERRER_REWARD.get('gold', 0)} золота")
     return new_lines, referrer_line
 

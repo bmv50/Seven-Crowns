@@ -31,6 +31,7 @@ from . import combat
 from . import quest
 from . import errands
 from . import achievements
+from . import textsafe            # Аудит-2б.1: esc_md имён игроков в broadcast
 from . import daily
 from . import weekly
 from . import streak
@@ -347,7 +348,7 @@ class GameLoop:
         _drop = karma.maybe_drop_on_death(ch)
         if _drop:
             await self.send(ch.uid, f"💸 От удара вы выронили предмет: {ITEMS.get(_drop,{}).get('name',_drop)}.")
-        await self.broadcast(ch.room, f"💀 {ch.name} пал в бою!", exclude=ch.uid)
+        await self.broadcast(ch.room, f"💀 {textsafe.esc_md(ch.name)} пал в бою!", exclude=ch.uid)
         await self.save(ch)
         if self.on_death:
             await self.on_death(ch)

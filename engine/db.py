@@ -11,12 +11,33 @@ from typing import Dict, List, Optional
 
 try:
     import asyncpg
+    # Аудит-2б.1: конкретный класс нарушения уникальности (name_norm-индекс).
+    _UniqueViolationError = asyncpg.exceptions.UniqueViolationError
 except ImportError:
     asyncpg = None   # БД опциональна: без asyncpg игра идёт без сохранения
 
+    class _UniqueViolationError(Exception):
+        """Заглушка без asyncpg — реальный конфликт возможен только с пулом."""
+
 from .character import Character
+from . import textsafe            # Аудит-2б.1: name_norm для уникальности имён
+from .lifecycle_errors import (
+    ActiveCharacterExists, StaleCharacterWrite, CharacterNotFound, RestoreExpired,
+    NameTaken)
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://localhost/mud")
+
+
+def _rowcount(status: str) -> int:
+    """Число затронутых строк из тега команды asyncpg ('UPDATE 3' → 3, 'INSERT 0 1'
+    → 1). Неизвестный формат → 0 (консервативно: считаем, что не записали)."""
+    if not status:
+        return 0
+    parts = str(status).split()
+    try:
+        return int(parts[-1])
+    except (ValueError, IndexError):
+        return 0
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS characters (
@@ -37,7 +58,18 @@ CREATE TABLE IF NOT EXISTS characters (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     last_seen  TIMESTAMPTZ,
     notify_blocked BOOLEAN NOT NULL DEFAULT FALSE,
-    deleted_at TIMESTAMPTZ
+    deleted_at TIMESTAMPTZ,
+    -- Аудит-2а.1: поколение записи. Растёт при /reset и при пересоздании поверх
+    -- удалённого. save() пишет строго строку своего поколения → stale-объект в
+    -- памяти не может затереть нового/восстановленного героя.
+    generation BIGINT NOT NULL DEFAULT 1,
+    -- Аудит-2б.1: нормализованный ключ имени (NFKC→casefold→схлоп пробелов,
+    -- см. engine/textsafe.name_norm). По нему строится ЧАСТИЧНЫЙ уникальный
+    -- индекс активных персонажей (idx_characters_name_norm WHERE deleted_at IS
+    -- NULL) — защита от имперсонации именами-двойниками. Индекс создаётся в
+    -- connect() после backfill и проверки на дубли (не в SCHEMA — иначе на
+    -- «грязной» БД падал бы весь SCHEMA).
+    name_norm  TEXT
 );
 -- Журнал аудита необратимых действий игрока (/reset и восстановление персонажа).
 -- Пишется при подтверждённом сбросе: чтобы разобрать спорную «пропажу» персонажа
@@ -218,6 +250,10 @@ class Database:
                 "ALTER TABLE characters ADD COLUMN IF NOT EXISTS notify_blocked BOOLEAN NOT NULL DEFAULT FALSE")
             await con.execute(
                 "ALTER TABLE characters ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ")
+            # Аудит-2а.1: поколение. DEFAULT 1 безопасен для существующих строк —
+            # все они получают generation=1 и продолжают писаться save() как обычно.
+            await con.execute(
+                "ALTER TABLE characters ADD COLUMN IF NOT EXISTS generation BIGINT NOT NULL DEFAULT 1")
             # Этап 3.2: колонка ref — по ней в economy_ledger видны ВСЕ движения
             # конкретной гильдии (ref=gid). У аукциона (econ_tx) остаётся NULL.
             await con.execute(
@@ -227,10 +263,71 @@ class Database:
             # Этап 7.2: таблица модерации создаётся в SCHEMA выше; ALTER на случай
             # старой БД без неё — SCHEMA идемпотентна (CREATE IF NOT EXISTS), а
             # отдельных колоночных миграций тут не нужно (новая таблица).
+            # ───────── Аудит-2б.1: уникальность активных имён ─────────
+            await con.execute(
+                "ALTER TABLE characters ADD COLUMN IF NOT EXISTS name_norm TEXT")
+            await self._migrate_name_norm(con)
+
+    async def _migrate_name_norm(self, con):
+        """БЕЗОПАСНАЯ миграция уникальности имён (Аудит-2б.1). Порядок важен:
+
+        1) backfill name_norm для строк, где он NULL (по name через
+           textsafe.name_norm) — БЕЗ этого частичный индекс сравнивал бы NULL'ы;
+        2) проверка ДУБЛЕЙ среди активных (deleted_at IS NULL): если есть имена,
+           совпадающие по name_norm у нескольких живых персонажей — уникальный
+           индекс НЕ создаём (иначе CREATE INDEX упал бы), печатаем предупреждение
+           со списком uid и ждём ручного/админ-разрешения. Молчаливого выбора
+           «победителя» здесь не делаем — это данные игроков;
+        3) индекс создаётся ТОЛЬКО при чистоте — и он гарантирует уникальность
+           дальше (конкурентное создание одинаковых имён ловит create_character)."""
+        # 1) backfill
+        rows = await con.fetch(
+            "SELECT uid, name FROM characters WHERE name_norm IS NULL")
+        for r in rows:
+            await con.execute(
+                "UPDATE characters SET name_norm=$2 WHERE uid=$1",
+                r["uid"], textsafe.name_norm(r["name"]))
+        # 2) дубли среди активных
+        dups = await con.fetch(
+            "SELECT name_norm, count(*) AS c, array_agg(uid) AS uids "
+            "FROM characters WHERE deleted_at IS NULL AND name_norm IS NOT NULL "
+            "AND name_norm <> '' GROUP BY name_norm HAVING count(*) > 1")
+        if dups:
+            for d in dups:
+                print(f"[Аудит-2б.1] ДУБЛЬ активного имени name_norm={d['name_norm']!r}: "
+                      f"uid={list(d['uids'])} — уникальный индекс НЕ создан, "
+                      f"разрешите дубль вручную/через админку и перезапустите.")
+            return
+        # 3) чистота — создаём частичный уникальный индекс
+        await con.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_characters_name_norm "
+            "ON characters(name_norm) WHERE deleted_at IS NULL")
 
     async def close(self):
         if self.pool:
             await self.pool.close()
+
+    @staticmethod
+    def _row_to_char(r) -> Character:
+        """Собрать Character из строки БД (общий код load_all/find_deleted/restore).
+        generation читается из строки (старые БД без колонки не дойдут сюда —
+        миграция её добавляет с DEFAULT 1)."""
+        ch = Character(
+            uid=r["uid"], name=r["name"], cls=r["cls"], race=r["race"], room=r["room"],
+            level=r["level"], xp=r["xp"], hp=r["hp"], mp=r["mp"], gold=r["gold"],
+            equipment=json.loads(r["equipment"]),
+            inventory=json.loads(r["inventory"]),
+            quests=json.loads(r["quests"]),
+            flags=json.loads(r["flags"]),
+        )
+        try:
+            ch.generation = int(r["generation"])
+        except (KeyError, TypeError):
+            ch.generation = 1
+        # слоты экипировки на случай новых
+        for slot in ("weapon", "armor", "accessory"):
+            ch.equipment.setdefault(slot, None)
+        return ch
 
     async def load_all(self) -> Dict[int, Character]:
         """Загрузить всех персонажей в память при старте."""
@@ -240,34 +337,151 @@ class Database:
             rows = await con.fetch(
                 "SELECT * FROM characters WHERE deleted_at IS NULL")
         for r in rows:
-            ch = Character(
-                uid=r["uid"], name=r["name"], cls=r["cls"], race=r["race"], room=r["room"],
-                level=r["level"], xp=r["xp"], hp=r["hp"], mp=r["mp"], gold=r["gold"],
-                equipment=json.loads(r["equipment"]),
-                inventory=json.loads(r["inventory"]),
-                quests=json.loads(r["quests"]),
-                flags=json.loads(r["flags"]),
-            )
-            # слоты экипировки на случай новых
-            for slot in ("weapon", "armor", "accessory"):
-                ch.equipment.setdefault(slot, None)
+            ch = self._row_to_char(r)
             out[ch.uid] = ch
         return out
 
     async def save(self, ch: Character):
+        """Сохранить прогресс персонажа. Аудит-2а.1: ТОЛЬКО UPDATE активной строки
+        СВОЕГО поколения — строк больше НЕ создаёт (это делает create_character).
+        0 затронутых строк → StaleCharacterWrite: объект в памяти устарел
+        (персонаж сброшен/поднят в новом поколении, либо мягко удалён). Писать
+        его нельзя — иначе воскресим удалённого или затрём нового героя."""
         async with self.pool.acquire() as con:
-            await con.execute("""
-                INSERT INTO characters
-                    (uid,name,cls,race,room,level,xp,hp,mp,gold,equipment,inventory,quests,flags,updated_at)
-                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14, now())
-                ON CONFLICT (uid) DO UPDATE SET
+            status = await con.execute("""
+                UPDATE characters SET
                     name=$2, cls=$3, race=$4, room=$5, level=$6, xp=$7, hp=$8, mp=$9, gold=$10,
                     equipment=$11, inventory=$12, quests=$13, flags=$14, updated_at=now()
+                WHERE uid=$1 AND generation=$15 AND deleted_at IS NULL
             """,
                 ch.uid, ch.name, ch.cls, ch.race, ch.room, ch.level, ch.xp, ch.hp, ch.mp, ch.gold,
                 json.dumps(ch.equipment), json.dumps(ch.inventory),
                 json.dumps(ch.quests), json.dumps(ch.flags),
+                int(getattr(ch, "generation", 1)),
             )
+        if _rowcount(status) == 0:
+            raise StaleCharacterWrite(
+                f"save() uid={ch.uid} gen={getattr(ch, 'generation', 1)}: "
+                "0 строк (устаревший/удалённый персонаж)")
+
+    async def create_character(self, ch: Character) -> int:
+        """Атомарно создать/пересоздать персонажа (Аудит-2а.1). Одна транзакция:
+        FOR UPDATE по uid; активная строка есть → ActiveCharacterExists; строки
+        нет → INSERT generation=1; есть удалённая → generation=старый+1 с полной
+        заменой игровых полей и deleted_at=NULL. Пишет audit_log('create').
+        Проставляет ch.generation и возвращает фактическое поколение.
+        Без пула (dev) → ch.generation=1, только память."""
+        if not self.pool:
+            ch.generation = 1
+            return 1
+        equipment = json.dumps(ch.equipment)
+        inventory = json.dumps(ch.inventory)
+        quests = json.dumps(ch.quests)
+        flags = json.dumps(ch.flags)
+        nname = textsafe.name_norm(ch.name)   # Аудит-2б.1: ключ уникальности
+        try:
+            async with self.pool.acquire() as con:
+                async with con.transaction():
+                    row = await con.fetchrow(
+                        "SELECT generation, deleted_at FROM characters WHERE uid=$1 FOR UPDATE",
+                        ch.uid)
+                    if row is not None and row["deleted_at"] is None:
+                        raise ActiveCharacterExists(
+                            f"create_character uid={ch.uid}: активный персонаж уже есть")
+                    if row is None:
+                        gen = 1
+                        await con.execute("""
+                            INSERT INTO characters
+                                (uid,name,cls,race,room,level,xp,hp,mp,gold,
+                                 equipment,inventory,quests,flags,updated_at,generation,name_norm)
+                            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14, now(), $15,$16)
+                        """, ch.uid, ch.name, ch.cls, ch.race, ch.room, ch.level, ch.xp,
+                            ch.hp, ch.mp, ch.gold, equipment, inventory, quests, flags, gen, nname)
+                    else:
+                        gen = int(row["generation"]) + 1
+                        await con.execute("""
+                            UPDATE characters SET
+                                name=$2, cls=$3, race=$4, room=$5, level=$6, xp=$7, hp=$8,
+                                mp=$9, gold=$10, equipment=$11, inventory=$12, quests=$13,
+                                flags=$14, updated_at=now(), generation=$15, deleted_at=NULL,
+                                name_norm=$16
+                            WHERE uid=$1
+                        """, ch.uid, ch.name, ch.cls, ch.race, ch.room, ch.level, ch.xp,
+                            ch.hp, ch.mp, ch.gold, equipment, inventory, quests, flags, gen, nname)
+                    await con.execute(
+                        "INSERT INTO audit_log (ts, uid, action, details) VALUES ($1,$2,$3,$4)",
+                        time.time(), ch.uid, "create",
+                        json.dumps({"generation": gen, "name": ch.name}))
+        except _UniqueViolationError as e:
+            # Частичный уникальный индекс по name_norm среди активных: конкурентное
+            # создание двух героев с одинаковым именем решает БД (один падает здесь).
+            raise NameTaken(
+                f"create_character uid={ch.uid}: имя {ch.name!r} занято") from e
+        ch.generation = gen
+        return gen
+
+    async def reset_character(self, uid: int, expected_generation: int,
+                              details: dict = None) -> int:
+        """Атомарно мягко сбросить персонажа (Аудит-2а.1). Транзакция: FOR UPDATE;
+        активна и generation совпадает → generation+=1 (инвалидирует stale-объекты
+        в памяти), deleted_at=now(), audit_log('reset'); несовпадение поколения или
+        уже удалён → StaleCharacterWrite; строки нет → CharacterNotFound.
+        Возвращает новое поколение. Без пула (dev) → expected+1, только память."""
+        if not self.pool:
+            return int(expected_generation) + 1
+        async with self.pool.acquire() as con:
+            async with con.transaction():
+                row = await con.fetchrow(
+                    "SELECT generation, deleted_at FROM characters WHERE uid=$1 FOR UPDATE",
+                    uid)
+                if row is None:
+                    raise CharacterNotFound(f"reset_character uid={uid}: строки нет")
+                if row["deleted_at"] is not None or \
+                        int(row["generation"]) != int(expected_generation):
+                    raise StaleCharacterWrite(
+                        f"reset_character uid={uid}: поколение разошлось "
+                        f"(ожидали {expected_generation}, в БД {row['generation']}, "
+                        f"deleted={row['deleted_at'] is not None})")
+                new_gen = int(row["generation"]) + 1
+                await con.execute(
+                    "UPDATE characters SET generation=$2, deleted_at=now() WHERE uid=$1",
+                    uid, new_gen)
+                await con.execute(
+                    "INSERT INTO audit_log (ts, uid, action, details) VALUES ($1,$2,$3,$4)",
+                    time.time(), uid, "reset", json.dumps(details or {}))
+        return new_gen
+
+    async def restore_character(self, uid: int, max_age_sec: int = 86400) -> Character:
+        """Атомарно снять мягкое удаление (Аудит-2а.1). Транзакция: FOR UPDATE;
+        строки нет → CharacterNotFound; deleted_at IS NULL → ActiveCharacterExists;
+        окно max_age_sec истекло → RestoreExpired; иначе deleted_at=NULL (generation
+        НЕ меняем — он уже поднят при reset, старые объекты уже невалидны),
+        audit_log('restore'). Возвращает Character для помещения в память."""
+        if not self.pool:
+            raise CharacterNotFound(f"restore_character uid={uid}: нет пула")
+        async with self.pool.acquire() as con:
+            async with con.transaction():
+                row = await con.fetchrow(
+                    "SELECT * FROM characters WHERE uid=$1 FOR UPDATE", uid)
+                if row is None:
+                    raise CharacterNotFound(f"restore_character uid={uid}: строки нет")
+                if row["deleted_at"] is None:
+                    raise ActiveCharacterExists(
+                        f"restore_character uid={uid}: персонаж уже активен")
+                fresh = await con.fetchrow(
+                    "SELECT 1 FROM characters WHERE uid=$1 AND deleted_at IS NOT NULL "
+                    "AND deleted_at > now() - ($2 || ' seconds')::interval",
+                    uid, str(int(max_age_sec)))
+                if fresh is None:
+                    raise RestoreExpired(
+                        f"restore_character uid={uid}: окно {max_age_sec}с истекло")
+                await con.execute(
+                    "UPDATE characters SET deleted_at=NULL WHERE uid=$1", uid)
+                await con.execute(
+                    "INSERT INTO audit_log (ts, uid, action, details) VALUES ($1,$2,$3,$4)",
+                    time.time(), uid, "restore",
+                    json.dumps({"name": row["name"], "level": row["level"]}))
+        return self._row_to_char(row)
 
     async def delete(self, uid: int):
         """Жёсткое удаление (оставлено для совместимости). Для /reset используем
@@ -296,28 +510,17 @@ class Database:
                 uid, str(int(max_age_sec)))
         if not r:
             return None
-        ch = Character(
-            uid=r["uid"], name=r["name"], cls=r["cls"], race=r["race"], room=r["room"],
-            level=r["level"], xp=r["xp"], hp=r["hp"], mp=r["mp"], gold=r["gold"],
-            equipment=json.loads(r["equipment"]),
-            inventory=json.loads(r["inventory"]),
-            quests=json.loads(r["quests"]),
-            flags=json.loads(r["flags"]),
-        )
-        for slot in ("weapon", "armor", "accessory"):
-            ch.equipment.setdefault(slot, None)
-        return ch
+        return self._row_to_char(r)
 
     async def restore_deleted(self, uid: int) -> Optional[Character]:
-        """Снять мягкое удаление (deleted_at=NULL) и вернуть загруженного персонажа
-        для помещения обратно в память. None, если восстанавливать нечего."""
-        ch = await self.find_deleted(uid)
-        if ch is None:
+        """Легаси-обёртка над атомарным restore_character (Аудит-2а.1): глотает
+        ошибки жизненного цикла и возвращает None, сохраняя прежний контракт
+        (Character | None). Новый код в bot зовёт restore_character напрямую,
+        чтобы отличать RestoreExpired от «нечего восстанавливать»."""
+        try:
+            return await self.restore_character(uid)
+        except (CharacterNotFound, ActiveCharacterExists, RestoreExpired):
             return None
-        async with self.pool.acquire() as con:
-            await con.execute(
-                "UPDATE characters SET deleted_at = NULL WHERE uid=$1", uid)
-        return ch
 
     async def add_audit(self, uid: int, action: str, details: dict = None):
         """Записать событие аудита (напр. action='reset'/'restore'). Без пула
@@ -369,6 +572,39 @@ class Database:
             """, uid, bool(banned), float(muted_until), reason or "",
                 int(by_admin or 0), time.time())
 
+    async def set_moderation_with_audit(self, uid: int, banned: bool, muted_until: float,
+                                        reason: str, by_admin: int, action: str,
+                                        details: dict = None):
+        """Персист бана/мута И запись в audit_log — ОДНОЙ транзакцией (Аудит-2а.2).
+
+        Раньше engine/moderation.py звало set_moderation() и add_audit() по
+        отдельности, каждый со своим `except Exception: pass` — сбой одной из
+        двух записей (напр. обрыв соединения между ними) мог оставить кэш в
+        памяти помеченным «забанен», а в БД — ни строки moderation, ни следа в
+        audit_log (fail-open: рестарт тихо снимал бан). Здесь UPDATE/UPSERT
+        moderation и INSERT audit_log — в ОДНОЙ транзакции: любая ошибка →
+        откат ОБОИХ, исключение уходит НАРУЖУ вызывающему (никакого try/except
+        здесь — engine/moderation.py решает, что делать со сбоем: кэш меняется
+        только после успешного commit).
+
+        Без пула (dev, pool=None) — no-op (осознанная деградация в память,
+        см. докстринг engine/moderation.py); в этом случае исключения не
+        будет — вызывающая сторона просто продолжит работать с кэшем."""
+        if not self.pool:
+            return
+        async with self.pool.acquire() as con:
+            async with con.transaction():
+                await con.execute("""
+                    INSERT INTO moderation (uid, banned, muted_until, reason, by_admin, updated)
+                    VALUES ($1,$2,$3,$4,$5,$6)
+                    ON CONFLICT (uid) DO UPDATE SET
+                        banned=$2, muted_until=$3, reason=$4, by_admin=$5, updated=$6
+                """, uid, bool(banned), float(muted_until), reason or "",
+                    int(by_admin or 0), time.time())
+                await con.execute(
+                    "INSERT INTO audit_log (ts, uid, action, details) VALUES ($1,$2,$3,$4)",
+                    time.time(), uid, action, json.dumps(details or {}))
+
     async def grant_gold(self, uid: int, amount: int, op_id: str,
                          operation: str = "compensation", by_admin: int = 0) -> Optional[int]:
         """Начислить золото игроку одной транзакцией с записью в economy_ledger
@@ -412,16 +648,25 @@ class Database:
                 uid, int(limit))
         return [dict(r) for r in rows]
 
-    async def find_by_name(self, name: str) -> Optional[dict]:
-        """Найти персонажа по имени (регистронезависимо, первое совпадение).
-        Возвращает {uid,name,level,gold,room} или None. Для поиска в админке."""
+    async def find_by_name(self, name: str) -> List[dict]:
+        """Найти АКТИВНЫХ персонажей по имени (Аудит-2б.1). Возвращает СПИСОК
+        совпадений [{uid,name,level,gold,room}, ...] (для админки).
+
+        Раньше был LIMIT 1 — при неоднозначном имени молча брал случайного.
+        Теперь сравнение по name_norm (NFKC→casefold→схлоп): с уникальным индексом
+        активных дублей быть не должно (список из 0/1), но легаси-дубли ДО их
+        разрешения возможны — тогда список длиннее 1, и вызывающий (bot) просит
+        точный uid. lower(name) оставлен запасным сравнением на случай строк с
+        ещё не заполненным name_norm. Без пула — []."""
         if not self.pool:
-            return None
+            return []
+        nn = textsafe.name_norm(name)
         async with self.pool.acquire() as con:
-            r = await con.fetchrow(
+            rows = await con.fetch(
                 "SELECT uid, name, level, gold, room FROM characters "
-                "WHERE lower(name)=lower($1) AND deleted_at IS NULL LIMIT 1", name)
-        return dict(r) if r else None
+                "WHERE deleted_at IS NULL AND (name_norm=$2 OR lower(name)=lower($1)) "
+                "ORDER BY uid", name, nn)
+        return [dict(r) for r in rows]
 
     # ───────── push-реактивация ─────────
     # Деградация: без пула (pool=None) все методы тихо возвращают пустоту.

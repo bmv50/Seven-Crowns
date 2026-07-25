@@ -74,14 +74,19 @@ RANK_ORDER = ["leader", "deputy", "senior_officer", "officer", "sergeant", "memb
 _INVITE_MAX = RANK_ORDER.index("sergeant")    # приглашать — до сержанта включительно
 _WITHDRAW_MAX = RANK_ORDER.index("officer")   # снимать из банка — до офицера включительно
 _ADMIN_MAX = RANK_ORDER.index("deputy")       # управлять составом — лидер/зам
-_RIGHT_MAX = {"invite": _INVITE_MAX, "withdraw": _WITHDRAW_MAX, "admin": _ADMIN_MAX}
+# 'roster' — синоним 'admin' (Аудит-2а.2): server-side guard в bot/main.py для
+# gkick/gpromote/gdemote/guild_manage проверяет право под именем 'roster',
+# семантически это ровно управление составом — тот же порог, что и 'admin'.
+_RIGHT_MAX = {"invite": _INVITE_MAX, "withdraw": _WITHDRAW_MAX, "admin": _ADMIN_MAX,
+              "roster": _ADMIN_MAX}
 
 
 def rank_can(rank: str, right: str) -> bool:
     """Чистая проверка права по рангу (без БД). Зеркалит engine/guild.py:
     'member'/'deposit' (членство/вклад) — любой валидный ранг; 'invite'/'withdraw'/
-    'admin' — позиция ранга в иерархии не ниже порога права. Лидер (индекс 0)
-    проходит любой порог → может всё. Неизвестный ранг → False."""
+    'admin'/'roster' — позиция ранга в иерархии не ниже порога права ('roster' —
+    синоним 'admin', управление составом). Лидер (индекс 0) проходит любой
+    порог → может всё. Неизвестный ранг → False."""
     if rank not in RANK_ORDER:
         return False
     if right in ("member", "deposit"):

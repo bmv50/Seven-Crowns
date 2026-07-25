@@ -63,6 +63,42 @@ class MockDB:
     async def load_moderation(self):
         return list(self.mod.values())
 
+    async def set_moderation_with_audit(self, uid, banned, muted_until, reason,
+                                        by_admin, action, details=None):
+        """Аудит-2а.2: engine/moderation.py теперь зовёт ОДИН метод (персист+
+        аудит одной транзакцией) вместо set_moderation()+add_audit() по
+        отдельности — мок обновляет те же self.mod/self.audits, так что
+        существующие проверки ниже (db.mod[...], db.audits[...]) не меняются."""
+        self.mod[uid] = {"uid": uid, "banned": banned, "muted_until": muted_until,
+                         "reason": reason, "by_admin": by_admin, "updated": 0.0}
+        self.audits.append((uid, action, details or {}))
+
+
+class TxMockDB:
+    """Мок, эмулирующий АТОМАРНОСТЬ set_moderation_with_audit: если транзакция
+    падает (fail=True), НИ moderation-строка, НИ audit-запись не появляются
+    (откат обоих) — в отличие от старого раздельного set_moderation()+
+    add_audit(), где одна половина могла записаться, а другая нет."""
+
+    def __init__(self, fail=False):
+        self.pool = object()
+        self.fail = fail
+        self.audits = []
+        self.mod = {}
+        self.calls = 0
+
+    async def set_moderation_with_audit(self, uid, banned, muted_until, reason,
+                                        by_admin, action, details=None):
+        self.calls += 1
+        if self.fail:
+            raise RuntimeError("db_tx_failed (симуляция сбоя внутри транзакции)")
+        self.mod[uid] = {"uid": uid, "banned": banned, "muted_until": muted_until,
+                         "reason": reason, "by_admin": by_admin, "updated": 0.0}
+        self.audits.append((uid, action, details or {}))
+
+    async def load_moderation(self):
+        return list(self.mod.values())
+
 
 # ═══════════════════════ 1. БАН / АНБАН ═══════════════════════
 print("\n[1] Бан / анбан + аудит")
@@ -131,6 +167,118 @@ async def _t_load():
 
 
 asyncio.run(_t_load())
+
+# ═══════════════════════ 3б. FAIL-CLOSED (Аудит-2а.2) ═══════════════════════
+print("\n[3б] Fail-closed: сбой БД не проглатывается и не меняет кэш")
+
+
+async def _t_fail_closed_persist():
+    """Сбой транзакции persist+audit → кэш НЕ меняется, исключение уходит наружу
+    (раньше ban() мутировал кэш ДО персиста, а сбой БД просто логировался)."""
+    mod.reset()
+    db = TxMockDB(fail=True)
+    mod.set_db(db)
+    check("до сбойного ban — не забанен", mod.is_banned(55) is False)
+    raised = False
+    try:
+        await mod.ban(55, reason="токсичность", by=1)
+    except Exception:
+        raised = True
+    check("сбой persist — исключение ушло наружу вызывающему", raised is True)
+    check("сбой persist — кэш НЕ изменился (fail-closed)", mod.is_banned(55) is False)
+    check("сбой persist — попытка записи была (транзакция вызвана)", db.calls == 1)
+
+
+asyncio.run(_t_fail_closed_persist())
+
+
+async def _t_fail_closed_mute():
+    """То же для mute() — не только ban()."""
+    mod.reset()
+    db = TxMockDB(fail=True)
+    mod.set_db(db)
+    raised = False
+    try:
+        await mod.mute(56, minutes=30, reason="флуд", by=1)
+    except Exception:
+        raised = True
+    check("сбой persist mute — исключение ушло наружу", raised is True)
+    check("сбой persist mute — кэш НЕ изменился (fail-closed)", mod.is_muted(56) is False)
+
+
+asyncio.run(_t_fail_closed_mute())
+
+
+async def _t_audit_rollback():
+    """Транзакция «падает» (симуляция сбоя INSERT audit_log после UPDATE
+    moderation внутри одной транзакции) → ОБА изменения откатываются, а не
+    только audit — moderation-строка тоже не остаётся полусохранённой."""
+    mod.reset()
+    db = TxMockDB(fail=True)
+    mod.set_db(db)
+    try:
+        await mod.ban(66, reason="y", by=2)
+    except Exception:
+        pass
+    check("откат транзакции — moderation-строка не создана", 66 not in db.mod)
+    check("откат транзакции — audit-запись не создана", not db.audits)
+    check("откат транзакции — кэш не изменился (fail-closed)", mod.is_banned(66) is False)
+
+
+asyncio.run(_t_audit_rollback())
+
+
+async def _t_ban_idempotent():
+    """Повторный ban того же игрока — идемпотентен: банned остаётся True,
+    UPSERT не плодит вторую строку moderation."""
+    mod.reset()
+    db = MockDB()
+    mod.set_db(db)
+    await mod.ban(70, reason="a", by=1)
+    await mod.ban(70, reason="a", by=1)   # повтор (двойной клик админа)
+    check("повторный ban идемпотентен: banned=True", mod.is_banned(70) is True)
+    check("повторный ban не плодит лишних строк moderation (UPSERT)", len(db.mod) == 1)
+
+
+asyncio.run(_t_ban_idempotent())
+
+
+async def _t_restart_preserves_ban():
+    """«Рестарт» процесса (кэш сброшен) — load() из той же БД поднимает бан
+    обратно: успешный ban() пережил перезапуск (персист реально применился)."""
+    mod.reset()
+    db = MockDB()
+    mod.set_db(db)
+    await mod.ban(80, reason="перс", by=3)
+    mod.reset()   # симуляция рестарта процесса — кэш в памяти пуст
+    check("после «рестарта» (reset) кэш пуст", mod.is_banned(80) is False)
+    await mod.load()
+    check("после load() из БД бан пережил «рестарт»", mod.is_banned(80) is True)
+
+
+asyncio.run(_t_restart_preserves_ban())
+
+
+async def _t_load_failure_propagates():
+    """load() больше не глотает ошибку молча — она обязана уйти наружу, чтобы
+    bot/main.py мог решить: PROD → sys.exit(1), dev → warning и продолжить."""
+    class BrokenLoadDB:
+        pool = object()
+
+        async def load_moderation(self):
+            raise RuntimeError("connection lost")
+
+    mod.reset()
+    mod.set_db(BrokenLoadDB())
+    raised = False
+    try:
+        await mod.load()
+    except Exception:
+        raised = True
+    check("сбой load() уходит наружу (не проглатывается)", raised is True)
+
+
+asyncio.run(_t_load_failure_propagates())
 
 # ═══════════════════════ 4. ЧАТ-RATE-LIMIT ═══════════════════════
 print("\n[4] chat_allowed: окно 5 сообщений / 10 секунд")

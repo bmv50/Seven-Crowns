@@ -18,7 +18,18 @@
 import unicodedata
 
 # Спецсимволы классического Markdown Telegram, ломающие разметку в тексте UGC.
-_MD_SPECIAL = set("*_`[")
+# ВАЖНО: backslash идёт ПЕРВЫМ по смыслу — он и сам экранируется, и является
+# префиксом экранирования остальных. Порядок в set роли не играет (esc_md
+# ставит префикс каждому символу независимо), но набор общий для esc_md и
+# _unescape_md — иначе идемпотентность esc_md сломается.
+_MD_SPECIAL = set("\\*_`[")
+
+# Спецсимволы Markdown, ЗАПРЕЩЁННЫЕ прямо в НОВЫХ именах (Аудит-2б.1). Имя с
+# любым из них отклоняется (name_reason: «без символов разметки») — это снимает
+# половину рисков вставок раз и навсегда: чистое имя нельзя «поехать» разметкой.
+# Легаси-имена в БД (созданные до правила) остаются — их страхует esc_md на
+# рендере. Набор совпадает с экранируемым: * _ ` [ и сам backslash.
+_NAME_FORBID = set("\\*_`[")
 
 # Блок-список подстрок для имён (Этап 7.2). Две группы:
 #  • имперсонация служебных ролей (admin/moderator/system/бот/поддержка) —
@@ -42,7 +53,8 @@ def name_reason(s) -> str:
     None по любой из этих причин — здесь она формулируется человекочитаемо."""
     if not s:
         return "пустое имя"
-    raw = _strip_invisible(str(s))
+    raw = unicodedata.normalize("NFKC", str(s))   # NFKC ПЕРВЫМ (см. clean_name)
+    raw = _strip_invisible(raw)
     raw = " ".join(raw.split())
     if not raw:
         return "пустое имя"
@@ -50,6 +62,8 @@ def name_reason(s) -> str:
         return "длина должна быть 2–20 символов"
     if raw[0] in "@/":
         return "нельзя начинать с @ или /"
+    if any(c in _NAME_FORBID for c in raw):
+        return "без символов разметки"
     if not any(c.isalnum() for c in raw):
         return "нужна хотя бы одна буква или цифра"
     low = raw.lower()
@@ -59,13 +73,39 @@ def name_reason(s) -> str:
     return ""
 
 
+def _unescape_md(s: str) -> str:
+    """Снять существующее экранирование НАШИХ спецсимволов: последовательность
+    `\\` + спецсимвол → спецсимвол. Нужна для идемпотентности esc_md: сперва
+    разэкранируем, потом экранируем заново — двойное применение не наслаивает
+    backslash'и. Backslash-перед-неспецсимволом остаётся как есть (это литерал)."""
+    out = []
+    i = 0
+    n = len(s)
+    while i < n:
+        c = s[i]
+        if c == "\\" and i + 1 < n and s[i + 1] in _MD_SPECIAL:
+            out.append(s[i + 1])   # снять префикс: эмитим только сам спецсимвол
+            i += 2
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
 def esc_md(s) -> str:
-    """Экранировать спецсимволы классического Markdown (* _ ` [) обратным
-    слэшем — чтобы имя/реплика игрока не ломали разметку и не «съедали» текст."""
+    """Экранировать спецсимволы классического Markdown (backslash, * _ ` [)
+    обратным слэшем — чтобы имя/реплика игрока не ломали разметку и не «съедали»
+    текст.
+
+    ИДЕМПОТЕНТНА ПО ПОСТРОЕНИЮ (Аудит-2б.1): сначала снимаем уже имеющееся
+    экранирование наших спецсимволов (_unescape_md), затем экранируем заново.
+    Свойство: esc_md(esc_md(x)) == esc_md(x). Backslash экранируется тоже —
+    иначе одиночный '\\' в имени ломал бы разметку Telegram."""
     if not s:
         return ""
+    src = _unescape_md(str(s))
     out = []
-    for ch in str(s):
+    for ch in src:
         if ch in _MD_SPECIAL:
             out.append("\\")
         out.append(ch)
@@ -92,13 +132,18 @@ def clean_name(s, min_len: int = 2, max_len: int = 20):
     """
     if not s:
         return None
-    s = _strip_invisible(str(s))
+    s = unicodedata.normalize("NFKC", str(s))   # NFKC ПЕРВЫМ: свести совместимые
+    s = _strip_invisible(s)                      # и полноширинные двойники
     s = " ".join(s.split())          # trim + схлоп внутренних пробелов
     if not s:
         return None
     if len(s) < min_len or len(s) > max_len:
         return None
     if s[0] in "@/":
+        return None
+    # Аудит-2б.1: НОВЫЕ имена без символов разметки Markdown (* _ ` [ \). Так
+    # имя гарантированно не «поедет» разметкой в любом сообщении бота.
+    if any(c in _NAME_FORBID for c in s):
         return None
     if not any(c.isalnum() for c in s):
         return None
@@ -108,11 +153,29 @@ def clean_name(s, min_len: int = 2, max_len: int = 20):
     return s
 
 
-def clean_chat(s, limit: int = 300) -> str:
-    """Очистить реплику чата: вырезать управляющие/невидимые символы, схлопнуть
-    пробелы, обрезать до limit. Возвращает строку (возможно пустую)."""
+def name_norm(s) -> str:
+    """Нормализованный ключ имени для СРАВНЕНИЯ и УНИКАЛЬНОСТИ (Аудит-2б.1).
+
+    NFKC → casefold → схлоп пробелов. Визуальные двойники по регистру и
+    совместимым формам считаются ОДНИМ именем: «Гэндальф», «гэндальф» и
+    полноширинное «Ｇэндальф» дают один ключ. По этому ключу строится частичный
+    уникальный индекс активных персонажей (см. engine/db.py). Возвращает '' для
+    пустого/None — вызывающий сам решает, что делать с пустым ключом."""
     if not s:
         return ""
-    s = _strip_invisible(str(s))
+    x = unicodedata.normalize("NFKC", str(s))
+    x = _strip_invisible(x)
+    x = " ".join(x.split())
+    return x.casefold()
+
+
+def clean_chat(s, limit: int = 300) -> str:
+    """Очистить реплику чата: NFKC-нормализация, вырезать управляющие/невидимые
+    символы, схлопнуть пробелы, обрезать до limit. Возвращает строку (возможно
+    пустую). NFKC (Аудит-2б.1) сводит совместимые/полноширинные формы к обычным."""
+    if not s:
+        return ""
+    s = unicodedata.normalize("NFKC", str(s))
+    s = _strip_invisible(s)
     s = " ".join(s.split())
     return s[:limit]

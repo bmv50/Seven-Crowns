@@ -7,6 +7,7 @@ import re
 from engine.content import WORLD, ITEMS, CLASSES, RACES
 from engine import npc as npclib
 from engine import achievements as _ach
+from engine import textsafe as _ts    # Аудит-2б.1: esc_md имён игроков в Markdown-рендерах
 from engine import combat as _combat
 from engine import rules2 as _r2
 from engine import money as _money
@@ -98,7 +99,7 @@ def render_room(ch, world, others) -> str:
     if party:
         L.append("🧑‍🤝‍🧑 *Рядом игроки:*")
         for o in party:
-            L.append(f"  {CLASSES[o.cls]['emoji']} {_ach.name_tag(o)}")
+            L.append(f"  {CLASSES[o.cls]['emoji']} {_ts.esc_md(_ach.name_tag(o))}")
 
     # выходы: русское(english) название стороны света
     ex_lbl = [f"{d.capitalize()}({cmds.DIR_RU2EN.get(d, d)})" for d in r["exits"]]
@@ -152,7 +153,7 @@ def render_score(ch) -> str:
     L = []
     title = _ach.active_title(ch)
     prestige = f"⭐{ch.remort_count} " if ch.remort_count > 0 else ""
-    head = f"{rc.get('emoji','🧝')}{c.get('emoji','⚔️')} {prestige}*{ch.name}*"
+    head = f"{rc.get('emoji','🧝')}{c.get('emoji','⚔️')} {prestige}*{_ts.esc_md(ch.name)}*"
     if title:
         head += f"  🎖 _{title}_"
     L.append(head)

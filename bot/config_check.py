@@ -120,6 +120,44 @@ def check_config(env: Optional[Dict[str, str]] = None) -> ConfigResult:
         warnings.append(
             "ADMIN_IDS пуст — админ-панель (/admin: баны, компенсации, Health, "
             "пауза торговли) будет недоступна.")
+    if prod and not good:
+        # В публичном режиме без админа некому забанить нарушителя и увидеть
+        # Health — операционный блокер, а не пожелание.
+        errors.append(
+            "PROD=1, но ADMIN_IDS пуст: некому модерировать и следить за здоровьем "
+            "сервиса. Укажите свой Telegram uid (узнать: @userinfobot).")
+
+    # 4) Аудит-2б.2: контактные/юридические поля обязательны в PROD — иначе
+    # /support и /privacy показывают игроку плейсхолдеры «[УКАЖИТЕ ...]».
+    for _key, _what in (
+            ("SUPPORT_CONTACT", "контакт поддержки (/support)"),
+            ("LEGAL_DOCS_URL", "ссылка на правила и политику (/privacy, /terms)")):
+        _val = (env.get(_key) or "").strip()
+        _placeholder = bool(_val) and (_is_placeholder_token(_val)
+                                       or "УКАЖИТЕ" in _val.upper())
+        if prod:
+            if not _val:
+                errors.append(f"PROD=1, но {_key} не задан — {_what}.")
+            elif _placeholder:
+                errors.append(f"PROD=1, но {_key} оставлен заглушкой — {_what}.")
+        elif not _val or _placeholder:
+            warnings.append(f"{_key} не заполнен — {_what} покажет заглушку.")
+
+    # 5) Платежи (задел Telegram Stars): включать только в PROD и только с
+    # заполненными юридическими/контактными полями.
+    if _is_truthy(env.get("STARS_ENABLED")):
+        if not prod:
+            errors.append("STARS_ENABLED=1 вне PROD-режима: платежи в dev запрещены.")
+        _missing = []
+        for _key in ("SUPPORT_CONTACT", "LEGAL_DOCS_URL"):
+            _v = (env.get(_key) or "").strip()
+            if not _v or _is_placeholder_token(_v) or "УКАЖИТЕ" in _v.upper():
+                _missing.append(_key)
+        if _missing:
+            errors.append(
+                "STARS_ENABLED=1, но не заполнены: " + ", ".join(_missing)
+                + ". Платежи без оферты, политики возврата и контакта поддержки "
+                  "включать нельзя.")
 
     return ConfigResult(errors=errors, warnings=warnings)
 

@@ -103,9 +103,13 @@ check("пустой BOT_TOKEN → отказ", not r.ok)
 r = C.check_config({"BOT_TOKEN": "123456:realtoken", "PROD": "1"})
 check("PROD=1 без DATABASE_URL → отказ", not r.ok)
 
+# Аудит-2б.2: PROD теперь требует ещё ADMIN_IDS и support/legal-поля —
+# одной БД недостаточно (публичный запуск без модерации и контактов запрещён).
 r = C.check_config({"BOT_TOKEN": "123456:realtoken", "PROD": "1",
-                    "DATABASE_URL": "postgresql://mud:pass@postgres:5432/mud"})
-check("PROD=1 + валидный DATABASE_URL → ok", r.ok)
+                    "DATABASE_URL": "postgresql://mud:pass@postgres:5432/mud",
+                    "ADMIN_IDS": "42", "SUPPORT_CONTACT": "@support",
+                    "LEGAL_DOCS_URL": "https://example.com/legal"})
+check("PROD=1 + БД + админ + контакты → ok", r.ok)
 
 r = C.check_config({"BOT_TOKEN": "123456:realtoken", "PROD": "0"})
 check("dev без DATABASE_URL → ok, но с предупреждением", r.ok and bool(r.warnings))
@@ -134,6 +138,50 @@ check("restore_test.sh проверяет characters/kv_state/economy_ledger",
       "characters" in restore_test_sh and "kv_state" in restore_test_sh
       and "economy_ledger" in restore_test_sh)
 check("restore_test.sh дропает временную БД (cleanup)", "trap cleanup" in restore_test_sh)
+
+# ───────── Аудит-2б.2: PROD-валидация support/legal и гейт платежей ─────────
+print()
+print("[Аудит-2б.2] обязательные PROD-поля и STARS_ENABLED")
+
+from bot.config_check import check_config as _cc
+
+_BASE = {"BOT_TOKEN": "123:AA", "DATABASE_URL": "postgresql://u:p@h/db",
+         "ADMIN_IDS": "42"}
+_FULL = {**_BASE, "PROD": "1", "SUPPORT_CONTACT": "@support",
+         "LEGAL_DOCS_URL": "https://example.com/legal"}
+
+_r_prod_empty = _cc({**_BASE, "PROD": "1"})
+check("PROD без SUPPORT_CONTACT/LEGAL_DOCS_URL → ошибки старта",
+      len(_r_prod_empty.errors) == 2
+      and any("SUPPORT_CONTACT" in e for e in _r_prod_empty.errors)
+      and any("LEGAL_DOCS_URL" in e for e in _r_prod_empty.errors))
+
+_r_ph = _cc({**_FULL, "SUPPORT_CONTACT": "[УКАЖИТЕ КОНТАКТ]"})
+check("PROD с плейсхолдером [УКАЖИТЕ...] → ошибка",
+      any("SUPPORT_CONTACT" in e for e in _r_ph.errors))
+
+_r_ok = _cc(_FULL)
+check("PROD с заполненными полями → без ошибок", not _r_ok.errors)
+
+_r_noadmin = _cc({**_FULL, "ADMIN_IDS": ""})
+check("PROD без ADMIN_IDS → ошибка (некому модерировать)",
+      any("ADMIN_IDS" in e for e in _r_noadmin.errors))
+
+_r_dev = _cc(_BASE)
+check("dev-режим (PROD пуст) стартует без ошибок", not _r_dev.errors)
+
+_r_stars_dev = _cc({**_BASE, "STARS_ENABLED": "1"})
+check("STARS_ENABLED=1 вне PROD → запрещено",
+      any("PROD" in e for e in _r_stars_dev.errors))
+
+_r_stars_nolegal = _cc({**_BASE, "PROD": "1", "STARS_ENABLED": "1",
+                        "SUPPORT_CONTACT": "@s", "LEGAL_DOCS_URL": ""})
+check("STARS_ENABLED=1 без LEGAL_DOCS_URL → запрещено",
+      any("LEGAL_DOCS_URL" in e for e in _r_stars_nolegal.errors))
+
+_r_stars_ok = _cc({**_FULL, "STARS_ENABLED": "1"})
+check("STARS_ENABLED=1 при заполненных полях в PROD → разрешено",
+      not _r_stars_ok.errors)
 
 # ───────── итог ─────────
 total = _passed + _failed

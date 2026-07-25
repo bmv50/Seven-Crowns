@@ -16,6 +16,7 @@ import time
 from .content import ITEMS
 from . import money
 from . import chronicle
+from . import textsafe            # Аудит-2б.1: esc_md имён игроков в лидерборде
 
 ENABLED = False
 SEASON_LENGTH = 7 * 86400     # неделя
@@ -129,7 +130,7 @@ def leaderboard(chars, me=None) -> str:
     for i, c in enumerate(rows, 1):
         nm, em = tier(points(c))
         mark = " ⬅️ вы" if me is not None and c.uid == me.uid else ""
-        L.append(f"{i}. {em} {c.name} — {points(c)} очк. ({nm}){mark}")
+        L.append(f"{i}. {em} {textsafe.esc_md(c.name)} — {points(c)} очк. ({nm}){mark}")
     if not rows:
         L.append("_Пока пусто — заработайте очки в бою._")
     return "\n".join(L)

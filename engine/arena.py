@@ -3,6 +3,8 @@
 Рейтинговая арена: ELO-рейтинг за ранговые дуэли (в комнате-арене).
 Рейтинг/статистика — в ch.flags["arena"] = {rating, wins, losses}.
 """
+from . import textsafe            # Аудит-2б.1: esc_md имён игроков в лидерборде
+
 K = 32
 START = 1000
 
@@ -65,7 +67,7 @@ def render_leaderboard(chars, me) -> str:
         L.append("_Пока никто не сражался на ранговой арене. Будьте первым!_")
     for i, c in enumerate(top, 1):
         a = record(c)
-        L.append(f"{i}. *{c.name}* — {a['rating']} {tier(a['rating'])}  "
+        L.append(f"{i}. *{textsafe.esc_md(c.name)}* — {a['rating']} {tier(a['rating'])}  "
                  f"(🏆{a['wins']}/{a['losses']}💀)")
     a = record(me)
     L.append(f"\nВаш рейтинг: *{a['rating']}* {tier(a['rating'])}  "

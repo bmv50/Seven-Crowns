@@ -48,6 +48,9 @@ from engine.character import Character
 from engine.world import World, ground_items_for, take_ground_item
 from engine.loop import GameLoop
 from engine.db import Database
+from engine.lifecycle_errors import (
+    ActiveCharacterExists, StaleCharacterWrite, CharacterNotFound, RestoreExpired,
+    NameTaken)
 from engine.persist import CharDirtySet
 from engine import persist as _persist
 from engine import log as _elog
@@ -442,11 +445,29 @@ _log = _elog.get("bot.main")
 _flush_health = _persist.FlushHealth()   # трекер подряд-провальных проходов флашера
 
 
+def _evict_stale(uid: int) -> None:
+    """Аудит-2а.1: выбросить протухший (устаревшего поколения) объект персонажа
+    из памяти и очереди dirty. После этого следующее действие игрока упрётся в
+    «uid not in chars» → его вежливо направят на /start. Так stale-объект не
+    затирает нового/восстановленного героя, а игрок не застревает в крашах."""
+    chars.pop(uid, None)
+    _char_dirty.discard(uid)
+
+
 async def save(ch: Character, force: bool = False):
     if db and db.pool:
         if force:
             _char_dirty.discard(ch.uid)
-            await db.save(ch)
+            # Аудит-2а.1: force-запись (транзакционно важные точки) больше не
+            # создаёт строк. StaleCharacterWrite = объект устарел (персонаж был
+            # сброшен/поднят в новом поколении) — не роняем обработчик: логируем,
+            # выбрасываем протухший объект из памяти; следующее действие игрока
+            # уйдёт на /start. Прочие ошибки БД пробрасываем как раньше.
+            try:
+                await db.save(ch)
+            except StaleCharacterWrite as e:
+                _elog.log_err(_log, "character_stale_write", e, uid=ch.uid)
+                _evict_stale(ch.uid)
         else:
             _char_dirty.mark(ch.uid)   # запись отложена флашеру
     # территории: в БД-режиме save() лишь метит dirty (флашит snapshot_worker),
@@ -464,7 +485,7 @@ async def flush_dirty_chars():
         _char_dirty.drain()      # без БД копить незачем — просто очистим
         return
     ok, failed = await _persist.flush_dirty(
-        _char_dirty, chars.get, db.save, logger=_log)
+        _char_dirty, chars.get, db.save, logger=_log, on_stale=_evict_stale)
     if _flush_health.record(failed):
         _elog.log_err(_log, "char_flush_degraded",
                       consecutive=_flush_health.consecutive,
@@ -560,15 +581,32 @@ async def safe_edit(cb: CallbackQuery, text: str, kb):
     try:
         await cb.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
     except TelegramBadRequest as e:
-        if "not modified" in str(e):
+        _es = str(e).lower()
+        if "not modified" in _es:
             return
+        # Аудит-2б.1: битая Markdown-разметка (незакрытая сущность из-за UGC) —
+        # НЕ теряем сообщение: повторяем правку плоским текстом (как в send()).
+        if "can't parse entities" in _es:
+            try:
+                await cb.message.edit_text(text, reply_markup=kb)
+                _elog.log_err(_log, "safe_edit_markdown_fallback", None)
+                return
+            except Exception:
+                pass
         # сообщение нельзя редактировать как текст (например, это фото) —
         # удаляем его и шлём новое текстовое
         try:
             await cb.message.delete()
         except Exception:
             pass
-        await cb.message.answer(text, parse_mode="Markdown", reply_markup=kb)
+        try:
+            await cb.message.answer(text, parse_mode="Markdown", reply_markup=kb)
+        except TelegramBadRequest as e2:
+            if "can't parse entities" in str(e2).lower():
+                await cb.message.answer(text, reply_markup=kb)
+                _elog.log_err(_log, "safe_edit_answer_fallback", None)
+            else:
+                raise
 
 
 # ───────── «живое» боевое сообщение ─────────
@@ -1398,7 +1436,16 @@ async def on_text(message: Message):
         if name is None:
             await message.answer(
                 "🚫 Такое имя не подойдёт. Пришлите имя из 2–20 символов "
-                "(буквы/цифры), без невидимых спецсимволов и не начиная с @ или /.")
+                "(буквы/цифры), без символов разметки (* _ ` [ \\) и невидимых "
+                "спецсимволов, не начиная с @ или /.")
+            return
+        # Аудит-2б.1: быстрый отказ по памяти (активные герои) ДО обращения к БД —
+        # имперсонация именем-двойником. Состояние создания (creating[uid]) НЕ
+        # трогаем — игрок пришлёт другое имя. Финальный арбитр — уникальный
+        # индекс в БД (ловим NameTaken ниже на гонке двух одновременных созданий).
+        _nn = _ts.name_norm(name)
+        if any(u != uid and _ts.name_norm(c.name) == _nn for u, c in chars.items()):
+            await message.answer("🚫 Имя занято, выберите другое.")
             return
         info = creating.pop(uid)
         cls, race = info["cls"], info["race"]
@@ -1420,9 +1467,35 @@ async def on_text(message: Message):
         _ref = pending_ref.pop(uid, None)
         if _ref is not None and _ref in chars:
             referral.set_referrer(ch, _ref)
+        # Аудит-2а.1: атомарное создание в БД ДО помещения в память. Одна
+        # транзакция (FOR UPDATE по uid): нет строки → INSERT gen=1; есть
+        # удалённая → gen+1 с полной заменой полей и снятием deleted_at. Так
+        # /reset-«потеря персонажа» невозможна, а строка гарантированно есть до
+        # первого отложенного save(). create_character сам пишет audit('create')
+        # и проставляет ch.generation.
+        try:
+            if db and db.pool:
+                await db.create_character(ch)
+        except ActiveCharacterExists:
+            # гонка/двойной клик: активный герой уже есть — вежливый отказ
+            await message.answer("У вас уже есть герой. Напишите /start, чтобы продолжить.")
+            return
+        except NameTaken:
+            # Аудит-2б.1: конкурентное создание того же имени другим игроком —
+            # БД отдала уникальный конфликт. Возвращаем экран создания для повтора.
+            creating[uid] = info
+            await message.answer("🚫 Имя занято, выберите другое.")
+            return
+        except Exception as e:                      # noqa: BLE001 — ошибка БД
+            _elog.log_err(_log, "character_create_failed", e, uid=uid)
+            creating[uid] = info    # вернуть экран создания — игрок повторит имя
+            await message.answer(
+                "⚠️ Не удалось создать персонажа (проблема на сервере). "
+                "Пришлите имя ещё раз.")
+            return
         chars[uid] = ch
+        _char_dirty.discard(uid)    # строка уже записана транзакцией create_character
         analytics.track(uid, "character_created", {"race": race, "cls": cls})   # Этап 7.1
-        await save(ch, force=True)      # создание персонажа — фиксируем сразу
         c = CLASSES[cls]
         rr = RACES[race]
         # Этап 8, фишка первых 10 минут: наставник боя (наставник_боя из хаба)
@@ -1995,10 +2068,25 @@ async def safe_edit_caption(cb: CallbackQuery, caption: str, kb):
     try:
         await cb.message.edit_caption(caption=caption, parse_mode="Markdown", reply_markup=kb)
     except TelegramBadRequest as e:
-        if "not modified" in str(e):
-            pass
-        else:
+        _es = str(e).lower()
+        if "not modified" in _es:
+            return
+        # Аудит-2б.1: битая разметка в подписи (UGC) → повтор без parse_mode.
+        if "can't parse entities" in _es:
+            try:
+                await cb.message.edit_caption(caption=caption, reply_markup=kb)
+                _elog.log_err(_log, "safe_edit_caption_markdown_fallback", None)
+                return
+            except Exception:
+                pass
+        try:
             await cb.message.answer(caption, parse_mode="Markdown", reply_markup=kb)
+        except TelegramBadRequest as e2:
+            if "can't parse entities" in str(e2).lower():
+                await cb.message.answer(caption, reply_markup=kb)
+                _elog.log_err(_log, "safe_edit_caption_answer_fallback", None)
+            else:
+                raise
 
 
 async def send_item_card(cb: CallbackQuery, ch: Character, ctx: str, key: str):
@@ -2408,12 +2496,41 @@ async def on_cb(cb: CallbackQuery):
             except Exception:
                 pass
             return
+        # Аудит-2а.1: атомарный сброс с защитой поколением. reset_character в одной
+        # транзакции поднимает generation (инвалидирует stale-объекты), ставит
+        # deleted_at=now() и пишет audit('reset'). При успехе — убираем из памяти.
+        try:
+            if db and db.pool:
+                await db.reset_character(
+                    uid, getattr(ch, "generation", 1),
+                    {"name": ch.name, "level": ch.level, "gold": ch.gold})
+        except StaleCharacterWrite as e:
+            # поколение разошлось (уже сброшен в другом потоке) — честно на /start
+            _elog.log_err(_log, "character_reset_stale", e, uid=uid)
+            pending_reset.pop(uid, None)
+            _evict_stale(uid)
+            try:
+                await cb.message.edit_text("⚠️ Данные персонажа устарели. Напишите /start.")
+            except Exception:
+                pass
+            await cb.answer("Данные устарели.", show_alert=True)
+            return
+        except CharacterNotFound:
+            # строки уже нет — считаем сброшенным (идемпотентно на двойной клик)
+            pending_reset.pop(uid, None)
+            _evict_stale(uid)
+            try:
+                await cb.message.edit_text("🔄 Прогресс сброшен. Напишите /start, чтобы начать заново.")
+            except Exception:
+                pass
+            await cb.answer("Персонаж уже сброшен.")
+            return
+        except Exception as e:                      # noqa: BLE001 — ошибка БД
+            # НЕ трогаем pending_reset и chars — игрок сможет повторить нажатие
+            _elog.log_err(_log, "character_reset_failed", e, uid=uid)
+            await cb.answer("Не получилось удалить. Попробуйте ещё раз.", show_alert=True)
+            return
         pending_reset.pop(uid, None)
-        # аудит ДО удаления (пока есть данные персонажа)
-        if db and db.pool:
-            await db.add_audit(uid, "reset",
-                               {"name": ch.name, "level": ch.level, "gold": ch.gold})
-            await db.soft_delete(uid)     # мягкое удаление (восстановимо 24ч)
         chars.pop(uid, None)
         _char_dirty.discard(uid)
         try:
@@ -2425,12 +2542,33 @@ async def on_cb(cb: CallbackQuery):
     if action == "reset_restore":
         if uid in chars:
             await cb.answer("Персонаж уже активен."); return
-        restored = await db.restore_deleted(uid) if (db and db.pool) else None
-        if restored is None:
-            await cb.answer("Восстанавливать нечего.", show_alert=True)
+        if not (db and db.pool):
+            await cb.answer("Восстанавливать нечего.", show_alert=True); return
+        # Аудит-2а.1: атомарное восстановление. restore_character в одной транзакции
+        # проверяет окно 24ч, снимает deleted_at и пишет audit('restore'). В память
+        # кладём ТОЛЬКО после успеха (иначе можно затереть чужое состояние).
+        try:
+            restored = await db.restore_character(uid)
+        except RestoreExpired:
+            _evict_stale(uid)
+            try:
+                await cb.message.edit_text(
+                    "⌛️ Персонажа уже нельзя восстановить — прошло больше 24 часов. "
+                    "Напишите /start, чтобы создать нового.")
+            except Exception:
+                pass
+            await cb.answer("Срок восстановления истёк.", show_alert=True)
+            return
+        except ActiveCharacterExists:
+            # уже активен в БД (двойной клик) — просто поднимем при следующем /start
+            await cb.answer("Персонаж уже активен."); return
+        except CharacterNotFound:
+            await cb.answer("Восстанавливать нечего.", show_alert=True); return
+        except Exception as e:                      # noqa: BLE001 — ошибка БД
+            _elog.log_err(_log, "character_restore_failed", e, uid=uid)
+            await cb.answer("Не получилось восстановить. Попробуйте ещё раз.", show_alert=True)
             return
         chars[uid] = restored
-        await db.add_audit(uid, "restore", {"name": restored.name, "level": restored.level})
         try:
             await cb.message.edit_text(
                 f"♻️ Персонаж *{_ts.esc_md(restored.name)}* восстановлен!", parse_mode="Markdown")
@@ -2884,55 +3022,11 @@ async def on_cb(cb: CallbackQuery):
     elif action == "gmanage":
         await guild_manage(cb, ch)
     elif action == "gpromote":
-        _gtarget = int(arg)
-        if guild_mgr.promote(ch.uid, _gtarget):
-            _nr_key = guild_mgr.rank(_gtarget)
-            _nr = guildlib.RANKS.get(_nr_key, "")
-            if db and db.pool:
-                # Персистентность состава (Этап 3.3): зеркалим новый ранг.
-                _gid = guild_mgr.gid_of(_gtarget)
-                try:
-                    await guild_tx.set_rank(db.pool.acquire, _gtarget, _gid, _nr_key)
-                except Exception as e:
-                    _elog.log_err(_log, "guild_roster_sync_failed", e,
-                                 uid=_gtarget, gid=_gid, op="promote")
-            await send(_gtarget, f"🏰 Ваш ранг в гильдии повышен: {_nr}.")
-            await cb.answer("Повышен")
-        else:
-            await cb.answer("Нельзя повысить", show_alert=True)
-        await guild_manage(cb, ch)
+        await _guild_roster_action(cb, ch, arg, "promote")
     elif action == "gdemote":
-        _gtarget = int(arg)
-        if guild_mgr.demote(ch.uid, _gtarget):
-            if db and db.pool:
-                # Персистентность состава (Этап 3.3): зеркалим новый ранг.
-                _gid = guild_mgr.gid_of(_gtarget)
-                _nr_key = guild_mgr.rank(_gtarget)
-                try:
-                    await guild_tx.set_rank(db.pool.acquire, _gtarget, _gid, _nr_key)
-                except Exception as e:
-                    _elog.log_err(_log, "guild_roster_sync_failed", e,
-                                 uid=_gtarget, gid=_gid, op="demote")
-            await cb.answer("Понижен")
-        else:
-            await cb.answer("Нельзя понизить", show_alert=True)
-        await guild_manage(cb, ch)
+        await _guild_roster_action(cb, ch, arg, "demote")
     elif action == "gkick":
-        _gtarget = int(arg)
-        _gkick_gid = guild_mgr.gid_of(_gtarget)   # захватить ДО kick — kick чистит member_of
-        if guild_mgr.kick(ch.uid, _gtarget):
-            if _gkick_gid and db and db.pool:
-                # Персистентность состава (Этап 3.3): зеркалим исключение.
-                try:
-                    await guild_tx.remove_member(db.pool.acquire, _gtarget, _gkick_gid)
-                except Exception as e:
-                    _elog.log_err(_log, "guild_roster_sync_failed", e,
-                                 uid=_gtarget, gid=_gkick_gid, op="kick")
-            await send(_gtarget, "🏰 Вас исключили из гильдии.")
-            await cb.answer("Исключён")
-        else:
-            await cb.answer("Нельзя", show_alert=True)
-        await guild_manage(cb, ch)
+        await _guild_roster_action(cb, ch, arg, "kick")
     elif action == "pinvite":
         await party_invite(cb, ch, int(arg))
     elif action == "paccept":
@@ -3450,6 +3544,29 @@ def _admin_llm_kb() -> InlineKeyboardMarkup:
     ])
 
 
+async def _admin_mod_action(cb: CallbackQuery, admin_uid: int, target_uid: int,
+                            ok_text: str, ok_verb: str, action):
+    """Общая обёртка ban/unban/mute/unmute-колбэков (Аудит-2а.2, fail-closed).
+
+    Раньше карточка игрока показывала «✅ забанен» БЕЗУСЛОВНО — независимо от
+    того, применилось ли действие: engine/moderation.ban() глотала ошибку БД
+    молча, и админ видел «Забанен» даже если бан существовал только на
+    ближайшие секунды до рестарта. Теперь engine/moderation.* при сбое персиста
+    поднимает исключение — здесь оно ловится: «✅»-ответ идёт ТОЛЬКО после
+    реального успеха; при сбое — честное «⛔ не сохранено» этому же админу,
+    в ТОМ ЖЕ cb.answer (show_alert=True — он его точно увидит), плюс
+    структурный лог для расследования."""
+    try:
+        await action()
+    except Exception as e:
+        _elog.log_err(_log, "admin_mod_action_failed", e,
+                      admin=admin_uid, target=target_uid, action=ok_verb)
+        await cb.answer("⛔ Не сохранено, попробуйте ещё раз.", show_alert=True)
+        return
+    await _admin_show_card(cb, target_uid)
+    await cb.answer(f"✅ {ok_text}")
+
+
 # ── диспетчер админ-колбэков ──
 async def _admin_cb(cb: CallbackQuery, uid: int, arg: str):
     global TRADING_ENABLED
@@ -3466,18 +3583,19 @@ async def _admin_cb(cb: CallbackQuery, uid: int, arg: str):
     if sub == "card":
         await _admin_show_card(cb, int(rest)); await cb.answer(); return
     if sub == "ban":
-        await _mod.ban(int(rest), reason="admin", by=uid)
-        await _admin_show_card(cb, int(rest)); await cb.answer("Забанен"); return
+        await _admin_mod_action(cb, uid, int(rest), "Забанен", "забанен",
+                                lambda: _mod.ban(int(rest), reason="admin", by=uid)); return
     if sub == "unban":
-        await _mod.unban(int(rest), by=uid)
-        await _admin_show_card(cb, int(rest)); await cb.answer("Разбанен"); return
+        await _admin_mod_action(cb, uid, int(rest), "Разбанен", "разбанен",
+                                lambda: _mod.unban(int(rest), by=uid)); return
     if sub == "mute":
         tgt, _, mins = rest.partition(":")
-        await _mod.mute(int(tgt), minutes=int(mins or 60), reason="admin", by=uid)
-        await _admin_show_card(cb, int(tgt)); await cb.answer(f"Мут {mins} мин"); return
+        await _admin_mod_action(cb, uid, int(tgt), f"Мут {mins or 60} мин", "замучен",
+                                lambda: _mod.mute(int(tgt), minutes=int(mins or 60),
+                                                  reason="admin", by=uid)); return
     if sub == "unmute":
-        await _mod.unmute(int(rest), by=uid)
-        await _admin_show_card(cb, int(rest)); await cb.answer("Мут снят"); return
+        await _admin_mod_action(cb, uid, int(rest), "Мут снят", "размучен",
+                                lambda: _mod.unmute(int(rest), by=uid)); return
     if sub == "comp":
         admin_await[uid] = {"kind": "comp", "target": int(rest)}
         await safe_edit(cb, f"💰 *Компенсация игроку {rest}*\n\nПришлите сумму золота "
@@ -3526,9 +3644,17 @@ async def _admin_on_text(message: Message, uid: int, text: str):
         if t.lstrip("-").isdigit():
             target = int(t)
         elif db and db.pool:
-            row = await db.find_by_name(t)
-            if row:
-                target = int(row["uid"])
+            # Аудит-2б.1: find_by_name теперь возвращает СПИСОК. Неоднозначное имя
+            # (легаси-дубли до разрешения уникальности) → просим точный uid.
+            rows = await db.find_by_name(t)
+            if len(rows) > 1:
+                _uids = ", ".join(str(r["uid"]) for r in rows)
+                await message.answer(
+                    "Найдено несколько игроков с таким именем — уточните точный uid:\n"
+                    f"{_uids}\n/admin — вернуться.")
+                return
+            if rows:
+                target = int(rows[0]["uid"])
         if target is None:
             await message.answer("Игрок не найден. /admin — вернуться."); return
         await _admin_send_card(message, target); return
@@ -4409,7 +4535,102 @@ async def guild_withdraw_item(cb: CallbackQuery, ch: Character, key: str):
     await guild_bank_items(cb, ch)
 
 
+async def _guild_roster_action(cb: CallbackQuery, ch: Character, arg: str, op: str):
+    """Общий обработчик gkick/gpromote/gdemote (Аудит-2а.2, дефект kick()
+    проверял can_withdraw вместо can_admin — офицер мог кикать).
+
+    Server-side guard: право проверяется ЗАНОВО чистыми методами GuildManager
+    (can_kick/can_promote/can_demote) — не полагаемся на то, что кнопка была
+    показана только can_admin в guild_manage(), колбэк может прийти и мимо
+    актуального меню. Невалидный/устаревший arg (не число, цель уже вышла из
+    гильдии, ранги успели измениться) идёт по тому же пути отказа — вежливый
+    cb.answer, без краша.
+
+    Порядок в БД-режиме (исправление дефекта аудита — раньше guild_mgr
+    мутировался ДО БД, а ошибка БД лишь логировалась через except: pass-стиль
+    в guild_roster_sync_failed): проверка права → guild_tx-транзакция →
+    ТОЛЬКО после её успеха применяем изменение к guild_mgr. Ошибка БД —
+    память не трогаем, игроку возвращается честный отказ."""
+    try:
+        _gtarget = int(arg)
+    except (TypeError, ValueError):
+        await cb.answer("Действие устарело", show_alert=True)
+        return
+
+    if op == "kick":
+        allowed = guild_mgr.can_kick(ch.uid, _gtarget)
+    elif op == "promote":
+        allowed = guild_mgr.can_promote(ch.uid, _gtarget)
+    else:
+        allowed = guild_mgr.can_demote(ch.uid, _gtarget)
+    if not allowed:
+        await cb.answer("Нельзя", show_alert=True)
+        await guild_manage(cb, ch)
+        return
+
+    _gid = guild_mgr.gid_of(_gtarget)   # захватить ДО применения — kick чистит member_of
+    _new_rank = None
+    if op == "promote":
+        _new_rank = guild_mgr.preview_promote(_gtarget)
+    elif op == "demote":
+        _new_rank = guild_mgr.preview_demote(_gtarget)
+        if _new_rank == guild_mgr.rank(_gtarget):
+            # цель уже на полу иерархии (member) — нет реального изменения,
+            # DB-транзакция не нужна (как раньше в demote(): тихий успех).
+            await cb.answer("Понижен")
+            await guild_manage(cb, ch)
+            return
+
+    if db and db.pool:
+        try:
+            if op == "kick":
+                _db_ok, _db_msg = await guild_tx.remove_member(db.pool.acquire, _gtarget, _gid)
+            else:
+                _db_ok, _db_msg = await guild_tx.set_rank(db.pool.acquire, _gtarget, _gid, _new_rank)
+        except Exception as e:
+            _db_ok, _db_msg = False, "⚙️ Не удалось сохранить, попробуйте ещё раз."
+            _elog.log_err(_log, "guild_roster_sync_failed", e, uid=_gtarget, gid=_gid, op=op)
+        if not _db_ok:
+            _elog.log_err(_log, "guild_roster_db_failed",
+                          uid=_gtarget, gid=_gid, op=op, by=ch.uid, msg=_db_msg)
+            await cb.answer(_db_msg or "⚙️ Не удалось сохранить, попробуйте ещё раз.", show_alert=True)
+            await guild_manage(cb, ch)
+            return
+
+    # БД (если есть) уже подтвердила изменение — применяем к памяти. Прямая
+    # запись без повторной проверки прав: право уже подтверждено выше, а БД
+    # (источник истины в БД-режиме) уже закоммичена — пере-проверка сейчас
+    # рисковала бы рассинхронить БД и память при гонке, а не защитить их.
+    if op == "kick":
+        applied = guild_mgr.leave(_gtarget) is not None
+    else:
+        applied = guild_mgr._force_rank(_gtarget, _new_rank)
+
+    if not applied:
+        await cb.answer("Действие устарело, попробуйте ещё раз", show_alert=True)
+        await guild_manage(cb, ch)
+        return
+
+    if op == "kick":
+        await send(_gtarget, "🏰 Вас исключили из гильдии.")
+        await cb.answer("Исключён")
+    elif op == "promote":
+        _nr = guildlib.RANKS.get(_new_rank, "")
+        await send(_gtarget, f"🏰 Ваш ранг в гильдии повышен: {_nr}.")
+        await cb.answer("Повышен")
+    else:
+        await cb.answer("Понижен")
+    await guild_manage(cb, ch)
+
+
 async def guild_manage(cb: CallbackQuery, ch: Character):
+    # Server-side guard (Аудит-2а.2): рендерить меню управления составом
+    # может только can_admin (лидер/зам) — кнопка "⚙️ Управление составом" и
+    # так показывается лишь им (см. show_guild), но колбэк "gmanage" мог бы
+    # прийти и мимо кнопки, поэтому проверяем право здесь тоже.
+    if not guild_mgr.can_admin(ch.uid):
+        await cb.answer("Нельзя", show_alert=True)
+        return
     g = guild_mgr.guild_of(ch.uid)
     rows = []
     for uid in g["members"]:
@@ -4771,7 +4992,18 @@ async def main():
         print(f"🛡 Модерация: загружено записей {len(_mod._state)}; "
               f"админов: {len(ADMIN_IDS)}.")
     except Exception as e:
+        # Аудит-2а.2, fail-closed: раньше load() сама глотала ошибку и старт
+        # продолжался с ПУСТЫМ кэшем банов — забаненный игрок временно снова
+        # мог играть, и никто об этом не узнавал. В PROD это недопустимо:
+        # падаем громко (sys.exit), чтобы оркестратор не пускал публичную
+        # бету с пустыми банами. В dev — предупреждение и продолжаем (кэш
+        # останется пустым до следующей успешной загрузки/действия админа).
         _elog.log_err(_log, "moderation_load_failed", e)
+        if PROD:
+            print(f"❌ PROD=1, но загрузка модерации провалилась ({e}). "
+                  f"Останов: публичная бета с пустыми банами запрещена.")
+            sys.exit(1)
+        print(f"⚠️  Загрузка модерации провалилась ({e}). Кэш банов/мутов пуст (dev-режим).")
 
     # ───────── персистентность рантайма: восстановление на старте ─────────
     # Порядок: сперва мир/боссы/аукцион/территории поднимаем из kv_state (если

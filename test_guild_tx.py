@@ -296,6 +296,17 @@ async def scenario_rank_can(_):
     check(guild_tx.rank_can("member", "member") is True, "rank: рядовой — член")
     check(guild_tx.rank_can("member", "withdraw") is False, "rank: рядовой не снимает")
     check(guild_tx.rank_can("нет_такого", "member") is False, "rank: неизвестный ранг — прав нет")
+    # Аудит-2а.2: 'roster' — синоним 'admin' (server-side guard в bot/main.py
+    # для gkick/gpromote/gdemote/guild_manage зовёт rank_can(rank, 'roster')).
+    check(guild_tx.rank_can("leader", "roster") is True, "rank: лидер управляет составом (roster)")
+    check(guild_tx.rank_can("deputy", "roster") is True, "rank: зам управляет составом (roster)")
+    check(guild_tx.rank_can("senior_officer", "roster") is False,
+          "rank: старший офицер НЕ управляет составом (roster)")
+    check(guild_tx.rank_can("officer", "roster") is False,
+          "rank: офицер (withdraw без admin) НЕ управляет составом (roster)")
+    check(guild_tx.rank_can("нет_такого", "roster") is False, "rank: неизвестный ранг — roster тоже False")
+    check(guild_tx.rank_can("deputy", "roster") == guild_tx.rank_can("deputy", "admin"),
+          "rank: roster — точный синоним admin по всем рангам")
 
 
 async def scenario_deposit_atomic(_):

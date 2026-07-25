@@ -381,7 +381,10 @@ gl_t.party_mgr = pm2
 wkill = World(); _m = wkill.living_in("well")[0]; gl_t.world = wkill
 _m.aggro = [310]
 xp0 = p2.xp
-_aio.get_event_loop().run_until_complete(gl_t.on_mob_death(_m, [p1]))
+# Python 3.14 (Аудит-2а.2): get_event_loop() вне работающего цикла — deprecated
+# ещё с 3.10, а неявное создание нового цикла им же убрано в 3.14 (упадёт с
+# RuntimeError). asyncio.run() сам создаёт и закрывает цикл — переносимо.
+_aio.run(gl_t.on_mob_death(_m, [p1]))
 check("сопартиец получил опыт, хоть и не добивал", p2.xp > xp0)
 
 
@@ -497,7 +500,10 @@ check("боец не снимает из казны", gm.withdraw_gold(3, 1000) 
 check("офицер снимает из казны", gm.withdraw_gold(2, 2000) and gm.guild_of(1)["bank_gold"] == 3000)
 gm.deposit_item(3, "малое_зелье")
 check("предмет на складе", "малое_зелье" in gm.guild_of(1)["bank_items"])
-check("кик бойца офицером", gm.kick(2, 3) and 3 not in gm.member_of)
+# Аудит-2а.2: kick() раньше проверял can_withdraw (право снимать из банка) —
+# офицер мог исключать сослуживцев, хотя составом управляют только лидер/зам.
+check("офицер НЕ может кикнуть (не admin)", gm.kick(2, 3) is False and 3 in gm.member_of)
+check("лидер кикает бойца", gm.kick(1, 3) and 3 not in gm.member_of)
 gm2 = GuildManager(_gp)
 check("гильдия переживает перезагрузку", gm2.guild_of(1) is not None and gm2.guild_of(1)["name"] == "Стражи")
 gm2.leave(1)
@@ -527,7 +533,21 @@ gr.invite(1, 3); gr.accept(3)
 check("заместитель повышает бойца", gr.promote(2, 3) and gr.rank(3) == "sergeant")
 check("сержант умеет приглашать", gr.can_invite(3))
 check("сержант не снимает из банка", not gr.can_withdraw(3))
+
+# ── Аудит-2а.2: матрица прав управления составом (kick/promote/demote) ──
+# Состояние здесь: 1=leader, 2=deputy, 3=sergeant.
+gr.invite(1, 4); gr.accept(4)   # uid4 — рядовой боец (member)
+check("зам кикает нижестоящего", gr.can_kick(2, 4) is True and gr.kick(2, 4) is True and 4 not in gr.member_of)
+check("зам НЕ кикает лидера", gr.can_kick(2, 1) is False and gr.kick(2, 1) is False and gr.rank(1) == "leader")
+check("self-kick нельзя (лидер)", gr.can_kick(1, 1) is False and gr.kick(1, 1) is False)
+check("self-kick нельзя (не лидер)", gr.can_kick(3, 3) is False)
+check("promote до ранга инициатора (deputy) нельзя",
+      gr.can_promote(2, 3, "deputy") is False and gr.set_rank(2, 3, "deputy") is False)
+check("promote выше ранга инициатора (leader) нельзя", gr.can_promote(2, 3, "leader") is False)
+check("офицер/сержант (can_withdraw без admin) не управляет составом",
+      not gr.can_admin(3) and gr.can_kick(3, 1) is False)
 check("лидер понижает заместителя", gr.demote(1, 2) and gr.rank(2) == "senior_officer")
+check("нельзя понизить лидера", gr.can_demote(2, 1) is False and gr.demote(2, 1) is False)
 _os2.remove(_gp2)
 
 
@@ -552,8 +572,7 @@ ok, _m = _tal.invest(tc, "war_tough")
 check("талант вложен", ok and _tal.rank(tc, "war_tough") == 1)
 check("талант поднимает HP", tc.max_hp > hp0)
 check("без очков нельзя вкладывать",
-      (lambda: (_tal.reset(tc), tc.flags.__setitem__("talent_points", 0), _tal.invest(tc, "war_tough")[0])())[-1] is False
-      if False else _tal.invest(new_char("warrior","human",uid=443), "war_tough")[0] is False)
+      _tal.invest(new_char("warrior", "human", uid=443), "war_tough")[0] is False)
 check("чужой талант недоступен", _tal.invest(tc, "mage_arcana")[0] is False)
 spent = _tal.reset(tc)
 check("сброс возвращает очки", spent >= 1 and _tal.points(tc) >= 1)

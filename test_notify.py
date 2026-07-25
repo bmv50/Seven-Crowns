@@ -261,7 +261,11 @@ _cap = _rest_char.level * 200     # cap = 1000
 _rest_char.flags["rested"] = _cap - 5     # cur+8 >= cap -> должен сработать триггер
 
 check("до тика очередь notify пуста", notify.pending() == 0)
-_aio_rf.get_event_loop().run_until_complete(_gl_rf.tick())
+# Python 3.14 (Аудит-2а.2): get_event_loop() без работающего цикла больше не
+# создаёт новый неявно — на 3.14 упадёт с RuntimeError. GameLoop не держит
+# привязанных к циклу asyncio-примитивов между тиками, поэтому asyncio.run()
+# на каждый вызов (свой цикл, закрывается по завершении) — прямая замена.
+_aio_rf.run(_gl_rf.tick())
 check("после достижения капа rested_full эмитится в очередь", notify.pending() == 1)
 check("категория события — rested_full",
       notify.pending() == 1 and notify._QUEUE[0]["category"] == "rested_full")
@@ -270,7 +274,7 @@ _today_str = _rest_char.flags.get("notify_rested_day")
 
 # повторный тик в тот же день с уже полным баком — не спамит повторно
 notify.clear()
-_aio_rf.get_event_loop().run_until_complete(_gl_rf.tick())
+_aio_rf.run(_gl_rf.tick())
 check("повторный тик в тот же день — очередь остаётся пустой (дедуп)", notify.pending() == 0)
 check("флаг дедупа не изменился (та же дата)",
       _rest_char.flags.get("notify_rested_day") == _today_str)
@@ -279,7 +283,7 @@ check("флаг дедупа не изменился (та же дата)",
 notify.clear()
 _rest_char.flags["notify_rested_day"] = "2000-01-01"
 _rest_char.flags["rested"] = _cap - 5   # снова пересекаем порог капа
-_aio_rf.get_event_loop().run_until_complete(_gl_rf.tick())
+_aio_rf.run(_gl_rf.tick())
 check("на новый день (иная дата в флаге) триггер срабатывает снова", notify.pending() == 1)
 
 # без notify.ENABLED — триггер молчит (поведение игры не меняется без флага)
@@ -290,7 +294,7 @@ _rest_char2.level = 5
 _rest_char2.room = "temple"
 _rest_char2.flags["rested"] = _rest_char2.level * 200 - 5
 _gl_rf2 = GameLoop(_World(), {41: _rest_char2}, _noop_rf, _noop_rf)
-_aio_rf.get_event_loop().run_until_complete(_gl_rf2.tick())
+_aio_rf.run(_gl_rf2.tick())
 check("ENABLED=False -> rested всё равно копится (кап достигнут)",
       _rest_char2.flags.get("rested") == _rest_char2.level * 200)
 check("ENABLED=False -> notify-очередь остаётся пустой", notify.pending() == 0)

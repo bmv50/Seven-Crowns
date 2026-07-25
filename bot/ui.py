@@ -9,6 +9,7 @@ from engine import skills as skillmod
 from engine import quest as _quest_brief
 from engine.content import CLASSES, SKILLS, ITEMS, WORLD, MOBS, RACES, SHOPS
 from engine import money
+from engine import textsafe as _ts    # Аудит-2б.1: esc_md имён игроков в Markdown-рендерах
 from engine import combat as _combat
 from engine import arena as _arena
 from engine import talents as _talents
@@ -72,7 +73,7 @@ def _render_room_legacy(ch: Character, world: World, others: List[Character]) ->
     party = [o for o in others if o.uid != ch.uid]
     if party:
         L.append("🧑‍🤝‍🧑 Рядом: " + ", ".join(
-            f"{CLASSES[o.cls]['emoji']}{o.name}(ур.{o.level})" for o in party))
+            f"{CLASSES[o.cls]['emoji']}{_ts.esc_md(o.name)}(ур.{o.level})" for o in party))
     L.append(f"🚪 Выходы: {', '.join(r['exits'].keys())}")
     for qline in _quest_brief.active_brief(ch):
         L.append(qline)

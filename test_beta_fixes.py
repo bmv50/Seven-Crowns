@@ -256,7 +256,111 @@ check("clean_chat: валидная реплика сохраняется",
       ts.clean_chat("Привет, герой!") == "Привет, герой!")
 
 
-# ─────────────────────── ИТОГ ───────────────────────
+# ───── [6] Аудит-2б.1: textsafe v2 (NFKC, идемпотентный esc_md) ─────
+print("\n[6] textsafe v2: NFKC, идемпотентность, name_norm")
+
+# esc_md: идемпотентность по построению (unescape → escape)
+for _s in ("*жирный*", "под_черк", "back\\slash", "сме[шан]о_*`", "обычное имя"):
+    check(f"esc_md идемпотентен: {_s!r}",
+          ts.esc_md(ts.esc_md(_s)) == ts.esc_md(_s))
+check("esc_md экранирует backslash",
+      "\\\\" in ts.esc_md("a\\b"))
+check("esc_md экранирует * _ ` [",
+      all("\\" + c in ts.esc_md(f"x{c}y") for c in "*_`["))
+
+# NFKC: полноширинные и совместимые формы сводятся к обычным
+check("NFKC: полноширинные символы сводятся к обычным в имени",
+      ts.clean_name("Ｍａx") == "Max")
+check("NFKC: лигатура ﬁ → fi в чате", "fi" in ts.clean_chat("ﬁnal"))
+
+# name_norm: регистр/пробелы/двойники сводятся к одному ключу
+check("name_norm: регистр не различается", ts.name_norm("Макс") == ts.name_norm("мАкС"))
+check("name_norm: пробелы схлопываются", ts.name_norm("Тём  ный") == ts.name_norm("Тём ный"))
+check("name_norm: полноширинный двойник совпадает",
+      ts.name_norm("Ｍａx") == ts.name_norm("Max"))
+check("name_norm: пустое → ''", ts.name_norm("") == "" and ts.name_norm(None) == "")
+
+# clean_name v2: Markdown-спецсимволы в именах отклоняются (защита на входе)
+for _bad in ("*жирный*", "под_черк", "тик`тик", "скоб[ка", "бэк\\слэш"):
+    check(f"clean_name отклоняет разметку: {_bad!r}", ts.clean_name(_bad) is None)
+check("clean_name: валидное русское имя проходит", ts.clean_name("Светозар") == "Светозар")
+check("clean_name: валидное с пробелом проходит", ts.clean_name("Тёмный Жнец") == "Тёмный Жнец")
+
+
+# ───── [7] Аудит-2б.1: уникальность имён (NameTaken, миграция) ─────
+print("\n[7] уникальность имён: NameTaken и миграция name_norm")
+
+from engine.lifecycle_errors import NameTaken as _NT
+from engine.character import Character as _Ch
+from engine.db import Database as _Database
+import engine.db as _dbmod
+
+
+class _UniqConn:
+    """Мок-connection: эмулирует UniqueViolationError на INSERT в characters
+    при повторном name_norm (частичный индекс активных)."""
+    def __init__(self, store):
+        self.store = store            # {uid: name_norm} активных
+
+    def transaction(self):
+        class _Tx:
+            async def __aenter__(s): return s
+            async def __aexit__(s, *a): return False
+        return _Tx()
+
+    async def fetchrow(self, sql, *args):
+        if "FOR UPDATE" in sql:
+            return None               # строки персонажа нет → путь INSERT
+        return None
+
+    async def execute(self, sql, *args):
+        if "INSERT INTO characters" in sql:
+            nn = args[-1]             # name_norm — последний параметр INSERT
+            if nn in self.store.values():
+                raise _dbmod._UniqueViolationError("duplicate key idx_characters_name_norm")
+            self.store[args[0]] = nn
+        return "INSERT 0 1"
+
+
+class _UniqPool:
+    def __init__(self, store): self.store = store
+    def acquire(self):
+        conn = _UniqConn(self.store)
+        class _Cm:
+            async def __aenter__(s): return conn
+            async def __aexit__(s, *a): return False
+        return _Cm()
+
+
+def _mk_char(uid, name):
+    c = _Ch(uid=uid, name=name, cls="warrior", race="human")
+    c.init_vitals()
+    return c
+
+
+async def _uniq_scenario():
+    store = {}
+    db = _Database()
+    db.pool = _UniqPool(store)
+    ok1 = err2 = None
+    try:
+        await db.create_character(_mk_char(1, "Дубль"))
+        ok1 = True
+    except Exception as e:
+        ok1 = e
+    try:
+        await db.create_character(_mk_char(2, "дУбЛь"))   # двойник по name_norm
+    except _NT:
+        err2 = "nametaken"
+    except Exception as e:
+        err2 = e
+    return ok1, err2, store
+
+
+_ok1, _err2, _store = asyncio.run(_uniq_scenario())
+check("create_character: первое имя создано", _ok1 is True)
+check("create_character: двойник по регистру → NameTaken", _err2 == "nametaken")
+check("create_character: в 'БД' ровно одна запись", len(_store) == 1)
 print("\n" + "═" * 50)
 print(f"ИТОГО: ✅ {_passed} пройдено, ❌ {_failed} провалено")
 print("═" * 50)

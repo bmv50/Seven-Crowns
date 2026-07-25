@@ -39,7 +39,11 @@ def check(name, cond):
 
 
 def run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
+    # Python 3.14 (Аудит-2а.2): get_event_loop() вне работающего цикла убирает
+    # неявное создание нового цикла — на 3.14 упадёт с RuntimeError. Каждый
+    # вызов здесь независим (нет общих asyncio-примитивов между вызовами),
+    # поэтому asyncio.run() — прямая переносимая замена (свой цикл на вызов).
+    return asyncio.run(coro)
 
 
 # Сохраняем оригиналы провайдера, чтобы восстанавливать между блоками.

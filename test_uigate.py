@@ -96,6 +96,24 @@ check(f"все ожидаемые фичи присутствуют в FEATURES"
 check("бой/журнал/карта/сумка НЕ гейтятся (их нет в FEATURES)",
       not ({"combat", "journal", "map", "inventory", "inv"} & set(uigate.FEATURES.keys())))
 
+# ───── 5. Аудит-2б.2: открытия РАЗНЕСЕНЫ (не «залп» на одном уровне) ─────
+print("\n[5] разнос открытий по уровням (анти-залп)")
+from collections import Counter as _Counter
+_per_level = _Counter(uigate.FEATURES.values())
+_worst_lv, _worst_n = _per_level.most_common(1)[0]
+check(f"на одном уровне открывается не более 2 фич (макс {_worst_n} на ур.{_worst_lv})",
+      _worst_n <= 2)
+check("открытия растянуты минимум на 5 разных уровней",
+      len(_per_level) >= 5)
+check("первое открытие не раньше 3 ур. (новичок не завален кнопками)",
+      min(uigate.FEATURES.values()) >= 3)
+check("тяжёлые системы (аукцион/арена) открываются позже 10 ур.",
+      uigate.FEATURES["auction"] > 10 and uigate.FEATURES["arena"] > 10)
+check("порядок логичен: профессии раньше крафта",
+      uigate.FEATURES["professions"] < uigate.FEATURES["craft"])
+check("порядок логичен: группа раньше гильдии",
+      uigate.FEATURES["party"] < uigate.FEATURES["guild"])
+
 # ─────────────────────── ИТОГ ───────────────────────
 print("\n" + "═" * 50)
 print(f"ИТОГО: ✅ {_passed} пройдено, ❌ {_failed} провалено")
