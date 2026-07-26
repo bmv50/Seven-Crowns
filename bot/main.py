@@ -311,15 +311,63 @@ room_panel_msg: dict[int, int] = {}
 IMAGES_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "images")
 
 
-async def send_entity_photo(uid: int, kind: str, eid: str, caption: str = None):
-    """Отправить иконку сущности (images/<kind>/<id>.png), если она есть."""
-    path = os.path.join(IMAGES_DIR, kind, eid + ".png")
-    if not os.path.exists(path):
-        return
+# ───────── арт: поиск файла и кэш file_id ─────────
+# Картинки лежат как .jpg (после scripts/optimize_images.py) или .png (сырая
+# генерация ComfyUI) — ищем оба расширения, чтобы оптимизация не ломала показ.
+_IMG_EXT = (".jpg", ".png", ".jpeg", ".webp")
+# path -> file_id: Telegram отдаёт идентификатор загруженного файла, и повторные
+# отправки идут БЕЗ выгрузки байтов — мгновенно и без трафика. Раньше каждый
+# вход в комнату заново заливал ~1,2 МБ (FSInputFile), что давало задержку
+# в секунды на игрока. Кэш живёт в памяти процесса: после рестарта первый показ
+# каждой картинки снова загрузит файл и снова запомнит id.
+_file_ids: dict[str, str] = {}
+
+
+def art_path(kind: str, eid: str):
+    """Путь к картинке сущности (любое поддерживаемое расширение) или None."""
+    base = os.path.join(IMAGES_DIR, kind, eid)
+    for ext in _IMG_EXT:
+        p = base + ext
+        if os.path.exists(p):
+            return p
+    return None
+
+
+async def send_photo_cached(chat_id: int, path: str, caption: str = None,
+                            reply_markup=None):
+    """Отправить фото по пути с кэшированием file_id. Возвращает Message или None.
+    Первый вызов грузит файл, последующие — по id (без трафика)."""
+    fid = _file_ids.get(path)
     try:
-        await bot.send_photo(uid, FSInputFile(path), caption=caption, parse_mode="Markdown")
+        msg = await bot.send_photo(chat_id, fid or FSInputFile(path), caption=caption,
+                                   parse_mode="Markdown", reply_markup=reply_markup)
+    except Exception as e:
+        # Протухший/чужой file_id (сменили токен бота, перегенерили картинку) —
+        # один раз пробуем заново залить файл с диска.
+        if fid:
+            _file_ids.pop(path, None)
+            try:
+                msg = await bot.send_photo(chat_id, FSInputFile(path), caption=caption,
+                                           parse_mode="Markdown", reply_markup=reply_markup)
+            except Exception as e2:
+                _elog.log_err(_log, "send_photo_failed", e2, path=os.path.basename(path))
+                return None
+        else:
+            _elog.log_err(_log, "send_photo_failed", e, path=os.path.basename(path))
+            return None
+    try:
+        if msg and msg.photo:
+            _file_ids[path] = msg.photo[-1].file_id
     except Exception:
         pass
+    return msg
+
+
+async def send_entity_photo(uid: int, kind: str, eid: str, caption: str = None):
+    """Отправить иконку сущности (images/<kind>/<id>.jpg|png), если она есть."""
+    path = art_path(kind, eid)
+    if path:
+        await send_photo_cached(uid, path, caption=caption)
 db: Database = None
 gl: GameLoop = None
 BOT_USERNAME: str = ""   # без @, заполняется в main() через bot.get_me()
@@ -1084,15 +1132,12 @@ async def start_combat_view(cb: CallbackQuery, ch: Character, mob):
         pass
     cv = _cv(ch.uid)
     cv["photo"] = None
-    path = os.path.join(IMAGES_DIR, "mobs", mob.mob_id + ".png")
-    if os.path.exists(path):
-        try:
-            ph = await bot.send_photo(ch.uid, FSInputFile(path),
-                                      caption=f"⚔️ {mob.meta['emoji']} *{mob.meta['name']}*",
-                                      parse_mode="Markdown")
-            cv["photo"] = ph.message_id
-        except Exception:
-            cv["photo"] = None
+    path = art_path("mobs", mob.mob_id)
+    if path:
+        ph = await send_photo_cached(
+            ch.uid, path,
+            caption=f"⚔️ {mob.meta['emoji']} *{mob.meta['name']}*")
+        cv["photo"] = ph.message_id if ph else None
     text = render_combat_view(ch)
     kb = ui.kb_combat(ch, world)
     try:
@@ -1161,8 +1206,8 @@ async def enter_room(ch: Character, cb=None):
             await bot.send_message(ch.uid, f"💰 Аукцион: получена выручка с продаж — +{money.fmt(_pay)}.")
         except Exception:
             pass
-    img = os.path.join(IMAGES_DIR, "rooms", ch.room + ".png")
-    if ch.flags.get("roompics", True) and os.path.exists(img):
+    img = art_path("rooms", ch.room)
+    if ch.flags.get("roompics", True) and img:
         caption = ui.render_room(ch, world, others_in(ch.room))
         if len(caption) > 1000:
             caption = caption[:1000] + "…"
@@ -1171,13 +1216,11 @@ async def enter_room(ch: Character, cb=None):
                 await cb.message.delete()
             except Exception:
                 pass
-        try:
-            ph = await bot.send_photo(ch.uid, FSInputFile(img), caption=caption,
-                                      parse_mode="Markdown", reply_markup=ui.kb_room(ch, world))
+        ph = await send_photo_cached(ch.uid, img, caption=caption,
+                                     reply_markup=ui.kb_room(ch, world))
+        if ph:
             await _track_room_panel(ch.uid, ph.message_id)
             return
-        except Exception:
-            pass
     if cb:
         await show_room(cb.message, ch, edit_cb=cb)
     else:
@@ -2094,16 +2137,14 @@ async def send_item_card(cb: CallbackQuery, ch: Character, ctx: str, key: str):
     kb = ui.kb_item_card(key, ctx, ch)
     try:
         from bot import item_images
-        path = item_images.card_image(key) or os.path.join(IMAGES_DIR, "items", key + ".png")
+        path = item_images.card_image(key) or art_path("items", key)
     except Exception:
-        path = os.path.join(IMAGES_DIR, "items", key + ".png")
-    try:
-        if os.path.exists(path):
-            await bot.send_photo(cb.message.chat.id, FSInputFile(path),
-                                 caption=caption, parse_mode="Markdown", reply_markup=kb)
-        else:
-            await cb.message.answer(caption, parse_mode="Markdown", reply_markup=kb)
-    except Exception:
+        path = art_path("items", key)
+    _sent = None
+    if path and os.path.exists(path):
+        _sent = await send_photo_cached(cb.message.chat.id, path,
+                                        caption=caption, reply_markup=kb)
+    if not _sent:
         await cb.message.answer(caption, parse_mode="Markdown", reply_markup=kb)
     await cb.answer()
 
@@ -3811,6 +3852,10 @@ async def show_map_photo(ch: Character, cb: CallbackQuery = None):
             except Exception:
                 pass
         try:
+            # ВНИМАНИЕ: карта рисуется динамически под КАЖДОГО игрока (его
+            # комната в центре) во временный файл — кэшировать её по file_id
+            # нельзя, иначе игроки увидят чужую позицию. Здесь FSInputFile —
+            # осознанно, не «пропущенная оптимизация».
             await bot.send_photo(ch.uid, FSInputFile(path), caption=caption,
                                  parse_mode="Markdown", reply_markup=kb)
             return

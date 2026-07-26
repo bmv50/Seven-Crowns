@@ -21,8 +21,10 @@ run_tests.py
 .pytest_cache/
 .sim_rules2_cache.json
 
-# Тяжёлые изображения (240+ МБ, воспроизводятся gen_images*.py)
-images/
+# Арты нужны в образе: бот отдаёт их в Telegram файлом при первой отправке,
+# дальше работает кэш file_id. В образ кладём только оптимизированные JPEG.
+images/**/*.png
+images/items_cache/
 gen_images*.py
 gen_item*.py
 

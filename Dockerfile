@@ -7,9 +7,15 @@ FROM python:3.12-slim
 # PROD=1              — публичный режим: без БД процесс падает (fail-fast, см. bot/main).
 # LOG_JSON=1          — структурные JSON-логи (engine/log.py) для сбора в проде.
 # PYTHONDONTWRITEBYTECODE=1 — не мусорим .pyc в слое контейнера.
+# PYTHONUTF8=1 — половина артов лежит под кириллическими именами (images/mobs/
+# волк.jpg), потому что имя файла равно id сущности из data/mobs.yaml. В slim-
+# образе локаль не задана, и полагаться на то, что Python сам догадается про
+# UTF-8, не хочется: одна неверная кодировка пути — и мобы молча остаются без
+# картинок. Явный флаг снимает вопрос.
 ENV PYTHONUNBUFFERED=1 \
     PROD=1 \
     LOG_JSON=1 \
+    PYTHONUTF8=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     HEARTBEAT_FILE=/tmp/mud_heartbeat
 
@@ -28,7 +34,13 @@ RUN pip install --no-cache-dir -r requirements.txt -c constraints.txt
 
 # Код по белому списку. НЕ копируем: .env (секреты — только через env_file в рантайме),
 # tests (нужен живой Postgres и dev-фикстуры; в образе лишний вес — smoke делаем через
-# HEALTHCHECK и стартовые логи), TeleMud/ (референс), images/ (240+ МБ), docs/.
+# HEALTHCHECK и стартовые логи), TeleMud/ (референс), docs/.
+# Арты отдельным слоем и ДО кода: картинки меняются редко, код — часто, и при
+# таком порядке правка бота переиспользует закэшированный слой с картинками
+# вместо повторной укладки десятков мегабайт.
+# Через .dockerignore сюда попадают только JPEG; исходные PNG остаются локально.
+COPY images/ ./images/
+
 COPY engine/ ./engine/
 COPY bot/ ./bot/
 COPY ai/ ./ai/

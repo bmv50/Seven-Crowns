@@ -33,6 +33,33 @@ _FONTS = [
 ]
 
 
+_ART_EXT = (".jpg", ".png", ".jpeg", ".webp")
+# Процедурная экипировка живёт семьями: g_axe_1 … g_axe_90 — это один и тот же
+# топор в семи тирах. Рисовать 161 файл ради одной и той же формы расточительно,
+# поэтому картинка кладётся на базу (images/items/g_axe.jpg), а тир читается
+# игроком по рамке редкости и цифрам в подписи карточки.
+_TIER_SUFFIX = __import__("re").compile(r"_\d+$")
+
+
+def art_file(base: str):
+    """Путь к базовому рисунку предмета или None.
+
+    Ищем в три захода: точное имя в любом поддерживаемом расширении, затем —
+    для процедурных вещей — имя без хвоста тира. Расширения перебираем потому,
+    что scripts/optimize_images.py переводит арты из PNG в JPEG, и жёсткая
+    привязка к .png однажды уже оставила бы все карточки без рисунка.
+    """
+    if not base:
+        return None
+    d = os.path.join(IMAGES, "items")
+    for name in (base, _TIER_SUFFIX.sub("", base)):
+        for ext in _ART_EXT:
+            p = os.path.join(d, name + ext)
+            if os.path.exists(p):
+                return p
+    return None
+
+
 def _font(size):
     for p in _FONTS:
         if os.path.exists(p):
@@ -72,10 +99,10 @@ def card_image(key: str) -> str:
         return None
     os.makedirs(CACHE, exist_ok=True)
     out = os.path.join(CACHE, f"{base}__{rar}_v2.png")
-    art0 = os.path.join(IMAGES, "items", base + ".png")
+    art0 = art_file(base)
     if os.path.exists(out):
         # пересобрать, если появился/обновился базовый AI-рисунок
-        if not os.path.exists(art0) or os.path.getmtime(art0) <= os.path.getmtime(out):
+        if not art0 or os.path.getmtime(art0) <= os.path.getmtime(out):
             return out
 
     W = H = 512
@@ -94,9 +121,9 @@ def card_image(key: str) -> str:
     d.rounded_rectangle([46, 46, W - 46, H - 156], radius=20, fill=_mix(dark, (0, 0, 0), 0.25))
 
     # базовый рисунок предмета или плейсхолдер
-    art = os.path.join(IMAGES, "items", base + ".png")
+    art = art0
     placed = False
-    if os.path.exists(art):
+    if art:
         try:
             it = Image.open(art).convert("RGBA")
             it.thumbnail((300, 300))
