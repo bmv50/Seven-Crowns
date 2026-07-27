@@ -474,6 +474,19 @@ async def send_ephemeral(uid: int, text: str, ttl: float = EPHEMERAL_TTL):
     asyncio.create_task(_delete_after(uid, m.message_id, ttl))
 
 
+async def broadcast_world_event(text: str, ttl: float):
+    """Анонс мирового события всем, кто сейчас в игре, с самоудалением.
+
+    ttl приходит из движка и равен остатку жизни события (для сообщения о
+    завершении — короткий events.ENDED_TTL). Плейтест владельца: анонсы
+    накапливались в чате и через сутки утверждали, что нашествие идёт прямо
+    сейчас. Оффлайн-игрокам такие события шлёт broadcast_all — там удаление
+    тоже включено, см. параметр ttl.
+    """
+    for c in list(chars.values()):
+        await send_ephemeral(c.uid, text, ttl)
+
+
 async def broadcast_ephemeral(room: str, text: str, ttl: float = EPHEMERAL_TTL,
                               exclude: int = None):
     """broadcast, но каждое сообщение — эфемерное (см. send_ephemeral).
@@ -540,12 +553,16 @@ async def flush_dirty_chars():
                       pending=len(_char_dirty), last_ok=ok)
 
 
-async def broadcast_all(text: str, category: str):
+async def broadcast_all(text: str, category: str, ttl: float = None):
     """Рассылка по ВСЕМ uid из БД (а не только онлайн из chars) с батчингом и
     rate-limit ~25 msg/сек. Учёт настроек/квоты per-uid; 403 -> пометить в БД.
     world_boss: кто был замечен (last_seen) в последние 10 минут — уже онлайн
     и получит внутриигровой анонс напрямую (см. GameLoop.tick), повторный
-    push ему не нужен — исключаем через exclude_recent_sec."""
+    push ему не нужен — исключаем через exclude_recent_sec.
+
+    ttl (сек) — если задан, каждое отправленное сообщение самоудалится через
+    это время. Нужен для анонсов мировых событий: событие временное, значит
+    и сообщение о нём не должно висеть в чате вечно."""
     import time as _time
     _exclude_recent = 600 if category == "world_boss" else None
     targets = await db.list_notify_targets(exclude_recent_sec=_exclude_recent) \
@@ -562,7 +579,9 @@ async def broadcast_all(text: str, category: str):
         if ch is not None and _notify.allow(ch, category, now) != "send":
             continue
         try:
-            await bot.send_message(uid, text, parse_mode="Markdown")
+            _m = await bot.send_message(uid, text, parse_mode="Markdown")
+            if ttl:
+                asyncio.create_task(_delete_after(uid, _m.message_id, ttl))
             sent += 1
             # Этап 7.2 (bugfix): рассылка учитывает суточную квоту онлайн-игрока —
             # раньше allow() лишь ЧИТАЛ квоту, а счётчик здесь не двигался, и лимит
@@ -3481,11 +3500,15 @@ async def _admin_start_event(cb: CallbackQuery, admin_uid: int, eid: str):
     if msgs:
         announce = msgs[0]
         _chronicle.record("event", announce.replace("🌐 ", "").replace("*", ""))
+        # Буфер анонсов забираем здесь же: иначе игровой цикл разошлёт этот же
+        # анонс второй раз. Заодно берём из него срок жизни — сообщение уйдёт
+        # из чата, когда событие кончится.
+        _anns = _events.drain_announcements()
+        _ttl = _anns[0][1] if _anns else None
         if _notify.ENABLED:
-            await broadcast_all(f"🌩 {announce}", "world_event")
+            await broadcast_all(f"🌩 {announce}", "world_event", ttl=_ttl)
         else:
-            for c in list(chars.values()):
-                await send(c.uid, f"🌩 {announce}")
+            await broadcast_world_event(f"🌩 {announce}", _ttl or _events.ENDED_TTL)
         if db and db.pool:
             await db.add_audit(admin_uid, "admin_event", {"event": eid, "by": admin_uid})
         await cb.answer("Событие запущено")
@@ -4840,12 +4863,17 @@ async def god_worker(interval: float = None):
                 if msgs:
                     announce = decision.get("announce") or msgs[0]
                     _chronicle.record("event", announce)
+                    # см. _admin_start_event: буфер забираем здесь, чтобы
+                    # игровой цикл не разослал тот же анонс повторно, а срок
+                    # жизни берём из него же.
+                    _anns = _events.drain_announcements()
+                    _ttl = _anns[0][1] if _anns else None
                     if _notify.ENABLED:
-                        await broadcast_all(f"🌐 {announce}", "world_event")
+                        await broadcast_all(f"🌐 {announce}", "world_event", ttl=_ttl)
                     else:
-                        # без пуш-слоя — хотя бы онлайн-игрокам эфемерно
-                        for c in list(chars.values()):
-                            await send(c.uid, f"🌐 {announce}")
+                        # без пуш-слоя — хотя бы онлайн-игрокам, самоудалением
+                        await broadcast_world_event(
+                            f"🌐 {announce}", _ttl or _events.ENDED_TTL)
                     _log.info("god_event_started event=%s source=%s",
                               decision["event_id"], decision.get("source"))
                 # если занято (reason) — молча ждём следующий тик
@@ -5147,6 +5175,7 @@ async def main():
     gl.referral_lookup = chars.get       # найти реферера по uid (награда на левелапе друга)
     gl.on_referral = send                # доставить текст рефереру (оффлайн — молча, см. send())
     gl.on_ambient = broadcast_ephemeral  # анонс забредания + ambient NPC — эфемерные строки
+    gl.on_world_event = broadcast_world_event  # анонс события живёт столько же, сколько событие
     if _notify.ENABLED:
         gl.on_world_notify = broadcast_all   # анонс босса — по всем uid из БД
     # Этап 9: воркеры регистрируются в реестре (_spawn_worker) — watchdog держит

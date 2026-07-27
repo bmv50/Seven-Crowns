@@ -125,6 +125,10 @@ class GameLoop:
         # (npc_ai.tick_ambient). bot привяжет broadcast_ephemeral. При None —
         # поведение как раньше: обычный self.broadcast (не эфемерно).
         self.on_ambient = None
+        # опц. колбэк: async on_world_event(text, ttl_sec) — анонс мирового
+        # события с временем жизни. bot привяжет самоудаляющуюся рассылку;
+        # при None анонсы уходят обычным self.send и остаются в чате навсегда.
+        self.on_world_event = None
         self.boss_last = {}    # таймеры мировых боссов
         # Этап 9 (мониторинг): длительность тика для админ-Health. last — последний
         # замер, avg — экспоненциальное скользящее среднее (сглаживает всплески).
@@ -479,9 +483,20 @@ class GameLoop:
             _started = events.maybe_start(self.world, now)
             for line in _started:
                 chronicle.record("event", line)
-            for line in _started + events.tick(self.world, now):
-                for c in self.chars.values():
-                    await self.send(c.uid, line)
+            _ended = events.tick(self.world, now)
+            if self.on_world_event:
+                # Транспорт умеет самоудаляющиеся сообщения: отдаём анонсы
+                # вместе со сроком жизни, чтобы «Нашествие!» не висело в чате
+                # сутками после того, как нашествие кончилось.
+                for text, ttl in events.drain_announcements():
+                    await self.on_world_event(text, ttl)
+            else:
+                # Транспорт без удаления (тесты, консоль) — шлём как раньше,
+                # но буфер всё равно чистим, иначе он растёт бесконечно.
+                events.drain_announcements()
+                for line in _started + _ended:
+                    for c in self.chars.values():
+                        await self.send(c.uid, line)
         # 2) респавн и истлевание трупов
         if catchup.ENABLED:
             catchup.tick(self.world, occupied, now, npc_ai)

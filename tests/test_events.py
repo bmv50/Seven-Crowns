@@ -61,10 +61,52 @@ def test_max_active_and_cooldown():
     print("✓ кулдаун и лимит активных соблюдаются")
 
 
+def test_announcements_have_ttl():
+    """Анонс события живёт столько же, сколько само событие.
+
+    Плейтест владельца: «Нашествие!» висело в чате сутками после конца
+    нашествия. Движок отдаёт транспорту пары (текст, сколько жить), а бот
+    вешает на них самоудаление (bot/main.broadcast_world_event).
+    """
+    events.ENABLED = True; events.reset()
+    w = World()
+    eid = next(iter(events._DEFS))
+    dur = 900
+    msgs, reason = events.start(eid, world=w, now=1000, duration=dur)
+    assert msgs and reason is None, (msgs, reason)
+
+    anns = events.drain_announcements()
+    assert len(anns) == 1, anns
+    text, ttl = anns[0]
+    assert text == msgs[0]
+    # duration клампится границами события — сверяем с фактическим ends_at
+    assert ttl == max(events.MIN_TTL, events.active()[0]["ends_at"] - 1000), ttl
+    print("✓ анонс старта получает время жизни, равное длительности события")
+
+    # забрали насовсем: второй вызов пуст, иначе цикл разошлёт анонс дважды
+    assert events.drain_announcements() == []
+    print("✓ буфер анонсов забирается один раз")
+
+    # завершение — тоже временное сообщение, но короткоживущее
+    ended = events.tick(w, now=10**6)
+    assert ended and not events.active()
+    anns = events.drain_announcements()
+    assert len(anns) == 1 and anns[0][1] == events.ENDED_TTL, anns
+    assert "завершилось" in anns[0][0]
+    print("✓ сообщение о завершении живёт ENDED_TTL и не остаётся навсегда")
+
+    # reset чистит буфер — иначе анонсы протекают между сезонами/тестами
+    events.start(eid, world=w, now=2000)
+    events.reset()
+    assert events.drain_announcements() == []
+    print("✓ reset() очищает буфер анонсов")
+
+
 if __name__ == "__main__":
     test_disabled_noop()
     test_start_and_modifiers()
     test_invasion_spawns_and_despawn()
     test_max_active_and_cooldown()
+    test_announcements_have_ttl()
     events.ENABLED = False; events.reset()
     print("\n=== events OK ===")

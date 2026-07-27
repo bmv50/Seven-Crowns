@@ -272,17 +272,60 @@ for _rid in ("catacombs", "well", "crystal_cave", "mine_deep", "mine_shaft",
              "iron_keep_stope", "dwarf_cavern", "dwarf_dig", "dwarf_drift",
              "dwarf_hold", "gob_nochlezhka", "gob_tunnel_deep",
              "gob_tunnel_spider", "gob_tunnel_west", "goblin_warren",
-             "spider_nest", "abyss_core", "abyss_maw", "abyss_warrens"):
+             "spider_nest", "abyss_core", "abyss_maw", "abyss_warrens",
+             # подвалы столицы: каменный свод под площадью, дневного света нет
+             "cellar", "cellar_deep"):
     _INTERIOR[_rid] = "cave"
 for _rid in ("throne", "temple", "ash_lieutenant_hall", "ash_burnt_chapel",
              "dawn_cathedral", "dawn_abbot_hall", "dawn_cells", "harbor_tavern",
              "harbor_smuggler_hold", "iron_keep_tavern", "iron_keep_forge",
              "iron_keep_hall", "orc_warlord_tent", "dwarf_tavern",
-             "abyss_sanctum"):
+             "abyss_sanctum",
+             # столица (data/world_capital_human.yaml): залы под крышей.
+             # craft_guild, arena, fountain, ворота и рынок сюда НЕ входят —
+             # это дворы и улицы, им открытое небо и положено.
+             "bank", "trainers_hall", "inn", "inn_room"):
     _INTERIOR[_rid] = "built"
 for _rid in ("deep_streets", "deep_plaza", "deep_temple", "deep_throne",
              "deep_descent", "deep_abyss"):
     _INTERIOR[_rid] = "water"
+
+
+# Разметка ведётся руками, а комнаты лежат в НЕСКОЛЬКИХ файлах (world.yaml,
+# world_capital_human.yaml, world_bosses.yaml) — легко разметить один файл и
+# забыть остальные. Так и вышло с подвалами столицы: они уехали на пленэр,
+# потому что список собирали, глядя только в world.yaml. Две проверки ниже
+# ловят обе ошибки: опечатку в id и незамеченную закрытую комнату.
+_INDOOR_HINTS = ("подвал", "склеп", "катаком", "пещер", "штрек", "штольн",
+                 "туннел", "тоннел", "нора", "лаз", "зал", "чертог", "храм",
+                 "собор", "часовн", "келья", "кельи", "таверн", "трюм",
+                 "шатёр", "кузниц", "свод", "потол", "интерьер", "комнат")
+_SKY_HINTS = ("небо", "небе", "солнц", "звёзд", "облак", "горизонт", "двор",
+              "площад", "улиц", "тропа", "дорог", "ворота", "мост")
+
+
+def audit_interior(verbose: bool = True) -> list:
+    """Сверить разметку закрытых локаций с миром. Возвращает список подозрений."""
+    unknown = [r for r in _INTERIOR if r not in WORLD]
+    suspects = []
+    for rid, r in WORLD.items():
+        if rid in _INTERIOR or r.get("wild"):
+            continue
+        text = (str(r.get("name", "")) + " " + str(r.get("desc", ""))).lower()
+        hits = [w for w in _INDOOR_HINTS if w in text]
+        if hits and not any(w in text for w in _SKY_HINTS):
+            suspects.append((rid, r.get("name", ""), hits[:3]))
+    if verbose:
+        if unknown:
+            print(f"⚠️  в _INTERIOR есть id, которых нет в мире: {', '.join(unknown)}")
+        if suspects:
+            print(f"⚠️  похоже на закрытые, но не размечены ({len(suspects)}):")
+            for rid, name, hits in suspects:
+                print(f"     {rid:22} {name}  ← {', '.join(hits)}")
+        if not unknown and not suspects:
+            print("✅ разметка закрытых локаций: расхождений не найдено")
+    return suspects
+
 
 # Ставится ПЕРВЫМ в промпте — ранние токены весят больше, и «нет неба» должно
 # прозвучать раньше, чем описание с туманом и камнями уведёт кадр на пленэр.
@@ -436,6 +479,9 @@ def main():
     ap.add_argument("--indoor", action="store_true",
                     help="только закрытые локации: подземелья, помещения, "
                          "затонувший город (см. _INTERIOR)")
+    ap.add_argument("--audit-indoor", action="store_true",
+                    help="сверить разметку закрытых локаций со всеми файлами "
+                         "мира и выйти (ничего не генерирует)")
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--size", type=int, default=0, help="квадрат NxN (по умолчанию: моб 1024², локация 1216×704)")
     ap.add_argument("--seed", type=int, default=0,
@@ -443,6 +489,10 @@ def main():
     ap.add_argument("--dry-run", action="store_true",
                     help="только показать промпты, НЕ генерировать (быстрая правка текста)")
     args = ap.parse_args()
+
+    if args.audit_indoor:
+        audit_interior()
+        return
 
     if args.dry_run:
         # Печатаем промпты и выходим: правку формулировок удобно смотреть глазами,

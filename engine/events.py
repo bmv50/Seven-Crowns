@@ -40,9 +40,36 @@ _CITY_ZONES = frozenset({
 _active = []          # [{id, def, zone, ends_at, spawned:[(room, inst)]}]
 _last_check = 0.0
 
+# ───────────────────── анонсы со сроком жизни ─────────────────────
+# Плейтест владельца: «Нашествие пауков!» продолжало висеть в чате через сутки
+# после того, как нашествие кончилось. Событие временное — временным должно
+# быть и сообщение о нём. Движок не знает про Telegram, поэтому просто копит
+# пары (текст, сколько секунд ему жить); транспорт забирает их через
+# drain_announcements() и сам решает, как удалять (см. send_ephemeral).
+_announce_buf = []    # [(text, ttl_sec)]
+ENDED_TTL = 180       # сколько живёт сообщение «событие завершилось»
+MIN_TTL = 60          # нижняя граница, если событие вот-вот кончится
+
+
+def _queue_announce(text: str, ttl: float) -> None:
+    _announce_buf.append((text, max(MIN_TTL, float(ttl))))
+
+
+def drain_announcements():
+    """Забрать накопленные анонсы: [(текст, время жизни в секундах)].
+
+    Забирает НАСОВСЕМ — второй вызов вернёт пустой список. Так сделано, чтобы
+    событие не анонсировалось дважды: и фоновым циклом, и тем местом, которое
+    запустило событие напрямую (бог-оркестратор, админ-команда).
+    """
+    out = list(_announce_buf)
+    _announce_buf.clear()
+    return out
+
 
 def reset():
     _active.clear()
+    _announce_buf.clear()
     global _last_check
     _last_check = 0.0
 
@@ -228,7 +255,10 @@ def _start(world, eid, d, now, rng, zone="__default__"):
     if d.get("type") == "invasion":
         _spawn_invasion(world, d, zval, now, rng, ev)
     _active.append(ev)
-    return _announce(d)
+    ann = _announce(d)
+    # анонс живёт ровно столько, сколько само событие
+    _queue_announce(ann, ev["ends_at"] - now)
+    return ann
 
 
 def start(eid, zone=None, duration=None, world=None, now=None, rng=None):
@@ -260,7 +290,9 @@ def start(eid, zone=None, duration=None, world=None, now=None, rng=None):
         _spawn_invasion(world, d, zresolved, now, rng, ev)
     _active.append(ev)
     _last_check = now
-    return [_announce(d)], None
+    ann = _announce(d)
+    _queue_announce(ann, dur)
+    return [ann], None
 
 
 def maybe_start(world, now=None, rng=None):
@@ -297,7 +329,11 @@ def tick(world, now=None):
                 if inst in lst:
                     lst.remove(inst)
             _active.remove(e)
-            msgs.append(f"🌐 Событие «{e['def'].get('name', '?')}» завершилось.")
+            msg = f"🌐 Событие «{e['def'].get('name', '?')}» завершилось."
+            msgs.append(msg)
+            # и сообщение о завершении тоже временное: иначе на месте одного
+            # вечного анонса в чате остаётся другой, ничем не лучше
+            _queue_announce(msg, ENDED_TTL)
     return msgs
 
 
