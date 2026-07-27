@@ -1438,6 +1438,7 @@ def _bug_context(uid: int) -> tuple[str, dict]:
     tail = list(_last_actions.get(uid, []))
     props = {
         "uid": uid,
+        "name": getattr(ch, "name", None),   # нужен экрану «🐞 Баги» в админке
         "room": getattr(ch, "room", None),
         "cls": getattr(ch, "cls", None),
         "race": getattr(ch, "race", None),
@@ -3517,6 +3518,7 @@ def _admin_menu_kb() -> InlineKeyboardMarkup:
     trade_label = "🛑 Торговля: выкл" if TRADING_ENABLED else "✅ Торговля: вкл"
     return _kb([
         [InlineKeyboardButton(text="👤 Игрок", callback_data="adm:player")],
+        [InlineKeyboardButton(text="🐞 Баги", callback_data="adm:bugs")],
         [InlineKeyboardButton(text=trade_label, callback_data="adm:trade")],
         [InlineKeyboardButton(text="🌩 Событие", callback_data="adm:events")],
         [InlineKeyboardButton(text="💚 Health", callback_data="adm:health")],
@@ -3648,6 +3650,57 @@ def _admin_events_kb() -> InlineKeyboardMarkup:
         rows.append([InlineKeyboardButton(text="Каталог событий пуст", callback_data="adm:menu")])
     rows.append([InlineKeyboardButton(text="⬅️ В админку", callback_data="adm:menu")])
     return _kb(rows)
+
+
+BUGS_PAGE = 8       # сколько отчётов показываем на экране
+
+
+def _ago(ts: float) -> str:
+    import time as _t
+    d = max(0, int(_t.time() - ts))
+    if d < 60:
+        return f"{d}с назад"
+    if d < 3600:
+        return f"{d // 60}м назад"
+    if d < 86400:
+        return f"{d // 3600}ч назад"
+    return f"{d // 86400}д назад"
+
+
+async def _admin_bugs_text() -> str:
+    """Экран «🐞 Баги»: последние отчёты игроков из audit_log.
+
+    Личка админа — ненадёжное хранилище: сообщения теряются в переписке, а при
+    нескольких админах непонятно, кто что уже разобрал. Журнал переживает и
+    рестарт бота, и смену состава администраторов.
+    """
+    if not (db and db.pool):
+        return ("🐞 *Отчёты о багах*\n\nБД недоступна — журнал не прочитать. "
+                "Отчёты за это время всё равно ушли в личку админам и в логи "
+                "контейнера (`docker logs`, строки `bug_report`).")
+    rows = await db.recent_audit("bug", BUGS_PAGE)
+    if not rows:
+        return ("🐞 *Отчёты о багах*\n\nПока пусто. Игроки шлют их командой "
+                "/bug или кнопкой «🐞 Нашёл баг» в меню «☰ Ещё».")
+    L = [f"🐞 *Отчёты о багах* (последние {len(rows)})", ""]
+    for r in rows:
+        d = r["details"]
+        who = d.get("name") or f"uid {r['uid']}"
+        where = d.get("room") or "?"
+        lvl = d.get("level")
+        cls = d.get("cls")
+        head = f"*{_ts.esc_md(str(who))}*"
+        if cls and lvl:
+            head += f" ({cls}, ур.{lvl})"
+        L.append(f"{head} — {_ago(r['ts'])}")
+        L.append(f"_{_ts.esc_md(str(d.get('text', '')))[:400]}_")
+        chain = " → ".join(d.get("actions") or [])
+        L.append(f"Комната: `{where}`   uid: `{r['uid']}`")
+        if chain:
+            L.append(f"Действия: `{chain[:180]}`")
+        L.append("")
+    L.append("Разбор игрока: 👤 Игрок → его uid.")
+    return "\n".join(L)
 
 
 async def _admin_start_event(cb: CallbackQuery, admin_uid: int, eid: str):
@@ -3829,6 +3882,9 @@ async def _admin_cb(cb: CallbackQuery, uid: int, arg: str):
         await safe_edit(cb, _admin_menu_text(), _admin_menu_kb())
         await cb.answer("Торговля " + ("включена" if TRADING_ENABLED else "выключена"))
         return
+    if sub == "bugs":
+        await safe_edit(cb, await _admin_bugs_text(), _admin_back_kb())
+        await cb.answer(); return
     if sub == "events":
         await safe_edit(cb, "🌩 *Запуск мирового события*\n\nВыберите событие из каталога:",
                         _admin_events_kb()); await cb.answer(); return

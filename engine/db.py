@@ -536,6 +536,34 @@ class Database:
         except Exception:
             pass
 
+    async def recent_audit(self, action: str, limit: int = 20) -> List[dict]:
+        """Последние записи журнала по типу действия -> [{ts, uid, details}, ...].
+
+        Нужен админке: отчёты о багах (action='bug') копятся в audit_log, и без
+        чтения их видно только в личке админа — а личку легко пролистать или
+        потерять, если админов несколько или бот перезапускался.
+        Сортировка по ts DESC; без пула — пустой список (админка это переживёт).
+        """
+        if not self.pool:
+            return []
+        try:
+            async with self.pool.acquire() as con:
+                rows = await con.fetch(
+                    "SELECT ts, uid, details FROM audit_log WHERE action = $1 "
+                    "ORDER BY ts DESC LIMIT $2", action, int(limit))
+        except Exception:
+            return []
+        out = []
+        for r in rows:
+            d = r["details"]
+            if isinstance(d, str):          # JSONB иногда приходит строкой
+                try:
+                    d = json.loads(d)
+                except Exception:
+                    d = {}
+            out.append({"ts": float(r["ts"]), "uid": int(r["uid"]), "details": d or {}})
+        return out
+
     # ───────── Этап 7.2: модерация (баны/муты) + компенсации ─────────
     # Кэш решает гейты в рантайме (engine/moderation.py); эти методы — только
     # персист/загрузка. Без пула (pool=None) — тихая деградация (память в moderation).
