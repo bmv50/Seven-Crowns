@@ -436,28 +436,26 @@ def kb_more(ch: Character, community: tuple = None) -> InlineKeyboardMarkup:
     (там же ссылка и проверяется на вменяемость). Нет ссылки — нет кнопки.
     """
     lvl = ch.level
-    row1 = [b for b in [
+    # Сетка 2×4. Порядок фиксирован; «Сезон» отсюда убран намеренно — он
+    # остаётся в меню «Герой» (kb_player), и дублировать его здесь незачем.
+    items = [
         _gated_btn("👥 Группа", "group", "party", lvl),
+        InlineKeyboardButton(text="🏆 Достижения", callback_data="achv"),
+        InlineKeyboardButton(text="📖 Бестиарий", callback_data="bestiary"),
+        InlineKeyboardButton(text="📜 Хроника", callback_data="chronicle"),
         InlineKeyboardButton(text="⚙ Настройки", callback_data="settings"),
-    ] if b]
-    row2 = [b for b in [
         InlineKeyboardButton(text="❓ Помощь", callback_data="help"),
-        _gated_btn("🏅 Сезон", "season", "season", lvl),
-    ] if b]
-    rows = []
-    if row1:
-        rows.append(row1)
-    if row2:
-        rows.append(row2)
-    rows.append([InlineKeyboardButton(text="📖 Бестиарий", callback_data="bestiary"),
-                 InlineKeyboardButton(text="🏆 Достижения", callback_data="achv")])
-    rows.append([InlineKeyboardButton(text="📜 Хроника", callback_data="chronicle")])
-    # Связь с разработчиком: отчёт о баге — всегда, канал — если настроен.
-    # На бете это самые ценные кнопки экрана, поэтому они идут перед «Назад».
-    social = [InlineKeyboardButton(text="🐞 Нашёл баг", callback_data="bug")]
+    ]
+    # Канал — только если настроен (см. config_check.community_url).
     if community and community[1]:
-        social.append(InlineKeyboardButton(text=f"💬 {community[0]}", url=community[1]))
-    rows.append(social)
+        items.append(InlineKeyboardButton(text=f"💬 {community[0]}", url=community[1]))
+    items.append(InlineKeyboardButton(text="🐞 Нашёл баг", callback_data="bug"))
+    # Две кнопки в ряд, недоступные просто выпадают. Раскладываем парами уже
+    # ПОСЛЕ отсева, а не жёсткой сеткой: иначе у новичка, которому «Группа»
+    # ещё не открыта, в первом ряду зияла бы дыра, а последний ряд остался бы
+    # с одной кнопкой. При всех открытых пунктах получается ровно 4×2.
+    items = [b for b in items if b]
+    rows = [items[i:i + 2] for i in range(0, len(items), 2)]
     rows.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="look")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 

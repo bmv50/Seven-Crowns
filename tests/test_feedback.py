@@ -81,23 +81,47 @@ def test_more_menu():
     check("кнопка бага есть всегда", any("баг" in t.lower() for t in texts), texts)
     check("без настроенного канала кнопки канала нет",
           not any(u for u in _btn_urls(kb)), _btn_urls(kb))
+    check("«Сезон» отсюда убран (остаётся в меню «Герой»)",
+          not any("Сезон" in t for t in texts), texts)
 
-    kb2 = ui.kb_more(ch, community=("Канал игры", "https://t.me/seven_crowns"))
+    kb2 = ui.kb_more(ch, community=("Официальный канал", "https://t.me/seven_crowns"))
     texts2 = _btn_texts(kb2)
     urls2 = [u for u in _btn_urls(kb2) if u]
     check("с настроенным каналом появляется кнопка-ссылка",
           urls2 == ["https://t.me/seven_crowns"], urls2)
     check("заголовок канала виден в подписи",
-          any("Канал игры" in t for t in texts2), texts2)
+          any("Официальный канал" in t for t in texts2), texts2)
     check("кнопка бага при этом никуда не делась",
           any("баг" in t.lower() for t in texts2))
 
     # пустая ссылка при заданном заголовке — кнопки быть не должно
-    kb3 = ui.kb_more(ch, community=("Канал игры", ""))
+    kb3 = ui.kb_more(ch, community=("Официальный канал", ""))
     check("пустая ссылка не создаёт кнопку", not any(u for u in _btn_urls(kb3)))
 
-    check("«Назад» остаётся последней",
-          _btn_texts(kb2)[-1].endswith("Назад"), _btn_texts(kb2)[-1])
+    # ── раскладка: 4 ряда по 2 + отдельный «Назад» ──
+    grid = [[b.text for b in row] for row in kb2.inline_keyboard]
+    check("рядов ровно 5 (4 пары + «Назад»)", len(grid) == 5, grid)
+    check("в каждом из первых четырёх рядов по 2 кнопки",
+          all(len(r) == 2 for r in grid[:4]), [len(r) for r in grid])
+    check("«Назад» отдельным последним рядом",
+          len(grid[-1]) == 1 and grid[-1][0].endswith("Назад"), grid[-1])
+    order = [t for row in grid[:4] for t in row]
+    want = ["Группа", "Достижения", "Бестиарий", "Хроника",
+            "Настройки", "Помощь", "Официальный канал", "баг"]
+    check("порядок кнопок как заказан",
+          all(w.lower() in order[i].lower() for i, w in enumerate(want)), order)
+
+    # ── новичок: «Группа» ещё закрыта — дыры в сетке быть не должно ──
+    low = _hero()
+    low.level = 1
+    kb4 = ui.kb_more(low, community=("Официальный канал", "https://t.me/x"))
+    grid4 = [[b.text for b in row] for row in kb4.inline_keyboard]
+    check("у новичка ряды всё равно по 2 кнопки (кроме «Назад»)",
+          all(len(r) == 2 for r in grid4[:-1]) or len(grid4[-2]) <= 2,
+          [len(r) for r in grid4])
+    check("одиночных рядов, кроме «Назад», нет",
+          sum(1 for r in grid4[:-1] if len(r) == 1) <= 1,
+          [len(r) for r in grid4])
 
 
 # ───────────────── 3. регистрация команды ─────────────────

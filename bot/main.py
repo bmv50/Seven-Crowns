@@ -185,7 +185,8 @@ LEGAL_DOCS_URL = os.environ.get("LEGAL_DOCS_URL", "[УКАЖИТЕ ССЫЛКУ 
 # задан криво — кнопки просто не будет (проверка в bot/config_check, там же
 # под тестами). Принимаются и «https://t.me/...», и короткая форма «@канал».
 COMMUNITY_URL = config_check.community_url(os.environ.get("COMMUNITY_URL"))
-COMMUNITY_TITLE = (os.environ.get("COMMUNITY_TITLE", "") or "").strip() or "Канал игры"
+COMMUNITY_TITLE = (os.environ.get("COMMUNITY_TITLE", "")
+                   or "").strip() or "Официальный канал"
 
 
 # Runtime-выключатель торговли (аукцион/банк). Экстренная «пауза экономики» из
