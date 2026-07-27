@@ -14,7 +14,8 @@ import sys
 
 import yaml
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
+# тест лежит в tests/, корень проекта — на уровень выше
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 _passed = 0
@@ -83,7 +84,9 @@ dockerignore = _read(".dockerignore")
 di_lines = {l.strip() for l in dockerignore.splitlines()}
 check(".env исключён", ".env" in di_lines)
 check("TeleMud/ исключён", any("TeleMud" in l for l in di_lines))
-check("тесты исключены (test_*.py)", any(l.startswith("test_") for l in di_lines))
+# тесты и симуляции переехали из корня в tests/ и sims/ — в образе не нужны
+check("тесты исключены (tests/)", "tests/" in di_lines)
+check("симуляции исключены (sims/)", "sims/" in di_lines)
 check("images/ исключены", any("images" in l for l in di_lines))
 check(".git исключён", any(l == ".git" or l.startswith(".git") for l in di_lines))
 

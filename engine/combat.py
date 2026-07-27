@@ -57,6 +57,23 @@ def _mark_exploit(mob: MobInstance, uid: int, dtype: str) -> None:
 THREAT_MULT = {"warrior": 2.5, "paladin": 2.2, "priest": 1.4, "necromancer": 1.2}
 
 
+def _credit_support(world, ch: Character, amount: float) -> None:
+    """Засчитать вклад в бой тому, кто не бьёт моба напрямую: лекарю, баффер.
+
+    Пишем всем живым мобам в комнате, у которых непустой аггро-лист, — то есть
+    тем, с кем группа реально дерётся. Лечение вне боя вклад не создаёт: аггро
+    пусто, цикл не срабатывает.
+    """
+    if amount <= 0 or world is None:
+        return
+    try:
+        for mob in world.living_in(ch.room):
+            if mob.aggro:
+                mob.add_contrib(ch.uid, amount)
+    except Exception:                     # noqa: BLE001
+        pass                              # учёт вклада не должен ронять бой
+
+
 def threat_mult(ch: Character) -> float:
     return THREAT_MULT.get(ch.cls, 1.0)
 
@@ -238,6 +255,7 @@ def player_basic_attack(ch: Character, mob: MobInstance) -> List[str]:
         mob.hp -= dmg
         total_dealt += dmg
         mob.add_threat(ch.uid, dmg * threat_mult(ch))
+        mob.add_contrib(ch.uid, dmg)       # доля в награде — по вкладу
         ch.gain_rage(RAGE_ON_ATTACK)       # воин копит ярость от ударов
         verb = hit_verb(dmg, mob.max_hp, you=True)
         out.append(f"🗡 Вы {verb} {mob.meta['name']} на {dmg}{' 💥КРИТ!' if crit else ''}.")
@@ -310,6 +328,7 @@ def use_skill(ch: Character, skill_id: str, world: World,
             mob.hp -= dmg
             total_dealt += dmg
             mob.add_threat(ch.uid, dmg * threat_mult(ch))
+            mob.add_contrib(ch.uid, dmg)
             verb = hit_verb(dmg, mob.max_hp, you=True)
             out.append(f"   Вы {verb} {mob.meta['name']} на {dmg}{' 💥КРИТ!' if crit else ''}.")
             if "effect" in sk and sk["effect"].get("type") in STATUS_TYPES:
@@ -326,16 +345,23 @@ def use_skill(ch: Character, skill_id: str, world: World,
     elif sk["kind"] == "heal":
         amount = _roll(int(prim * sk["scaling"])) * HP_SCALE
         if sk["target"] == "allies":
+            _healed_total = 0
             for ally in party:
                 before = ally.hp
                 ally.hp = min(ally.max_hp, ally.hp + amount)
                 healed = ally.hp - before
+                _healed_total += healed
                 out.append(f"   💚 {ally.name}: +{healed} HP.")
                 # недельная цель heal_ally: лечим именно СОЮЗНИКА, не себя (Этап 6.1)
                 if healed > 0 and ally.uid != ch.uid:
                     _wl = weekly.on_heal_ally(ch)
                     if _wl:
                         out.append("   " + _wl)
+            # Лекарь по мобу не бьёт, но в бою участвует. Без этой строки он
+            # оставался бы без доли — то есть «личером» стал бы как раз тот,
+            # без кого группа не выжила. Вклад пишем всем мобам, с которыми
+            # группа сейчас в бою (аггро непусто).
+            _credit_support(world, ch, _healed_total)
         else:
             before = ch.hp
             ch.hp = min(ch.max_hp, ch.hp + amount)
@@ -353,6 +379,8 @@ def use_skill(ch: Character, skill_id: str, world: World,
         else:
             ch.effects.append(eff)
             out.append(f"   🛡 Эффект наложен на {eff['turns']} ходов.")
+        # бафф — тоже участие в бою (см. _credit_support у лечения)
+        _credit_support(world, ch, ch.max_hp * 0.05)
         # танки защитной стойкой стягивают угрозу на себя (провокация)
         if threat_mult(ch) >= 2.0:
             burst = ch.max_hp * 0.2
@@ -418,6 +446,9 @@ def mob_attack(mob: MobInstance, ch: Character) -> List[str]:
             mob_scaling = min(sk.get("scaling", 1.5), 2.0)
             raw = _roll(int(m["atk"] * mob_scaling * MOB_ATK_SCALE))
             dmg, dodged = apply_damage_to_char(ch, raw, rules2.mob_attack_dtype(m), mob)
+            # Держать удар — тоже вклад: танк наносит меньше урона, но без
+            # него группа не выживает. Иначе он остался бы без доли.
+            mob.add_contrib(ch.uid, dmg)
             if dodged:
                 out.append(f"💨 {ch.name} уклоняется от {sk['name']}!")
             else:

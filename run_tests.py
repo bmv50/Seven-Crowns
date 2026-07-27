@@ -3,13 +3,18 @@
 """
 Единый раннер тестов проекта.
 
-Находит все test_*.py в корне репозитория и прогоняет каждый отдельным
-подпроцессом (sys.executable) — падение или утечка состояния в одном файле
-не валит остальные и не портит общий отчёт.
+Находит все test_*.py в tests/ и прогоняет каждый отдельным подпроцессом
+(sys.executable) — падение или утечка состояния в одном файле не валит
+остальные и не портит общий отчёт.
 
 Запуск:
-    python run_tests.py           # все test_*.py
-    python run_tests.py --quick   # пропустить файлы из SLOW_TESTS
+    python run_tests.py            # все test_*.py из tests/
+    python run_tests.py --quick    # пропустить файлы из SLOW_TESTS
+    python run_tests.py engine     # только тесты, чьё имя содержит «engine»
+
+Запускать тест напрямую (`python tests/test_engine.py`) нельзя: корень проекта
+не окажется в sys.path и `import engine` упадёт. Для одного файла — фильтр по
+имени, как в третьем примере.
 
 Выход: 0, если все файлы завершились с кодом 0, иначе 1.
 """
@@ -42,8 +47,29 @@ def _reconfigure_stdio() -> None:
                 pass
 
 
+TESTS_DIR = ROOT / "tests"
+SIMS_DIR = ROOT / "sims"
+
+
 def discover_tests() -> list[Path]:
-    return sorted(ROOT.glob("test_*.py"))
+    return sorted(TESTS_DIR.glob("test_*.py"))
+
+
+def _child_env() -> dict:
+    """Окружение подпроцесса.
+
+    Тесты лежат в tests/ и запускаются как отдельные скрипты, поэтому sys.path[0]
+    у них — сама папка tests/, а не корень: без PYTHONPATH `import engine` внутри
+    теста не найдётся. Туда же кладём sims/ — test_onboarding импортирует
+    sim_onboarding как обычный модуль.
+    """
+    env = os.environ.copy()
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["PYTHONUTF8"] = "1"
+    extra = os.pathsep.join([str(ROOT), str(SIMS_DIR)])
+    env["PYTHONPATH"] = (extra + os.pathsep + env["PYTHONPATH"]
+                         if env.get("PYTHONPATH") else extra)
+    return env
 
 
 def last_meaningful_line(output: str) -> str:
@@ -87,14 +113,21 @@ def main() -> int:
     tests = discover_tests()
     if quick:
         tests = [t for t in tests if t.name not in SLOW_TESTS]
+    # --only ...: прогнать один-два файла по имени (подстроке). Нужен потому,
+    # что запустить тест напрямую `python tests/test_x.py` уже нельзя — ему
+    # требуется PYTHONPATH с корнем проекта, который выставляет раннер.
+    only = [a for a in sys.argv[1:] if not a.startswith("-")]
+    if only:
+        tests = [t for t in tests if any(o in t.name for o in only)]
+        if not tests:
+            print(f"run_tests: под фильтр {only} не подошёл ни один тест.")
+            return 1
 
     if not tests:
-        print("run_tests: файлы test_*.py не найдены в корне репозитория.")
+        print(f"run_tests: файлы test_*.py не найдены в {TESTS_DIR}.")
         return 1
 
-    env = os.environ.copy()
-    env["PYTHONIOENCODING"] = "utf-8"
-    env["PYTHONUTF8"] = "1"
+    env = _child_env()
 
     results = []
     for path in tests:

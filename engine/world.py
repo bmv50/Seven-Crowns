@@ -15,7 +15,8 @@ from .content import (WORLD, MOBS, HP_SCALE, RESPAWN_SCALE,
 class MobInstance:
     """Конкретный экземпляр моба в конкретной комнате."""
     __slots__ = ("key", "mob_id", "room", "home", "hp", "max_hp", "last_tick",
-                 "aggro", "effects", "dead_at", "threat", "_ai", "exploited_by")
+                 "aggro", "effects", "dead_at", "threat", "_ai", "exploited_by",
+                 "contrib")
 
     def __init__(self, key: str, mob_id: str, room: str):
         self.key = key                 # уникальный: "room:mob_id:index"
@@ -33,6 +34,21 @@ class MobInstance:
         # uid игроков, попавших по этому мобу типом урона из его vuln (rules2)
         # хотя бы раз за его жизнь — недельная цель dtype_kill (Этап 6.1).
         self.exploited_by: set = set()
+        # uid -> вклад в бой с этим мобом. Отличается от threat: threat решает,
+        # КОГО моб бьёт (и потому домножается на классовый THREAT_MULT танка),
+        # а contrib решает, КОМУ достанется награда, и должен быть честным —
+        # без классовых множителей. Считаем сюда нанесённый урон, вылеченные
+        # союзнику HP и полученный от моба урон (танк работает не хуже дамагера).
+        # Нужен, чтобы сопартиец, просто стоящий в комнате, не получал долю
+        # опыта и не размывал долю тех, кто дрался.
+        self.contrib: Dict[int, float] = {}
+
+    def add_contrib(self, uid: int, amount: float):
+        if amount > 0:
+            self.contrib[uid] = self.contrib.get(uid, 0.0) + float(amount)
+
+    def took_part(self, uid: int) -> bool:
+        return self.contrib.get(uid, 0.0) > 0
 
     def add_threat(self, uid: int, amount: float):
         if uid not in self.aggro:

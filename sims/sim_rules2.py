@@ -92,6 +92,7 @@ class DummyMob:
         self.effects = []
         self.aggro = []
         self.threat = {}
+        self.contrib = {}
         self.hp = 10 ** 9
         self.max_hp = 10 ** 9
 
@@ -99,6 +100,12 @@ class DummyMob:
         if uid not in self.aggro:
             self.aggro.append(uid)
         self.threat[uid] = self.threat.get(uid, 0.0) + max(0.0, amount)
+
+    def add_contrib(self, uid, amount):
+        # вклад в награду; в симуляции не используется, но интерфейс моба
+        # должен совпадать с MobInstance, иначе combat падает на боевом пути
+        if amount > 0:
+            self.contrib[uid] = self.contrib.get(uid, 0.0) + float(amount)
 
 
 def _pick_weapon(cls: str, tier: int):

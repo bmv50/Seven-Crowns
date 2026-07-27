@@ -46,6 +46,14 @@ class GuildManager:
         self.member_of = {}     # uid(int) -> gid
         self.invites = {}       # uid(int) -> gid
         self._next = 1
+        # Режим хранения — как у AuctionManager и territory/chronicle.
+        # db_mode=False (по умолчанию): работаем без БД, guilds.json и есть
+        # состояние. db_mode=True (выставляется в bot/main.py при живой БД):
+        # источник истины — таблицы guilds/guild_members (engine/guild_tx.py),
+        # а файл писать НЕ надо. Раньше он писался всегда, и рядом с БД жила
+        # вторая, никем не читаемая копия состава и казны — при разборе жалобы
+        # «куда делось золото гильдии» непонятно, какому файлу верить.
+        self.db_mode = False
         self.load()
 
     # ── персистентность ──
@@ -63,6 +71,9 @@ class GuildManager:
             self.guilds = {}
 
     def save(self):
+        # В БД-режиме файл не трогаем: всё уже записано транзакциями guild_tx.
+        if self.db_mode:
+            return
         try:
             with open(self.path, "w", encoding="utf-8") as f:
                 json.dump({"guilds": self.guilds, "next": self._next}, f, ensure_ascii=False)

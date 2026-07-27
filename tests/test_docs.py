@@ -23,7 +23,8 @@ from __future__ import annotations
 import os
 import sys
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
+# тест лежит в tests/, корень проекта — на уровень выше
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 _passed = 0

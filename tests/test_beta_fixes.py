@@ -80,6 +80,34 @@ check("не в гильдии: can_withdraw = False", gm.can_withdraw(999) is Fa
 check("не в гильдии: can_admin = False", gm.can_admin(999) is False)
 
 
+# ───────── 1b. db_mode: при живой БД guilds.json не пишется ─────────
+# Источник истины по гильдиям — таблицы guilds/guild_members (engine/guild_tx).
+# Раньше GuildManager.save() писал файл всегда, и рядом с БД жила вторая копия
+# состава и казны: при разборе «куда делось золото гильдии» неясно, чему верить.
+print("\n[1b] Гильдии: в БД-режиме файл не дублируется")
+
+_tmp2 = tempfile.mkdtemp()
+_gpath = os.path.join(_tmp2, "guilds.json")
+gm2 = GuildManager(_gpath)
+gm2.create(10, "Файловая гильдия")
+check("без БД файл пишется (fallback работает)", os.path.exists(_gpath))
+
+_mtime = os.path.getmtime(_gpath)
+_size = os.path.getsize(_gpath)
+gm2.db_mode = True
+gm2.deposit_gold(10, 12345)
+gm2.save()
+check("в БД-режиме save() файл не трогает",
+      os.path.getsize(_gpath) == _size and os.path.getmtime(_gpath) == _mtime)
+check("состояние в памяти при этом обновилось",
+      gm2.guild_of(10).get("bank_gold") == 12345)
+
+# db_mode по умолчанию выключен: бот включает его только после успешной
+# загрузки/миграции гильдий из БД (bot/main.py), иначе файл остаётся рабочим
+check("по умолчанию db_mode выключен", GuildManager(os.path.join(
+    tempfile.mkdtemp(), "g.json")).db_mode is False)
+
+
 # ─────────────────────── 2. DIRTY-SAVE: ретраи / возврат uid ───────────────────────
 print("\n[2] Dirty-save: провал db.save() возвращает uid; shutdown-ретрай добивает")
 

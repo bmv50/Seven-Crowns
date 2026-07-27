@@ -5118,6 +5118,12 @@ async def main():
                 _gmig = await guild_tx.import_from_manager(
                     db.pool.acquire, {"guilds": guild_mgr.guilds, "next": guild_mgr._next})
                 print(f"🔁 Гильдии: мигрировано в БД: {_gmig}.")
+            # Переводим в БД-режим ТОЛЬКО после успешной загрузки/миграции:
+            # с этого момента guild_mgr.save() перестаёт писать guilds.json, и
+            # второй копии состава и казны рядом с БД больше нет. Если блок выше
+            # упал, db_mode остаётся False — файл продолжает работать как
+            # настоящий fallback, а не как молчаливый устаревающий дубль.
+            guild_mgr.db_mode = True
         except Exception as e:
             _elog.log_err(_log, "guild_db_init_failed", e)
 

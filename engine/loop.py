@@ -159,7 +159,11 @@ class GameLoop:
         """Раздать награды всем, кто был в аггро-листе (кооп)."""
         self.world.kill(mob)
         m = mob.meta
-        # пати: к убийцам добавляем сопартийцев в той же комнате (общий опыт)
+        # Пати: к убийцам добавляем сопартийцев в той же комнате — но только
+        # тех, кто в бою действительно участвовал (mob.contrib: урон, лечение
+        # или полученный от моба урон). Раньше хватало «жив и в комнате», и
+        # афк-сопартиец получал полную долю опыта, ОДНОВРЕМЕННО уменьшая долю
+        # активных: пул делится на len(killers), а не умножается.
         pm = getattr(self, "party_mgr", None)
         if pm and killers:
             seen = {k.uid for k in killers}
@@ -168,9 +172,17 @@ class GameLoop:
                 for uid in pm.members(k.uid):
                     if uid not in seen and uid in self.chars:
                         c = self.chars[uid]
-                        if c.room == mob.room and c.hp > 0:
+                        if c.room == mob.room and c.hp > 0 and mob.took_part(uid):
                             extra.append(c); seen.add(uid)
             killers = killers + extra
+        # Отсев личеров из самого аггро-листа: попасть в aggro можно, не сделав
+        # ничего (например, моб сагрился сам). Долю получает лишь тот, у кого
+        # есть вклад. Если вклада нет ни у кого — не наказываем никого и платим
+        # по-старому: это значит, что моб умер не в бою (добит эффектом, скрипт
+        # события), и терять награду игрокам не за что.
+        _active = [k for k in killers if mob.took_part(k.uid)]
+        if _active:
+            killers = _active
         # лут падает убийцам; xp/gold делится поровну
         base_xp = max(1, m["xp"] // max(1, len(killers)))
         base_gold = max(1, m["gold"] // max(1, len(killers)))

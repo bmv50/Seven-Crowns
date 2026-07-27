@@ -145,7 +145,8 @@ check("оффлайн-игроку запись отдаётся", len(_ro) == 1
 
 # ─────────────────────── 5. ЧИСТОТА СЛОЯ ───────────────────────
 print("\n[5] engine/notify.py не знает про aiogram")
-_src = open(os.path.join(os.path.dirname(__file__), "engine", "notify.py"),
+_src = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                         "engine", "notify.py"),
             encoding="utf-8").read()
 check("нет импорта aiogram в notify.py", "aiogram" not in _src)
 check("нет прямых обращений к telegram", "telegram" not in _src.lower())

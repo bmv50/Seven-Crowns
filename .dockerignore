@@ -15,8 +15,9 @@ graphify-out/
 .omc/
 
 # Тесты и симуляции (нужен живой Postgres/фикстуры; smoke — через HEALTHCHECK)
-test_*.py
-sim_*.py
+tests/
+sims/
+tools/
 run_tests.py
 .pytest_cache/
 .sim_rules2_cache.json
@@ -25,8 +26,6 @@ run_tests.py
 # дальше работает кэш file_id. В образ кладём только оптимизированные JPEG.
 images/**/*.png
 images/items_cache/
-gen_images*.py
-gen_item*.py
 
 # Документация и большие md-справки
 docs/

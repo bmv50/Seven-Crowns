@@ -380,12 +380,17 @@ gl_t = GameLoop(World(), chars_map, _noop, _noop)
 gl_t.party_mgr = pm2
 wkill = World(); _m = wkill.living_in("well")[0]; gl_t.world = wkill
 _m.aggro = [310]
+# Оба били моба, добил первый. Вклад обязателен: с анти-личингом (see
+# engine/loop.on_mob_death) долю получает участник боя, а не всякий, кто
+# оказался в комнате. Проверка личера — в test_antileech.py.
+_m.add_contrib(310, 100)
+_m.add_contrib(311, 60)
 xp0 = p2.xp
 # Python 3.14 (Аудит-2а.2): get_event_loop() вне работающего цикла — deprecated
 # ещё с 3.10, а неявное создание нового цикла им же убрано в 3.14 (упадёт с
 # RuntimeError). asyncio.run() сам создаёт и закрывает цикл — переносимо.
 _aio.run(gl_t.on_mob_death(_m, [p1]))
-check("сопартиец получил опыт, хоть и не добивал", p2.xp > xp0)
+check("сопартиец с вкладом получил опыт, хоть и не добивал", p2.xp > xp0)
 
 
 # ─────────────────────── 13. ЗЕЛЁНЫЕ МЕХАНИКИ (батч 1) ───────────────────────
@@ -605,10 +610,14 @@ dd.repair_all()
 check("ремонт восстанавливает прочность", dd.durab("weapon") == 100 and dd.repair_cost() == 0)
 class _M:
     meta = {"name": "x", "level": 1, "defense": 0}
-    def __init__(s): s.hp = 10**6; s.max_hp = 10**6; s.key = "k"; s.aggro = []; s.mob_id = "крыса"; s.effects = []; s.threat = {}
+    def __init__(s): s.hp = 10**6; s.max_hp = 10**6; s.key = "k"; s.aggro = []; s.mob_id = "крыса"; s.effects = []; s.threat = {}; s.contrib = {}
     def add_threat(s, uid, amt):
         if uid not in s.aggro: s.aggro.append(uid)
         s.threat[uid] = s.threat.get(uid, 0.0) + max(0.0, amt)
+    # contrib отделён от threat: threat решает, кого моб бьёт (с классовым
+    # множителем танка), contrib — кому достанется награда (без множителей)
+    def add_contrib(s, uid, amt):
+        if amt > 0: s.contrib[uid] = s.contrib.get(uid, 0.0) + float(amt)
 import random as _r3; _r3.seed(1)
 for _ in range(5):
     combat.player_basic_attack(dd, _M())
@@ -832,8 +841,9 @@ print("\n[31] Параллельное ядро rules2")
 from engine import rules2 as _r2
 
 class _StubMob:
-    def __init__(s, meta): s.meta = meta; s.mob_id = "x"; s.effects = []; s.aggro=[]; s.threat={}; s.hp=10**6; s.max_hp=10**6
+    def __init__(s, meta): s.meta = meta; s.mob_id = "x"; s.effects = []; s.aggro=[]; s.threat={}; s.contrib={}; s.hp=10**6; s.max_hp=10**6
     def add_threat(s,u,a): pass
+    def add_contrib(s,u,a): pass
 
 _mfire = _StubMob({"name":"огневик","level":5,"resist":["fire"],"immune":["poison"],"vuln":["cold"]})
 check("резист режет урон ~33%", _r2.mitigate(100,"fire",_mfire) == 67)
@@ -1196,8 +1206,12 @@ class _DummyMob:
         s.effects = []
         s.aggro = []
         s.threat = {}
+        s.contrib = {}
         s.hp = 10**9
         s.max_hp = 10**9
+    def add_contrib(s, uid, amt):
+        if amt > 0:
+            s.contrib[uid] = s.contrib.get(uid, 0.0) + float(amt)
     def add_threat(s, uid, amt):
         if uid not in s.aggro:
             s.aggro.append(uid)
@@ -1275,9 +1289,13 @@ class _StubSpirit:
     def __init__(s, name="Лесной дух", level=4):
         s.meta = {"name": name, "level": level}
         s.mob_id = "лесной_дух"; s.effects = []; s.aggro = []; s.threat = {}
+        s.contrib = {}
         s.hp = 10 ** 6; s.max_hp = 10 ** 6
 
     def add_threat(s, u, a):
+        pass
+
+    def add_contrib(s, u, a):
         pass
 
 
