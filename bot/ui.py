@@ -426,10 +426,15 @@ def kb_npcs_all(ch: Character, world: World) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def kb_more(ch: Character) -> InlineKeyboardMarkup:
+def kb_more(ch: Character, community: tuple = None) -> InlineKeyboardMarkup:
     """Экран «☰ Ещё»: второстепенные системные пункты, вынесенные из главного
     меню комнаты, чтобы типовая комната укладывалась в ≤9 рядов.
-    Группа/Сезон — гейтованные фичи (Этап 4.2, engine/uigate.py)."""
+    Группа/Сезон — гейтованные фичи (Этап 4.2, engine/uigate.py).
+
+    community — (заголовок, ссылка) на канал сообщества или None. Приходит
+    параметром, а не из окружения: ui.py не читает конфиг, это дело bot/main.py
+    (там же ссылка и проверяется на вменяемость). Нет ссылки — нет кнопки.
+    """
     lvl = ch.level
     row1 = [b for b in [
         _gated_btn("👥 Группа", "group", "party", lvl),
@@ -447,6 +452,12 @@ def kb_more(ch: Character) -> InlineKeyboardMarkup:
     rows.append([InlineKeyboardButton(text="📖 Бестиарий", callback_data="bestiary"),
                  InlineKeyboardButton(text="🏆 Достижения", callback_data="achv")])
     rows.append([InlineKeyboardButton(text="📜 Хроника", callback_data="chronicle")])
+    # Связь с разработчиком: отчёт о баге — всегда, канал — если настроен.
+    # На бете это самые ценные кнопки экрана, поэтому они идут перед «Назад».
+    social = [InlineKeyboardButton(text="🐞 Нашёл баг", callback_data="bug")]
+    if community and community[1]:
+        social.append(InlineKeyboardButton(text=f"💬 {community[0]}", url=community[1]))
+    rows.append(social)
     rows.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="look")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 

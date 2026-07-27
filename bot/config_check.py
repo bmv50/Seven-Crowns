@@ -47,6 +47,24 @@ def _is_placeholder_token(tok: str) -> bool:
     return any(up.startswith(p) for p in _PLACEHOLDER_PREFIXES)
 
 
+def community_url(raw: Optional[str]) -> str:
+    """Проверить ссылку на канал сообщества (COMMUNITY_URL). Негодная -> "".
+
+    Кнопка в меню «☰ Ещё» необязательна, и лучше её не показать вовсе, чем
+    показать битую: Telegram отклоняет клавиатуру с неверным url целиком, то
+    есть одна опечатка в переменной уронила бы весь экран, а не одну кнопку.
+    Поэтому здесь строгая проверка, а в main.py — только вызов.
+    """
+    s = (raw or "").strip()
+    if not s or " " in s:
+        return ""
+    if s.startswith("@") and len(s) > 1:          # @channel -> нормализуем
+        return f"https://t.me/{s[1:]}"
+    if s.startswith(("https://", "http://")) and "." in s.split("//", 1)[1][:64]:
+        return s
+    return ""
+
+
 def parse_admin_ids(raw: str):
     """Разобрать ADMIN_IDS: список uid через запятую/точку-с-запятой/пробел.
     Возвращает (валидные_id:set[int], мусорные_токены:list[str]).

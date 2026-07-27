@@ -15,6 +15,7 @@ import os
 import random
 import sys
 import uuid
+from collections import deque
 
 # Загрузка .env (если установлен python-dotenv и файл существует)
 try:
@@ -180,6 +181,12 @@ def is_admin(uid: int) -> bool:
 SUPPORT_CONTACT = os.environ.get("SUPPORT_CONTACT", "[УКАЖИТЕ КОНТАКТ ПОДДЕРЖКИ]")
 LEGAL_DOCS_URL = os.environ.get("LEGAL_DOCS_URL", "[УКАЖИТЕ ССЫЛКУ НА ПОЛНЫЕ ТЕКСТЫ]")
 
+# Канал/чат сообщества — кнопка в меню «☰ Ещё». Необязателен: не задан или
+# задан криво — кнопки просто не будет (проверка в bot/config_check, там же
+# под тестами). Принимаются и «https://t.me/...», и короткая форма «@канал».
+COMMUNITY_URL = config_check.community_url(os.environ.get("COMMUNITY_URL"))
+COMMUNITY_TITLE = (os.environ.get("COMMUNITY_TITLE", "") or "").strip() or "Канал игры"
+
 
 # Runtime-выключатель торговли (аукцион/банк). Экстренная «пауза экономики» из
 # админки без рестарта; по умолчанию торговля включена. Меняется только админом.
@@ -296,6 +303,22 @@ _TERR_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file
 _territory.load(_TERR_PATH)
 from engine import chronicle as _chronicle
 guild_naming: dict[int, bool] = {}   # uid ждёт ввода названия гильдии
+bug_waiting: dict[int, float] = {}   # uid нажал «Сообщить о баге» — ждём описание
+
+# Хвост последних действий игрока — самое ценное в отчёте о баге. Плейтест на
+# VPS показал: сообщения вида «нажал на NPC, ничего не произошло» без контекста
+# стоят часа раскопок, а с цепочкой «room → npc:старейшина → quest:accept» баг
+# находится за минуту. Держим по 12 последних действий на uid прямо в памяти:
+# история нужна только пока игрок онлайн, переживать рестарт ей незачем.
+_ACTION_TAIL = 12
+_last_actions: dict[int, deque] = {}
+
+
+def _note_action(uid: int, what: str) -> None:
+    d = _last_actions.get(uid)
+    if d is None:
+        d = _last_actions[uid] = deque(maxlen=_ACTION_TAIL)
+    d.append(what)
 # uid -> unix ts запроса /reset (окно подтверждения 60с, см. persist.RESET_WINDOW_SEC).
 # Двухшаговый /reset: первый вызов ставит метку и показывает кнопки, подтверждение
 # сверяет окно и мягко удаляет персонажа (восстановимо в течение суток).
@@ -1395,6 +1418,115 @@ async def cmd_support(message: Message):
         parse_mode="Markdown")
 
 
+BUG_MIN_LEN = 8          # короче — это не отчёт, а «не работает»
+BUG_MAX_LEN = 900        # обрезаем: в Telegram-сообщение админа должно влезть
+BUG_COOLDOWN = 60        # сек между отчётами от одного игрока (антиспам)
+_bug_last: dict[int, float] = {}
+
+
+def _bug_context(uid: int) -> tuple[str, dict]:
+    """Собрать окружение игрока для отчёта: (текст для админа, dict для журнала).
+
+    Смысл всей команды именно здесь. Отчёт «нажал на NPC, ничего не произошло»
+    без контекста стоит часа раскопок; с классом, комнатой и хвостом действий
+    баг воспроизводится сразу. Всё берём из памяти процесса — команда обязана
+    работать даже когда БД лежит, ведь тогда отчёты особенно нужны.
+    """
+    import time as _t
+    ch = chars.get(uid)
+    tail = list(_last_actions.get(uid, []))
+    props = {
+        "uid": uid,
+        "room": getattr(ch, "room", None),
+        "cls": getattr(ch, "cls", None),
+        "race": getattr(ch, "race", None),
+        "level": getattr(ch, "level", None),
+        "hp": getattr(ch, "hp", None),
+        "max_hp": getattr(ch, "max_hp", None),
+        "gold": getattr(ch, "gold", None),
+        "dead": bool(getattr(ch, "flags", {}).get("dead")) if ch else None,
+        "in_combat": bool(getattr(ch, "target", None)) if ch else None,
+        "uptime_sec": int(_t.time() - START_TS),
+        "db": bool(db and db.pool),
+        "actions": tail,
+    }
+    if ch is None:
+        head = f"Персонажа нет в памяти (uid `{uid}`) — игрок не начал или его выгрузило."
+    else:
+        room_name = WORLD.get(ch.room, {}).get("name", ch.room)
+        head = (f"Герой: {_ts.esc_md(ch.name)} — {ch.race}/{ch.cls}, ур.{ch.level}\n"
+                f"HP: {ch.hp}/{ch.max_hp}   Золото: {ch.gold}\n"
+                f"Комната: {_ts.esc_md(str(room_name))} (`{ch.room}`)\n"
+                f"В бою: {'да' if ch.target else 'нет'}   "
+                f"Мёртв: {'да' if ch.flags.get('dead') else 'нет'}")
+    chain = " → ".join(tail) if tail else "(нет записей)"
+    ctx = (f"{head}\n"
+           f"Последние действия: `{chain}`\n"
+           f"Аптайм: {props['uptime_sec']}с   БД: {'есть' if props['db'] else 'НЕТ'}")
+    return ctx, props
+
+
+async def _submit_bug(uid: int, text: str, reply) -> None:
+    """Принять отчёт: журнал + пинг админам + подтверждение игроку."""
+    import time as _t
+    now = _t.time()
+    if now - _bug_last.get(uid, 0) < BUG_COOLDOWN:
+        await reply("⏳ Отчёт уже принят. Следующий можно через минуту.")
+        return
+    body = " ".join((text or "").split())[:BUG_MAX_LEN]
+    if len(body) < BUG_MIN_LEN:
+        await reply("Опишите проблему чуть подробнее: что делали и что "
+                    "произошло вместо ожидаемого.")
+        return
+    _bug_last[uid] = now
+    ctx, props = _bug_context(uid)
+    props["text"] = body
+    if db and db.pool:
+        await db.add_audit(uid, "bug", props)
+    analytics.track(uid, "bug_report")
+    _log.info("bug_report uid=%s room=%s text=%s", uid, props.get("room"), body[:120])
+    sent = 0
+    for aid in ADMIN_IDS:
+        try:
+            await bot.send_message(
+                aid,
+                f"🐞 *Отчёт о баге*\n\n{_ts.esc_md(body)}\n\n{ctx}\n"
+                f"Игрок: /admin → 👤 Игрок → `{uid}`",
+                parse_mode="Markdown")
+            sent += 1
+        except Exception:
+            pass
+    if not sent:
+        # некому доставить (ADMIN_IDS пуст или все закрыли бота) — но в
+        # audit_log и в логах отчёт уже есть, поэтому игроку врать не надо
+        _elog.log_err(_log, "bug_report_no_admin", None, uid=uid)
+    await reply("🐞 Спасибо! Отчёт с описанием и контекстом ушёл разработчику.\n"
+                "Если сможете — напишите, как повторить проблему: это ускоряет "
+                "починку сильнее всего.")
+
+
+@dp.message(Command("bug"))
+async def cmd_bug(message: Message):
+    """Отчёт о баге с автоматически приложенным контекстом.
+
+    `/bug текст` — сразу; голый `/bug` — переводит в режим ожидания описания
+    следующим сообщением (см. bug_waiting в on_text), чтобы игроку не нужно
+    было помнить синтаксис.
+    """
+    uid = message.from_user.id
+    arg = (message.text or "").partition(" ")[2].strip()
+    if arg:
+        await _submit_bug(uid, arg, message.answer)
+        return
+    bug_waiting[uid] = 0.0
+    await message.answer(
+        "🐞 *Что пошло не так?*\n\nОпишите проблему одним сообщением: что вы "
+        "делали и что случилось вместо ожидаемого. Класс, уровень, комнату и "
+        "ваши последние действия я приложу сам.\n\n"
+        "Передумали — просто нажмите любую кнопку в игре.",
+        parse_mode="Markdown")
+
+
 @dp.message(Command("privacy"))
 async def cmd_privacy(message: Message):
     """Краткая выжимка политики конфиденциальности (Этап 10, черновик).
@@ -1484,6 +1616,13 @@ async def on_text(message: Message):
     # Этап 7.2: гейт бана — забаненный не проходит дальше (админов не трогаем).
     if _mod.is_banned(uid) and not is_admin(uid):
         await message.answer("⛔️ Доступ ограничен. По вопросам — /support")
+        return
+    # Отчёт о баге ждём РАНЬШЕ всех игровых проверок: сообщать о поломке
+    # игрок должен уметь и мёртвым, и без персонажа, и когда лежит БД —
+    # именно в таких состояниях баги и находят.
+    if uid in bug_waiting:
+        bug_waiting.pop(uid, None)
+        await _submit_bug(uid, text, message.answer)
         return
     # Этап 7.2: ввод в админке (uid/имя игрока, минуты мута, сумма компенсации).
     if uid in admin_await and is_admin(uid):
@@ -2472,6 +2611,10 @@ async def on_cb(cb: CallbackQuery):
     action, _, arg = data.partition(":")
     _cid_var.set(uuid.uuid4().hex[:8])   # Этап 9: correlation id этой цепочки
     _mark_session(uid)   # Этап 7.1: session_start по тишине ≥30 мин
+    _note_action(uid, data[:48])         # хвост действий для отчёта /bug
+    # нажал кнопку вместо описания бага — значит, передумал (см. cmd_bug)
+    if action != "bug":
+        bug_waiting.pop(uid, None)
 
     # Этап 7.2: гейт бана (админов не трогаем).
     if _mod.is_banned(uid) and not is_admin(uid):
@@ -2686,7 +2829,18 @@ async def on_cb(cb: CallbackQuery):
     elif action == "npcs":
         await safe_edit(cb, ui.render_room(ch, world, others_in(ch.room)), ui.kb_npcs_all(ch, world))
     elif action == "more":
-        await safe_edit(cb, "☰ *Ещё*", ui.kb_more(ch))
+        await safe_edit(cb, "☰ *Ещё*",
+                        ui.kb_more(ch, community=(COMMUNITY_TITLE, COMMUNITY_URL)))
+    elif action == "bug":
+        # Кнопка «🐞 Нашёл баг»: включаем ожидание описания (см. on_text).
+        bug_waiting[cb.from_user.id] = 0.0
+        await safe_edit(
+            cb,
+            "🐞 *Что пошло не так?*\n\nОпишите проблему одним сообщением: что вы "
+            "делали и что случилось вместо ожидаемого. Класс, уровень, комнату "
+            "и ваши последние действия я приложу сам.\n\n"
+            "Передумали — нажмите «Назад».",
+            ui.kb_back("more"))
     elif action == "stats":
         await safe_edit(cb, ui.render_stats(ch), ui.kb_player(ch))
     elif action == "inv":
