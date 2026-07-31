@@ -28,6 +28,7 @@ from . import notify
 from .character import Character
 from .world import World, MobInstance
 from . import combat
+from . import rules2            # категория моба решает, падает ли с него снаряжение
 from . import quest
 from . import errands
 from . import achievements
@@ -41,8 +42,13 @@ from . import dungeon
 from . import rarity
 from . import equip as _equip
 
+# Общая таблица дропа снаряжения. unique_source исключает предметы, у которых
+# в описании назван КОНКРЕТНЫЙ источник («Трофей с утопшего боцмана») — такие
+# падают только со своего моба, иначе текст противоречит механике: тестировщик
+# выбил компас странника из городского голубя (отчёт беты, п.12).
 _EQUIP_POOL = [k for k, v in ITEMS.items()
-               if v.get("type") in ("weapon", "armor", "accessory") and v.get("slot")]
+               if v.get("type") in ("weapon", "armor", "accessory") and v.get("slot")
+               and not v.get("unique_source")]
 # уровень предмета (для уровне-зависимого дропа)
 _BASE_LVL = {k: _equip.level_req(ITEMS[k]) for k in _EQUIP_POOL}
 
@@ -210,7 +216,13 @@ class GameLoop:
             _pool = _RARE_POOL.get(_bdiff) or _RARE_POOL.get("yellow")
             if _pool and random.random() < (0.30 if _bdiff == "red" else 0.15):
                 loot_items.append(random.choice(_pool))
-        # дроп экипировки по редкости (модель «два броска»: шанс дропа → редкость)
+        # Дроп экипировки по редкости (модель «два броска»: шанс дропа → редкость).
+        # Зверьё кованых вещей не носит: волк, паук или голубь роняют шкуры, яд
+        # и перья из собственной таблицы loot, а мечи и кольца — добыча с тех,
+        # кто их носил. Без этого правила городской голубь первого уровня катал
+        # ту же таблицу снаряжения, что и разбойник (отчёт беты, п.11).
+        # Боссы-звери — исключение: с них добыча положена по определению.
+        _beast = (rules2.mob_profile(m)["category"] == "beast" and not m.get("boss"))
         _maxr = max((k.remort_count for k in killers), default=0)
         _dpool = _pool_for(mob_lvl, _maxr)
         _pref = random.choice(killers).cls if killers else None
@@ -218,7 +230,8 @@ class GameLoop:
             _cp = [k for k in _dpool if _equip.class_can_use(_pref, k)]
             if _cp:
                 _dpool = _cp
-        _edrop = rarity.roll_drop(mob_lvl, _dpool, boss=bool(m.get("boss")))
+        _edrop = None if _beast else rarity.roll_drop(
+            mob_lvl, _dpool, boss=bool(m.get("boss")))
         if _edrop:
             loot_items.append(_edrop)
         # рейд-босс: гарантированный 🔴 божественный дроп при групповом убийстве
@@ -503,6 +516,9 @@ class GameLoop:
         else:
             self.world.process_respawns()
         self.world.process_corpse_decay()
+        # Мобы вне боя залечиваются: без этого босса добивали за несколько
+        # заходов «ударил-убежал-вылечился» (отчёт тестировщика, п.1).
+        self.world.process_regen(now)
         # 3) бродячие мобы: изредка перетекают в соседние комнаты (живой мир).
         # Анонс «забредает сюда» дедуплицируется (не чаще раза в
         # ROAM_ANNOUNCE_COOLDOWN на комнату) — сам моб перемещается в любом

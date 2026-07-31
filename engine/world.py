@@ -16,7 +16,7 @@ class MobInstance:
     """Конкретный экземпляр моба в конкретной комнате."""
     __slots__ = ("key", "mob_id", "room", "home", "hp", "max_hp", "last_tick",
                  "aggro", "effects", "dead_at", "threat", "_ai", "exploited_by",
-                 "contrib")
+                 "contrib", "last_hit_at", "last_regen_at")
 
     def __init__(self, key: str, mob_id: str, room: str):
         self.key = key                 # уникальный: "room:mob_id:index"
@@ -42,10 +42,15 @@ class MobInstance:
         # Нужен, чтобы сопартиец, просто стоящий в комнате, не получал долю
         # опыта и не размывал долю тех, кто дрался.
         self.contrib: Dict[int, float] = {}
+        # Когда по мобу последний раз попали. Нужен регенерации вне боя: пока
+        # бой идёт, лечиться моб не должен, иначе бой не кончится никогда.
+        self.last_hit_at = 0.0
+        self.last_regen_at = 0.0
 
     def add_contrib(self, uid: int, amount: float):
         if amount > 0:
             self.contrib[uid] = self.contrib.get(uid, 0.0) + float(amount)
+            self.last_hit_at = time.time()
 
     def took_part(self, uid: int) -> bool:
         return self.contrib.get(uid, 0.0) > 0
@@ -119,6 +124,49 @@ class World:
         inst.aggro = []
         inst.effects = []
 
+    # ───────── регенерация вне боя ─────────
+    # Плейтест тестировщика: HP мобу возвращались ТОЛЬКО при респавне после
+    # смерти, поэтому любого босса можно было добить за несколько заходов —
+    # ударил, отступил, вылечился, вернулся. Урон копился между попытками, риск
+    # был нулевой. Теперь моб, которого не бьют, залечивается сам.
+    #
+    # Задержка нужна, чтобы не наказывать игрока, который вышел из комнаты на
+    # секунду; скорость подобрана так, чтобы полное восстановление занимало
+    # ~20 секунд от нуля — этого достаточно, чтобы «ударил-убежал» перестал
+    # работать, и мало, чтобы раздражать при честном повторном заходе.
+    REGEN_DELAY = 10.0        # сек тишины, прежде чем моб начнёт лечиться
+    REGEN_PER_SEC = 0.05      # доля max_hp в секунду
+
+    def process_regen(self, now: float = None) -> None:
+        now = now or time.time()
+        for lst in self.mobs.values():
+            for inst in lst:
+                if inst.dead_at is not None or inst.hp >= inst.max_hp:
+                    continue
+                if inst.aggro:                      # бой идёт — не лечим
+                    continue
+                ready_at = inst.last_hit_at + self.REGEN_DELAY
+                if now < ready_at:
+                    continue
+                # Лечим за фактически прошедшее время, а не за всю тишину:
+                # иначе первый же тик после задержки вернул бы мобу всё HP.
+                since = now - max(inst.last_regen_at, ready_at)
+                inst.last_regen_at = now
+                if since <= 0:
+                    continue
+                heal = inst.max_hp * self.REGEN_PER_SEC * since
+                inst.hp = min(inst.max_hp, inst.hp + max(1.0, heal))
+                if inst.hp >= inst.max_hp:
+                    # Бой окончательно забыт: снимаем яды/заморозки и обнуляем
+                    # вклад — иначе долю добычи получил бы и тот, кто ударил
+                    # моба час назад и ушёл (см. on_mob_death).
+                    inst.hp = inst.max_hp
+                    inst.effects = []
+                    inst.threat.clear()
+                    inst.contrib.clear()
+                    inst.exploited_by.clear()
+                    inst.last_hit_at = 0.0
+
     # ───────── трупы и лут ─────────
     def add_corpse(self, room: str, mob: "MobInstance", loot: List[str]) -> dict:
         self._corpse_seq += 1
@@ -181,6 +229,10 @@ class World:
                         inst.aggro = []
                         inst.effects = []
                         inst.threat.clear()
+                        inst.contrib.clear()
+                        inst.exploited_by.clear()
+                        inst.last_hit_at = 0.0
+                        inst.last_regen_at = 0.0
                         if inst.room != inst.home:
                             returned.append(inst)
         for inst in returned:

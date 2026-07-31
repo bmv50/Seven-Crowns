@@ -438,10 +438,10 @@ def kb_more(ch: Character, community: tuple = None) -> InlineKeyboardMarkup:
     lvl = ch.level
     # Сетка 2×4. Порядок фиксирован; «Сезон» отсюда убран намеренно — он
     # остаётся в меню «Герой» (kb_player), и дублировать его здесь незачем.
+    # «Достижения» и «Бестиарий» отсюда убраны по отчёту тестировщика (п.21):
+    # оба уже есть в меню «Герой», и дублировать их здесь незачем.
     items = [
         _gated_btn("👥 Группа", "group", "party", lvl),
-        InlineKeyboardButton(text="🏆 Достижения", callback_data="achv"),
-        InlineKeyboardButton(text="📖 Бестиарий", callback_data="bestiary"),
         InlineKeyboardButton(text="📜 Хроника", callback_data="chronicle"),
         InlineKeyboardButton(text="⚙ Настройки", callback_data="settings"),
         InlineKeyboardButton(text="❓ Помощь", callback_data="help"),

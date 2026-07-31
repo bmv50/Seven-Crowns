@@ -98,18 +98,23 @@ def test_more_menu():
     kb3 = ui.kb_more(ch, community=("Официальный канал", ""))
     check("пустая ссылка не создаёт кнопку", not any(u for u in _btn_urls(kb3)))
 
-    # ── раскладка: 4 ряда по 2 + отдельный «Назад» ──
+    # ── раскладка: 3 ряда по 2 + отдельный «Назад» ──
     grid = [[b.text for b in row] for row in kb2.inline_keyboard]
-    check("рядов ровно 5 (4 пары + «Назад»)", len(grid) == 5, grid)
-    check("в каждом из первых четырёх рядов по 2 кнопки",
-          all(len(r) == 2 for r in grid[:4]), [len(r) for r in grid])
+    check("рядов ровно 4 (3 пары + «Назад»)", len(grid) == 4, grid)
+    check("в каждом из первых трёх рядов по 2 кнопки",
+          all(len(r) == 2 for r in grid[:3]), [len(r) for r in grid])
     check("«Назад» отдельным последним рядом",
           len(grid[-1]) == 1 and grid[-1][0].endswith("Назад"), grid[-1])
-    order = [t for row in grid[:4] for t in row]
-    want = ["Группа", "Достижения", "Бестиарий", "Хроника",
-            "Настройки", "Помощь", "Официальный канал", "баг"]
+    order = [t for row in grid[:3] for t in row]
+    want = ["Группа", "Хроника", "Настройки", "Помощь",
+            "Официальный канал", "баг"]
     check("порядок кнопок как заказан",
           all(w.lower() in order[i].lower() for i, w in enumerate(want)), order)
+    # отчёт тестировщика, п.21: дубли с меню «Герой» убраны
+    check("«Достижения» здесь больше нет",
+          not any("Достижени" in t for t in order), order)
+    check("«Бестиарий» здесь больше нет",
+          not any("Бестиар" in t for t in order), order)
 
     # ── новичок: «Группа» ещё закрыта — дыры в сетке быть не должно ──
     low = _hero()
