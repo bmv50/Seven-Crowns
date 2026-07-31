@@ -185,7 +185,7 @@ def render_score(ch) -> str:
     # статусные строки (только если есть что показать)
     rested = int(ch.flags.get("rested", 0))
     if rested:
-        L.append(f"💤 Отдохнувший опыт: {rested}")
+        L.append(f"💤 Двойной опыт: ещё {rested}")   # см. bot/ui.py: п.20 отчёта беты
     if _r2.ENABLED:
         _av = _r2.alignment(ch)
         _al = {"good": "☀️ Светлый путь", "evil": "🌑 Тёмный путь",

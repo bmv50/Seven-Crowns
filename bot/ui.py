@@ -16,6 +16,8 @@ from engine import talents as _talents
 from engine import uigate as _uigate
 
 DIFF_EMOJI = {"green": "🟢", "yellow": "🟡", "red": "🔴"}
+# Полные названия характеристик для карточки класса (поле primary в classes.yaml)
+_PRIMARY_RU = {"str": "Сила", "dex": "Ловкость", "int": "Интеллект", "spi": "Дух"}
 from engine.character import Character
 from engine.world import World, MobInstance, ground_items_for
 
@@ -118,7 +120,9 @@ def _render_stats_legacy(ch: Character) -> str:
     title = ch.flags.get("title")
     title_line = f"🎖 _{title}_\n" if title else ""
     rested = int(ch.flags.get("rested", 0))
-    rest_line = f"💤 Отдохнувший опыт: {rested}\n" if rested else ""
+    # «Отдохнувший опыт» тестировщик не понял, и справедливо: это не опыт,
+    # который у героя есть, а запас, пока действует удвоение (отчёт беты, п.20).
+    rest_line = f"💤 Двойной опыт: ещё {rested}\n" if rested else ""
     arena_line = (f"🏟 Арена: {_arena.rating(ch)} {_arena.tier(_arena.rating(ch))}\n"
                   if _arena.has_played(ch) else "")
     from engine import karma as _karma
@@ -179,6 +183,12 @@ def class_card(cid: str) -> str:
     role = c.get("role")
     diff = c.get("difficulty")
     style = c.get("style")
+    # Главная характеристика — отдельной строкой, а не внутри художественного
+    # описания: раньше «урон от Силы» тонуло в прозе, и игрок не понимал, что
+    # именно качать (отчёт беты, п.17). primary уже есть в data/classes.yaml.
+    _prim = _PRIMARY_RU.get(c.get("primary"))
+    if _prim:
+        lines.append(f"📊 Главная характеристика: *{_prim}*")
     if role or diff:
         stars = "⭐" * int(diff or 0)
         lines.append(f"Роль: {role or '—'}   Сложность: {stars or '—'}")
@@ -216,9 +226,13 @@ def _gated_btn(text: str, callback_data: str, feature: str, level: int):
     return None
 
 
-def kb_titles(ch) -> InlineKeyboardMarkup:
+def kb_titles(ch, back: str = "stats") -> InlineKeyboardMarkup:
     """Выбор титула к показу рядом с именем (из заработанных достижений
-    и из собранных коллекций бестиария — engine/bestiary.py)."""
+    и из собранных коллекций бестиария — engine/bestiary.py).
+
+    back — куда ведёт «Назад». Экран открывается и из карточки героя, и из
+    лавки титулов; жёсткий возврат в «Герой» уводил из лавки не туда.
+    """
     from engine import achievements as _a
     rows = []
     shown = set()
@@ -242,7 +256,7 @@ def kb_titles(ch) -> InlineKeyboardMarkup:
     if not rows:
         rows.append([InlineKeyboardButton(
             text="Титулов пока нет — зарабатывайте достижения", callback_data="noop")])
-    rows.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="stats")])
+    rows.append([InlineKeyboardButton(text="⬅️ Назад", callback_data=back)])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -728,7 +742,8 @@ def kb_title_shop(ch) -> InlineKeyboardMarkup:
             rows.append([InlineKeyboardButton(
                 text=f"{afford} {name} — {money.fmt(price)}",
                 callback_data=f"buytitle:{tid}")])
-    rows.append([InlineKeyboardButton(text="🎖 Мои титулы", callback_data="achv")])
+    # arg после двоеточия — куда вернуть по «Назад» (сюда же, в лавку титулов)
+    rows.append([InlineKeyboardButton(text="🎖 Мои титулы", callback_data="achv:titleshop")])
     rows.append([InlineKeyboardButton(text="🏪 К покупкам", callback_data="shop")])
     rows.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="look")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -1129,7 +1144,11 @@ def item_caption(key: str, ctx: str, ch: Character) -> str:
     if meta.get("type") in ("weapon", "armor") or meta.get("slot"):
         _lr = _eq.level_req(meta)
         ok, why = _eq.can_equip(ch, key)
-        L.append(f"📈 Требуется уровень: {_lr}" + ("" if ok else f"  ⛔ _{why}_"))
+        # Свой уровень рядом с требуемым: голое «Требуется уровень: 12»
+        # заставляло игрока лезть в карточку героя и сравнивать вручную
+        # (отчёт беты, п.19).
+        _lvl_line = f"📈 Требуется уровень: {_lr} (у вас {ch.level})"
+        L.append(_lvl_line + ("" if ok else f"  ⛔ _{why}_"))
         _rr = int(meta.get("remort_req", 0) or 0)
         if _rr:
             L.append(f"⭐ Реморт {_rr}")

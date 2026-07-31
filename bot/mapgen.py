@@ -60,10 +60,29 @@ def _font(size):
     return ImageFont.load_default()
 
 
-def _backdrop(W, H):
-    """Единый нейтрально-фэнтезийный фон карты (images/map_bg.png или градиент)."""
-    p = os.path.join(os.path.dirname(ROOMS_IMG), "map_bg.png")
-    if os.path.exists(p):
+_IMG_EXT = (".jpg", ".jpeg", ".png", ".webp")
+
+
+def _find_img(folder, stem):
+    """Путь к картинке по имени без расширения. Перебор нужен потому, что арты
+    после scripts/optimize_images.py лежат в JPEG, а раньше искались только
+    .png — из-за этого в ячейках карты пропали изображения комнат."""
+    for ext in _IMG_EXT:
+        p = os.path.join(folder, stem + ext)
+        if os.path.exists(p):
+            return p
+    return None
+
+
+def _backdrop(W, H, zone=None):
+    """Фон карты: images/maps/<зона>.jpg, иначе общий images/map_bg.*,
+    иначе тёмный градиент. Зональный фон даёт каждой местности своё лицо —
+    пустоши не выглядят как лес, — не требуя ручной расстановки комнат."""
+    maps_dir = os.path.join(os.path.dirname(ROOMS_IMG), "maps")
+    p = _find_img(maps_dir, str(zone)) if zone else None
+    if not p:
+        p = _find_img(os.path.dirname(ROOMS_IMG), "map_bg")
+    if p:
         try:
             return ImageEnhance.Brightness(
                 Image.open(p).convert("RGB").resize((W, H))).enhance(0.6)
@@ -80,20 +99,54 @@ def _backdrop(W, H):
 
 
 def _box_img(rid):
-    """Картинка самой комнаты для заливки прямоугольника (если есть)."""
-    p = os.path.join(ROOMS_IMG, rid + ".png")
-    if os.path.exists(p):
-        try:
-            im = Image.open(p).convert("RGB").resize((CELL_W, CELL_H))
-            return ImageEnhance.Brightness(im).enhance(0.5)
-        except Exception:
-            return None
-    return None
+    """Картинка самой комнаты для заливки прямоугольника (если есть).
+
+    Кадрируем по центру, а не растягиваем: арт комнаты широкий (1280×704),
+    ячейка — почти вдвое площе, и простой resize сплющивал бы башни и деревья.
+    """
+    p = _find_img(ROOMS_IMG, rid)
+    if not p:
+        return None
+    try:
+        im = Image.open(p).convert("RGB")
+        # вписываем по ширине, обрезаем лишнее по высоте от центра
+        k = CELL_W / float(im.width)
+        nh = max(CELL_H, int(im.height * k))
+        im = im.resize((CELL_W, nh), Image.LANCZOS)
+        top = max(0, (nh - CELL_H) // 2)
+        im = im.crop((0, top, CELL_W, top + CELL_H))
+        return ImageEnhance.Brightness(im).enhance(0.5)
+    except Exception:
+        return None
 
 
-def _free(taken, x, y):
+def _free(taken, x, y, step=None):
+    """Свободная клетка для комнаты, НЕ ломающая направление перехода.
+
+    Раньше при занятой клетке искалась любая свободная по спирали — включая
+    клетку с противоположной стороны. Из-за этого комната, лежащая к востоку,
+    могла нарисоваться севернее, и игрок, шагнув на восток, «оказывался на
+    севере» (отчёт беты, п.9). Теперь сначала уходим ДАЛЬШЕ по тому же
+    направлению, потом пробуем сдвиг вбок — и никогда назад.
+
+    step — (dx, dy) хода, по которому пришли. None (нет направления) —
+    поведение как раньше, по спирали.
+    """
     if (x, y) not in taken:
         return x, y
+    if step:
+        sx, sy = step
+        px, py = (0, 1) if sx else (1, 0)      # ось поперёк хода
+        ox, oy = x - sx, y - sy                # откуда шли
+        # Перебираем клетки, у которых смещение ПО направлению строго больше
+        # бокового: тогда «восток» и на глаз остаётся востоком, а не северо-
+        # востоком. a — сколько ушли по направлению, b — вбок.
+        for a in range(1, 12):
+            for b in range(0, a):              # |b| < a — направление доминирует
+                for s in ((1,) if b == 0 else (1, -1)):
+                    c = (ox + sx * a + px * b * s, oy + sy * a + py * b * s)
+                    if c not in taken:
+                        return c
     for r in range(1, 14):
         for dx in range(-r, r + 1):
             for dy in range(-r, r + 1):
@@ -117,7 +170,8 @@ def _layout_local(start):
                 continue
             dx, dy = _DIRS[d]
             x, y = coords[rid]
-            nx, ny = _free(used, x + dx, y + dy)
+            # направление передаём в _free: при коллизии оно должно сохраниться
+            nx, ny = _free(used, x + dx, y + dy, step=(dx, dy))
             coords[dest] = (nx, ny)
             used.add((nx, ny))
             depth[dest] = depth[rid] + 1
@@ -185,7 +239,7 @@ def render_zone_map(ch) -> str:
     H = TOP + MARGIN + rows * CELL_H + (rows - 1) * GAP_Y
 
     # единый нейтральный фон карты
-    img = _backdrop(W, H)
+    img = _backdrop(W, H, zone)
     d = ImageDraw.Draw(img)
     f_title = _font(32)
     f_name = _font(19)
@@ -205,15 +259,26 @@ def render_zone_map(ch) -> str:
         x, y = box_xy(rid)
         return x + CELL_W // 2, y + CELL_H // 2
 
-    # рёбра между показанными комнатами
+    # Рёбра между показанными комнатами. Линию рисуем ТОЛЬКО если она идёт в ту
+    # сторону, куда ведёт выход: в Пепельных Пустошах связи образуют кольцо,
+    # которое на плоскую сетку не ложится ни при какой раскладке, и одна из
+    # линий неизбежно пошла бы поперёк смысла — игрок видел бы «на восток»,
+    # а стрелка тянулась на север (отчёт беты, п.9). Честнее не нарисовать
+    # ребро совсем: комнаты всё равно подписаны, а переход виден в комнате.
     drawn = set()
     for rid in coords:
         for _dd, dest in WORLD[rid].get("exits", {}).items():
-            if _dd in _VERT:
+            if _dd in _VERT or dest not in coords or (dest, rid) in drawn:
                 continue
-            if dest in coords and (dest, rid) not in drawn:
-                d.line([cen(rid), cen(dest)], fill=_EDGE, width=4)
-                drawn.add((rid, dest))
+            dx, dy = _DIRS.get(_dd, (0, 0))
+            x0, y0 = coords[rid]
+            x1, y1 = coords[dest]
+            prim = (x1 - x0) * dx + (y1 - y0) * dy      # ушли по направлению
+            perp = abs((y1 - y0) if dx else (x1 - x0))  # снесло вбок
+            if prim <= 0 or perp >= prim:
+                continue
+            d.line([cen(rid), cen(dest)], fill=_EDGE, width=4)
+            drawn.add((rid, dest))
 
     # граничные стрелки: выходы в НЕпоказанные комнаты
     for rid in coords:

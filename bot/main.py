@@ -2857,8 +2857,9 @@ async def on_cb(cb: CallbackQuery):
             bonus = min(cap, int(ch.flags.get("rested", 0)) + ch.level * 50)
             ch.flags["rested"] = bonus
             await save(ch)
-            await cb.answer("💤 Вы отдохнули: здоровье и силы восстановлены, "
-                            "накоплен отдохнувший опыт.", show_alert=True)
+            await cb.answer(f"💤 Вы отдохнули: здоровье и силы восстановлены. "
+                            f"Следующие {bonus} опыта придут вдвойне.",
+                            show_alert=True)
             await safe_edit(cb, ui.render_room(ch, world, others_in(ch.room)),
                             ui.kb_room(ch, world))
     elif action == "stash":
@@ -2935,6 +2936,15 @@ async def on_cb(cb: CallbackQuery):
     elif action == "take":
         if take_ground_item(ch, ch.room, arg):
             await save(ch)
+            # Подтверждение как у «Подобрать всё»: раньше одиночное поднятие
+            # молчало, и игрок не понимал, попал предмет в сумку или нет
+            # (отчёт беты, п.6).
+            _tn = ITEMS.get(arg, {}).get("name", arg)
+            _cnt = ch.inventory.count(arg)
+            await cb.answer(f"🎒 Подобрано: {_tn}"
+                            + (f" (в сумке: {_cnt})" if _cnt > 1 else ""))
+        else:
+            await cb.answer("Не удалось подобрать — предмета уже нет.")
         await show_room(cb.message, ch, edit_cb=cb)
     elif action == "takeall":
         _taken_all = [it for it in list(ground_items_for(ch, ch.room))
@@ -3043,7 +3053,10 @@ async def on_cb(cb: CallbackQuery):
             await cb.answer(msg.replace("*", "")[:190], show_alert=True)
         await safe_edit(cb, msg, ui.kb_npc(ch, _cnpc))
     elif action == "achv":
-        await safe_edit(cb, achievements.render(ch), ui.kb_titles(ch))
+        # arg — куда вернуть по «Назад». Экран открывается из двух мест: карточки
+        # героя и лавки титулов, и жёсткий возврат в «Герой» уводил игрока не
+        # туда (отчёт беты, п.14 — там же про вход из «Ещё», который убран).
+        await safe_edit(cb, achievements.render(ch), ui.kb_titles(ch, back=arg or "stats"))
     elif action == "season":
         if not _uigate.unlocked("season", ch.level):
             await cb.answer(_uigate.hint("season"), show_alert=True); return
@@ -3376,7 +3389,14 @@ async def on_cb(cb: CallbackQuery):
         v = ui.current_vendor(ch)
         if v:
             analytics.track(uid, "shop_view", {"vendor": v})   # Этап 7.1
-            await safe_edit(cb, f"🏪 *{npclib.display_name(v)} — товары:*", ui.kb_shop(ch))
+            # Свой уровень и кошелёк в шапке: у каждого товара в карточке
+            # написано «Требуется уровень N», и без своей цифры рядом эта
+            # строка ничего игроку не говорит (отчёт беты, п.19).
+            await safe_edit(
+                cb,
+                f"🏪 *{npclib.display_name(v)} — товары:*\n"
+                f"📈 Ваш уровень: {ch.level}   💰 Монет: {money.fmt(ch.gold)}",
+                ui.kb_shop(ch))
         else:
             await cb.answer("Торговец есть в городах", show_alert=True)
     elif action == "shopmenu":

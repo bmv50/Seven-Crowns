@@ -175,7 +175,13 @@ def sell_price(key: str) -> int:
     if price <= 0:
         return 0
     rate = SELL_RATE_EQUIP if it.get("type") in _EQUIP_TYPES else SELL_RATE
-    return max(1, int(price * rate))
+    # Пол в одну монету (money.COIN). Всё, что дешевле, для игрока невидимо:
+    # интерфейс показывает монеты, а не внутренние единицы, поэтому продажа
+    # пера за 18 единиц не меняла ни одной цифры на экране — Telegram видел
+    # тот же текст и вовсе отказывался перерисовывать сообщение. Игрок при
+    # этом читал остаток от ПРЕДЫДУЩЕЙ продажи (отчёт беты, п.3).
+    from .money import COIN
+    return max(COIN, int(price * rate))
 
 
 def is_sellable(key: str) -> bool:
