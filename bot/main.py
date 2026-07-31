@@ -1249,34 +1249,58 @@ async def enter_room(ch: Character, cb=None):
             await bot.send_message(ch.uid, f"💰 Аукцион: получена выручка с продаж — +{money.fmt(_pay)}.")
         except Exception:
             pass
+    # Старую панель убираем: новая придёт фотографией, а фото поверх старого
+    # сообщения не «правится» — его можно только прислать заново.
+    if cb and ch.flags.get("roompics", True) and art_path("rooms", ch.room):
+        try:
+            await cb.message.delete()
+        except Exception:
+            pass
+        cb = None
+    if cb:
+        await show_room(cb.message, ch, edit_cb=cb)
+    else:
+        await send_room_panel(ch)
+
+
+async def send_room_panel(ch: Character):
+    """Прислать НОВУЮ панель комнаты: фото локации с подписью, иначе текст.
+
+    Вынесено из enter_room, чтобы возврат с карты показывал ту же панель, что
+    и вход в комнату. Побочных эффектов входа (квесты reach, выплаты аукциона)
+    здесь нет намеренно: игрок никуда не переходил, он лишь закрыл карту.
+    """
+    caption = ui.render_room(ch, world, others_in(ch.room))
     img = art_path("rooms", ch.room)
     if ch.flags.get("roompics", True) and img:
-        caption = ui.render_room(ch, world, others_in(ch.room))
-        if len(caption) > 1000:
-            caption = caption[:1000] + "…"
-        if cb:
-            try:
-                await cb.message.delete()
-            except Exception:
-                pass
-        ph = await send_photo_cached(ch.uid, img, caption=caption,
+        cap = caption[:1000] + ("…" if len(caption) > 1000 else "")
+        ph = await send_photo_cached(ch.uid, img, caption=cap,
                                      reply_markup=ui.kb_room(ch, world))
         if ph:
             await _track_room_panel(ch.uid, ph.message_id)
             return
-    if cb:
-        await show_room(cb.message, ch, edit_cb=cb)
-    else:
-        m = await bot.send_message(ch.uid, ui.render_room(ch, world, others_in(ch.room)),
-                                   parse_mode="Markdown", reply_markup=ui.kb_room(ch, world))
-        await _track_room_panel(ch.uid, m.message_id)
+    m = await bot.send_message(ch.uid, caption, parse_mode="Markdown",
+                               reply_markup=ui.kb_room(ch, world))
+    await _track_room_panel(ch.uid, m.message_id)
 
 
 async def show_room(target, ch: Character, edit_cb=None):
+    """Перерисовать панель комнаты.
+
+    Панель может быть ФОТО с подписью (enter_room шлёт арт локации). Раньше
+    здесь всегда звался safe_edit → edit_text, а текст у фото не правится:
+    safe_edit удалял сообщение и слал голый текст, и картинка комнаты
+    пропадала после любого действия (отчёт беты, п.4). Теперь если под рукой
+    фото — правим подпись, изображение остаётся на месте.
+    """
     txt = ui.render_room(ch, world, others_in(ch.room))
     kb = ui.kb_room(ch, world)
     if edit_cb:
-        await safe_edit(edit_cb, txt, kb)
+        if getattr(edit_cb.message, "photo", None):
+            # у подписи лимит 1024 символа — как и при первой отправке
+            await safe_edit_caption(edit_cb, txt[:1000] + ("…" if len(txt) > 1000 else ""), kb)
+        else:
+            await safe_edit(edit_cb, txt, kb)
     else:
         m = await target.answer(txt, parse_mode="Markdown", reply_markup=kb)
         await _track_room_panel(ch.uid, m.message_id)
@@ -3199,12 +3223,14 @@ async def on_cb(cb: CallbackQuery):
             await show_map_photo(ch, cb)
         await cb.answer()
     elif action == "home":
+        # Возврат с карты. Раньше здесь слалось голое текстовое сообщение, и
+        # арт локации не появлялся вовсе (отчёт беты, п.5). Теперь панель
+        # собирает та же функция, что и при входе в комнату, — с фото.
         try:
             await cb.message.delete()
         except Exception:
             pass
-        await bot.send_message(ch.uid, ui.render_room(ch, world, others_in(ch.room)),
-                               parse_mode="Markdown", reply_markup=ui.kb_room(ch, world))
+        await send_room_panel(ch)
         await cb.answer()
     elif action == "help":
         await safe_edit(cb, _help_text(ch), kb_help())
