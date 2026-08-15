@@ -175,11 +175,16 @@ check("_reward_for(0) == золото Бронзы (5000)", seasons._reward_for(
 
 # ─────────────────── 5. gold_rate_for: ОНБОРДИНГ vs ЭНДГЕЙМ ───────────────────
 print("\n[5] Уровне-зависимый срез боевой голды gold_rate_for")
+# Уровни берутся ОТ КАПА, а не хардкодом: кап менялся (60→25, 2026-08-12),
+# и опрос несуществующих уровней проверял бы плато, а не сам срез.
+from engine.character import LEVEL_CAP
+_MID = (content.GOLD_RATE_FULL_LEVEL + LEVEL_CAP) // 2      # середина спуска
 check("gold_rate_for(1) == 1.0 (онбординг полный)", content.gold_rate_for(1) == 1.0)
 check("gold_rate_for(10) == 1.0 (граница онбординга)", content.gold_rate_for(10) == 1.0)
-check("gold_rate_for(60) == 0.35 (эндгейм-пол)", abs(content.gold_rate_for(60) - 0.35) < 1e-9)
-check("gold_rate_for монотонно убывает 10->30->60",
-      content.gold_rate_for(10) > content.gold_rate_for(30) > content.gold_rate_for(60))
+check(f"gold_rate_for(кап={LEVEL_CAP}) == 0.35 (эндгейм-пол)",
+      abs(content.gold_rate_for(LEVEL_CAP) - 0.35) < 1e-9)
+check(f"gold_rate_for монотонно убывает 10->{_MID}->{LEVEL_CAP}",
+      content.gold_rate_for(10) > content.gold_rate_for(_MID) > content.gold_rate_for(LEVEL_CAP))
 
 # срез РЕАЛЬНО подключён в loop.on_mob_death (регресс-защита от «объявлен, но не вызван»)
 import asyncio
@@ -209,12 +214,12 @@ async def _combat_gold(level, mob_id):
 _low_mob = next((k for k, v in MOBS.items()
                  if not v.get("boss") and v.get("level", 1) <= 8 and v.get("gold", 0) > 0),
                 next(k for k, v in MOBS.items() if not v.get("boss")))
-_g30 = asyncio.run(_combat_gold(30, _low_mob))
-_g60 = asyncio.run(_combat_gold(60, _low_mob))
-check("боевая голда на ур.60 срезана относительно ур.30 (gold_rate подключён)",
+_g30 = asyncio.run(_combat_gold(_MID, _low_mob))
+_g60 = asyncio.run(_combat_gold(LEVEL_CAP, _low_mob))
+check(f"боевая голда на капе срезана относительно ур.{_MID} (gold_rate подключён)",
       _g60 < _g30)
-_ratio_expected = content.gold_rate_for(60) / content.gold_rate_for(30)  # ~0.473
-check("на «зелёном» мобе голда ур.60/ур.30 ≈ gold_rate(60)/gold_rate(30) (±0.06)",
+_ratio_expected = content.gold_rate_for(LEVEL_CAP) / content.gold_rate_for(_MID)
+check("на «зелёном» мобе голда кап/середина ≈ отношению gold_rate (±0.06)",
       _g30 > 0 and abs(_g60 / _g30 - _ratio_expected) < 0.06)
 
 
@@ -239,8 +244,11 @@ from engine.content import ITEMS
 from engine import equip as _equip
 from engine.loop import _build_rare_pool
 
-# доход/час (монеты) по уровням — якоря калибровки спринта 5 (боевая голда)
-_INCOME_ANCHOR = {5: 2450, 15: 7000, 30: 9450, 45: 16750, 60: 16275}
+# Доход/час (монеты) по уровням — якоря калибровки спринта 5 (боевая голда).
+# Ключи переведены на шкалу после сжатия капа 60→25 (2026-08-12) тем же
+# отображением, что и весь контент: 30→19, 45→22, 60→25. Сами значения —
+# прежние: якорь описывает доход в ТОЧКЕ ПРОГРЕССА, а точки просто переехали.
+_INCOME_ANCHOR = {5: 2450, 15: 7000, 19: 9450, 22: 16750, 25: 16275}
 
 
 def _income_per_hour(level):
@@ -264,8 +272,9 @@ def _top_item_price_coins(level):
     return (max(cands) // money.COIN) if cands else 0
 
 
-# ЦЕЛЬ: топ-предмет уровня L стоит 8–15 часов дохода L (на 15/30/45/60).
-for _L in (15, 30, 45, 60):
+# ЦЕЛЬ: топ-предмет уровня L стоит 8–15 часов дохода L.
+# Точки замера — тиры level_req после сжатия капа (15/19/22/25).
+for _L in (15, 19, 22, 25):
     _top = _top_item_price_coins(_L)
     _inc = _income_per_hour(_L)
     _hours = _top / _inc if _inc > 0 else 0
@@ -273,10 +282,10 @@ for _L in (15, 30, 45, 60):
           8.0 <= _hours <= 15.0)
 
 # после ребаланса топ-предметы стали ДОРОГО (не 340–4000 монет, как в спринте 5):
-check("топ-предмет ур.45 теперь дороже 100 000 монет (был ≤4000)",
-      _top_item_price_coins(45) > 100_000)
-check("топ-предмет ур.60 теперь дороже 100 000 монет",
-      _top_item_price_coins(60) > 100_000)
+check("топ-предмет предпоследнего тира дороже 100 000 монет (был ≤4000)",
+      _top_item_price_coins(22) > 100_000)
+check("топ-предмет на капе дороже 100 000 монет",
+      _top_item_price_coins(LEVEL_CAP) > 100_000)
 
 # ─────────────── 8. ПРОДАЖА: ЭКИПИРОВКА << МАТЕРИАЛЫ (по доле) ───────────────
 print("\n[8] Продажа добычи: доля скупки экипировки НИЖЕ доли материалов")

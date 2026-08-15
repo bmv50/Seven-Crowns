@@ -76,7 +76,12 @@ class DummyMob:
     """Манекен-цель: не наносит урона (чистый DPS-парс исходящего урона игрока),
     но несёт профиль защиты (резист/иммунитет/уязвимость) нужной категории —
     так же, как это делает rules2.mitigate для настоящего MobInstance."""
-    __slots__ = ("meta", "mob_id", "effects", "aggro", "threat", "hp", "max_hp")
+    # Слоты обязаны покрывать всё, что трогает боевой путь combat.py, иначе
+    # симулятор падает на первом же ударе (так он и лежал сломанным: MobInstance
+    # обзавёлся contrib/exploited_by, а манекен — нет).
+    __slots__ = ("meta", "mob_id", "effects", "aggro", "threat", "hp", "max_hp",
+                 "contrib", "exploited_by", "key", "room", "home",
+                 "last_tick", "dead_at", "last_hit_at", "last_regen_at")
 
     def __init__(self, level: int, category: str):
         prof = DUMMY_PROFILES[category]
@@ -93,6 +98,11 @@ class DummyMob:
         self.aggro = []
         self.threat = {}
         self.contrib = {}
+        self.exploited_by = set()
+        self.key = self.mob_id
+        self.room = self.home = "манеж"
+        self.last_tick = self.dead_at = None
+        self.last_hit_at = self.last_regen_at = 0.0
         self.hp = 10 ** 9
         self.max_hp = 10 ** 9
 

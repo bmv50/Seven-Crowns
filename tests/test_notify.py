@@ -48,8 +48,11 @@ check("выключение сохраняется", notify.enabled(ch, "world_b
 check("прочие остаются включёнными", notify.enabled(ch, "daily_reset") is True)
 new_state = notify.toggle_pref(ch, "world_boss")
 check("toggle возвращает новое состояние", new_state is True and notify.enabled(ch, "world_boss"))
-check("каталог содержит все 10 категорий", len(notify.CATEGORIES) == 10)
+check("каталог содержит все 11 категорий", len(notify.CATEGORIES) == 11)
 check("категория world_event присутствует", "world_event" in notify.CATEGORIES)
+check("категория gather (час сбора) присутствует", "gather" in notify.CATEGORIES)
+check("час сбора в тихие часы откладывается, а не теряется",
+      "gather" in notify._QUIET_DEFER and "gather" not in notify._QUIET_DROP)
 check("у каждой категории есть подпись", all(c in notify.LABELS for c in notify.CATEGORIES))
 
 # ─────────────────────── 2. ТИХИЕ ЧАСЫ ───────────────────────
@@ -267,16 +270,21 @@ check("до тика очередь notify пуста", notify.pending() == 0)
 # привязанных к циклу asyncio-примитивов между тиками, поэтому asyncio.run()
 # на каждый вызов (свой цикл, закрывается по завершении) — прямая замена.
 _aio_rf.run(_gl_rf.tick())
-check("после достижения капа rested_full эмитится в очередь", notify.pending() == 1)
-check("категория события — rested_full",
-      notify.pending() == 1 and notify._QUEUE[0]["category"] == "rested_full")
+# Считаем ИМЕННО rested_full, а не длину очереди целиком: тот же тик рассылает
+# приглашения на час сбора (engine/lfg), и в 20:00 по локальному времени игрока
+# в очереди законно оказывается вторая запись. Проверка длины делала тест
+# зависимым от времени суток — он падал ровно один час в сутки.
+_rested = [x for x in notify._QUEUE if x["category"] == "rested_full"]
+check("после достижения капа rested_full эмитится в очередь", len(_rested) == 1)
+check("категория события — rested_full", bool(_rested))
 check("флаг дедупа notify_rested_day проставлен днём", "notify_rested_day" in _rest_char.flags)
 _today_str = _rest_char.flags.get("notify_rested_day")
 
 # повторный тик в тот же день с уже полным баком — не спамит повторно
 notify.clear()
 _aio_rf.run(_gl_rf.tick())
-check("повторный тик в тот же день — очередь остаётся пустой (дедуп)", notify.pending() == 0)
+check("повторный тик в тот же день — rested_full больше не эмитится (дедуп)",
+      not [x for x in notify._QUEUE if x["category"] == "rested_full"])
 check("флаг дедупа не изменился (та же дата)",
       _rest_char.flags.get("notify_rested_day") == _today_str)
 

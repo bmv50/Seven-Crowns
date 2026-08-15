@@ -39,7 +39,7 @@ DEFAULT_TZ = 3
 CATEGORIES = [
     "daily_reset", "world_boss", "auction_sold", "auction_outbid",
     "dungeon_ready", "rested_full", "season_end_soon", "season_rollover",
-    "guild_event", "world_event",
+    "guild_event", "world_event", "gather",
 ]
 LABELS = {
     "daily_reset":     "📅 Новое задание дня",
@@ -52,13 +52,14 @@ LABELS = {
     "season_rollover": "🏅 Итоги сезона",
     "guild_event":     "⚔️ События гильдии",
     "world_event":     "🌐 Мировое событие",
+    "gather":          "👥 Час сбора",
 }
 
 # сделки игрока идут вне суточного лимита (он их ждёт персонально)
 _OFF_QUOTA = {"auction_sold", "auction_outbid"}
 # в тихие часы: дропаем (протухает) vs откладываем до утра
 _QUIET_DROP = {"world_boss"}
-_QUIET_DEFER = {"daily_reset", "dungeon_ready", "rested_full"}
+_QUIET_DEFER = {"daily_reset", "dungeon_ready", "rested_full", "gather"}
 
 MAX_PER_DAY = 2        # legacy-алиас DEFAULT_LIMIT (см. ниже); ссылок в коде больше нет
 QUIET_START = 23      # 23:00 включительно

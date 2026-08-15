@@ -71,6 +71,31 @@ def mitigate(amount: int, dtype: str, defender) -> int:
     return max(0, amount)
 
 
+EFFECT_NORMAL, EFFECT_VULN = "normal", "vuln"
+EFFECT_RESIST, EFFECT_IMMUNE = "resist", "immune"
+
+
+def dtype_effect(dtype: str, defender) -> str:
+    """Как подействует урон типа dtype по цели: normal | vuln | resist | immune.
+
+    Порядок проверок тот же, что в mitigate(): иммунитет важнее уязвимости,
+    уязвимость важнее резиста. Вынесено отдельной функцией, чтобы интерфейс мог
+    ПОКАЗАТЬ игроку последствие выбора, не пересчитывая урон и не дублируя
+    правила. До этого движок считал резисты, а игрок о них не знал (кроме
+    частного случая духов) — и выбор оружия/умения решением не был.
+    """
+    if not dtype:
+        return EFFECT_NORMAL
+    resist, immune, vuln = defense_sets(defender)
+    if dtype in immune:
+        return EFFECT_IMMUNE
+    if dtype in vuln:
+        return EFFECT_VULN
+    if dtype in resist:
+        return EFFECT_RESIST
+    return EFFECT_NORMAL
+
+
 # ───────── мировоззрение ─────────
 def alignment(entity) -> int:
     if _is_char(entity):

@@ -414,8 +414,8 @@ def journal(ch: Character) -> str:
         from . import daily as _daily
         if _daily.DAILY:
             d = _daily.ensure(ch)
-            dq = _daily.DAILY.get(d["id"])
-            if dq:
+            dq = _daily.task_of(ch)      # разрешённое задание, не шаблон
+            if dq.get("mob"):
                 mob_name = MOBS.get(dq.get("mob", ""), {}).get("name", dq.get("mob", ""))
                 prog = f"{d.get('progress', 0)}/{dq['count']}"
                 if d.get("claimed"):

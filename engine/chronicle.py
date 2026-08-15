@@ -9,6 +9,7 @@ season (новый сезон начался), event (мировое событ�
 legend (игрок взял лигу Легенда), collection (собрана коллекция с титулом).
 """
 import time
+import re
 from collections import deque
 
 # Кольцевой буфер записей {ts, type, text}. Свежие добавляются справа —
@@ -90,6 +91,27 @@ def set_epic(text: str):
     global _EPIC
     _EPIC = (text or "").strip() or None
     _mark_dirty()
+
+
+def mentioned_names(text: str, names) -> list:
+    """Какие из имён реально упомянуты в тексте летописи (в порядке names).
+
+    Зачем: летопись сезона пишется по логу мира и называет игроков поимённо, но
+    сам игрок её не читает — она уходила общей рассылкой и терялась. Персональный
+    пуш «ты в летописи» — единственное, что делает попадание в историю мира
+    заметным. Сверка идёт по ГРАНИЦАМ СЛОВА, иначе короткое имя («Ар») ловилось
+    бы внутри любого другого слова и пуш уходил бы не тем.
+    """
+    if not text:
+        return []
+    out = []
+    for name in names or []:
+        nm = (name or "").strip()
+        if not nm:
+            continue
+        if re.search(r"(?<!\w)" + re.escape(nm) + r"(?!\w)", text, re.UNICODE):
+            out.append(nm)
+    return out
 
 
 def _relative_time(ts: float, now: float = None) -> str:

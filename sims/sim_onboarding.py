@@ -317,9 +317,21 @@ async def simulate_to(ch, world, gl, target, cls, profile,
                 break
             # 3) конец хода игрока: тик кулдаунов/баффов + реген ресурса (как в бою бота)
             combat.advance_player_turn(ch)
-            # 4) ответ моба (если не заморожен/оглушён)
+            # 4) ответ моба (если не заморожен/оглушён).
+            # Замах воспроизводится ровно как в engine/loop.tick: моб иногда
+            # пропускает удар, предупреждая, и бьёт тяжело на следующем ходу.
+            # Профили новичка на предупреждение НЕ реагируют — это и есть
+            # худший случай, который тут и надо мерить.
             if not combat.mob_is_disabled(mob):
-                combat.mob_attack(mob, ch)
+                if combat.is_winding_up(mob):
+                    combat.clear_windup(mob)
+                    combat.mob_attack(mob, ch, heavy=True)
+                elif combat.telegraph_due(mob):
+                    combat.start_windup(mob)      # ход потрачен на замах
+                else:
+                    combat.mob_attack(mob, ch)
+            else:
+                combat.clear_windup(mob)          # контроль срывает замах
             # 5) добор зелья по HP (smart <40%, naive <30%)
             if ch.hp > 0 and _drink_hp_potion(ch, smart):
                 stats["potions"] += 1

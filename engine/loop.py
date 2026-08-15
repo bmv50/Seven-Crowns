@@ -39,6 +39,8 @@ from . import streak
 from . import content
 from . import bestiary
 from . import dungeon
+from . import talents           # кадэнс и жёсткий потолок очков талантов
+from . import lfg               # доска поиска группы и час сбора
 from . import rarity
 from . import equip as _equip
 
@@ -286,6 +288,10 @@ class GameLoop:
             # прогресс квестов на убийство
             for qline in quest.on_kill(ch, mob.mob_id):
                 msg.append(qline)
+            # вклад в ОБЩУЮ цель мирового события (счётчик один на всех)
+            if events.ENABLED:
+                for eline in events.on_kill(ch.uid, mob.mob_id, _zone):
+                    msg.append(eline)
             _dl = daily.on_kill(ch, mob.mob_id)
             if _dl:
                 msg.append(_dl)
@@ -333,15 +339,44 @@ class GameLoop:
                                        f"Слава победителям: {names}.{_raid_note}")
             chronicle.record("boss", f"{names} сразил(и) {m['name']}")
 
+    async def _reward_event_goal(self, done: dict):
+        """Раздать награду за выполненную общую цель события.
+
+        Награда считается от уровня КАЖДОГО участника (events.goal_reward), а не
+        от события: иначе общая цель была бы аттракционом для высоких уровней и
+        бессмыслицей для низких. Получают все, кто внёс хотя бы одно убийство.
+        """
+        for uid, n in (done.get("contrib") or {}).items():
+            ch = self.chars.get(uid)
+            if ch is None or n <= 0:
+                continue                 # оффлайн-участник награду не получает
+            rew = events.goal_reward(ch.level, done.get("share", 0.5))
+            ch.xp += rew["xp"]
+            ch.gold += rew["gold"]
+            _lines = [f"🎯 *{done.get('name')}* — цель выполнена! "
+                      f"Ваш вклад: {n}. Награда: +{rew['xp']} опыта, "
+                      f"+{money.fmt(rew['gold'])}."]
+            await self._check_levelup(ch, _lines)
+            await self.send(uid, "\n".join(_lines))
+            await self.save(ch)
+        chronicle.record("event", f"Цель события «{done.get('name')}» выполнена "
+                                  f"общими усилиями ({len(done.get('contrib') or {})} участн.)")
+
     async def _check_levelup(self, ch: Character, msg: List[str]):
         from .character import LEVEL_CAP
         while ch.level < LEVEL_CAP and ch.xp >= ch.xp_to_next:
             ch.xp -= ch.xp_to_next
             ch.level += 1
-            # очко таланта выдаётся раз в 4 уровня (уровни 4, 8, ..., 60) → 15 очков к капу
-            _got_tp = ch.level % 4 == 0
+            # Очко таланта — раз в talents.TALENT_EVERY уровней, но НЕ БОЛЬШЕ
+            # бюджета прохождения. Потолок обязателен: реморт сбрасывает уровень
+            # в 1, и без него очки копились бы с каждым кругом (реморт стал
+            # основной петлёй — кругов много). Считаем «свободные + вложенные».
+            _tp_free = int(ch.flags.get("talent_points", 0))
+            _tp_spent = sum(int(v) for v in (ch.flags.get("talents") or {}).values())
+            _got_tp = (ch.level % talents.TALENT_EVERY == 0
+                       and _tp_free + _tp_spent < talents.talent_budget())
             if _got_tp:
-                ch.flags["talent_points"] = int(ch.flags.get("talent_points", 0)) + 1
+                ch.flags["talent_points"] = _tp_free + 1
             ch.init_vitals()
             _tp_note = " +1 очко таланта 🌳" if _got_tp else ""
             msg.append(f"⬆️ *УРОВЕНЬ {ch.level}!* Характеристики выросли, вы исцелены.{_tp_note}")
@@ -411,11 +446,18 @@ class GameLoop:
                     continue
                 # заморозка/оглушение — моб пропускает ход
                 if combat.mob_is_disabled(mob):
+                    # Контроль СРЫВАЕТ замах: в этом и смысл предупреждения —
+                    # у игрока есть ход, чтобы отменить тяжёлый удар, а не
+                    # только перетерпеть его.
+                    _broken = combat.clear_windup(mob)
                     if poison_lines and self.on_combat_hit:
                         pass
                     for line in poison_lines:
                         await self.broadcast(room, line)
                     await self.broadcast(room, f"🧊 {mob.meta['name']} не может действовать!")
+                    if _broken:
+                        await self.broadcast(
+                            room, f"🛑 Замах {mob.meta['name']} сорван!")
                     continue
                 # выбрать цель из аггро
                 targets = [self.chars[u] for u in mob.aggro
@@ -431,7 +473,22 @@ class GameLoop:
                     victim = next(c for c in targets if c.uid == top_uid)
                 else:
                     victim = random.choice(targets)
-                all_lines = poison_lines + combat.mob_attack(mob, victim)
+                # Замах: моб пропускает удар и предупреждает — у игрока ровно
+                # один ход на решение (прервать контролем / закрыться / добить /
+                # сбежать). На следующем тике замах разряжается тяжёлым ударом.
+                _heavy = combat.is_winding_up(mob)
+                if _heavy:
+                    combat.clear_windup(mob)
+                elif combat.telegraph_due(mob):
+                    _warn = combat.start_windup(mob)
+                    _lines = poison_lines + [_warn]
+                    if self.on_combat_hit:
+                        await self.on_combat_hit(victim, mob, _lines)
+                    else:
+                        for line in _lines:
+                            await self.broadcast(room, line)
+                    continue
+                all_lines = poison_lines + combat.mob_attack(mob, victim, heavy=_heavy)
                 if self.on_combat_hit:
                     await self.on_combat_hit(victim, mob, all_lines)
                 else:
@@ -439,6 +496,13 @@ class GameLoop:
                         await self.broadcast(room, line)
                 if victim.hp <= 0:
                     await self.on_player_death(victim)
+        # Час сбора: раз в сутки в локальные 20:00 зовём игроков в общую точку.
+        # Дешёвая проверка (сравнение часа и даты), поэтому живёт прямо в тике.
+        lfg.tick_gather(self.chars, now)
+        # доска поиска: чистим протухшие записи и следим за комнатой ищущих
+        lfg.purge(now)
+        for ch in self.chars.values():
+            lfg.touch_room(ch)
         # карма медленно угасает
         for ch in self.chars.values():
             karma.decay(ch)
@@ -493,6 +557,9 @@ class GameLoop:
                     await self.broadcast(room, line)
         # мировые события: запуск/завершение по таймеру (рассылка всем)
         if events.ENABLED:
+            # выполненные общие цели: раздать награду каждому, кто внёс вклад
+            for _done in events.take_completions():
+                await self._reward_event_goal(_done)
             _started = events.maybe_start(self.world, now)
             for line in _started:
                 chronicle.record("event", line)

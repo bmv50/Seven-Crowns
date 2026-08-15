@@ -474,6 +474,59 @@ def kb_more(ch: Character, community: tuple = None) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
+
+# ───────── доска «ищу группу» (engine/lfg.py) ─────────
+def render_lfg(ch: Character) -> str:
+    from engine import lfg as _lfg
+    listed = _lfg.is_listed(ch.uid)
+    rows = _lfg.board_for(ch)
+    L = ["🔎 *Ищу группу*", ""]
+    if listed:
+        L.append("_Вы в поиске — вас видят игроки близкого уровня._")
+    else:
+        L.append("_Встаньте в поиск, чтобы вас увидели остальные._")
+    L.append("")
+    if not rows:
+        L.append("Сейчас в поиске никого нет в вашем диапазоне уровней.")
+        L.append(f"_Показываются игроки ±{_lfg.LEVEL_WINDOW} уровней; "
+                 f"запись живёт {_lfg.TTL // 60} мин._")
+    else:
+        for e in rows:
+            room = WORLD.get(e["room"], {}).get("name", e["room"])
+            if e["steps"] is None:
+                where = f"{room} — пути нет"
+            elif e["steps"] == 0:
+                where = f"{room} — здесь же"
+            else:
+                where = f"{room} — {e['steps']} шаг(ов)"
+            L.append(f"{CLASSES.get(e['cls'], {}).get('emoji', '•')} "
+                     f"*{_ts.esc_md(e['name'])}* ур.{e['level']} — {where}")
+            if e["note"]:
+                L.append(f"   _{_ts.esc_md(e['note'])}_")
+    L.append("")
+    _room = WORLD.get(_lfg.GATHER_ROOM, {}).get("name", _lfg.GATHER_ROOM)
+    L.append(f"👥 _Час сбора — ежедневно в {_lfg.GATHER_HOUR}:00 по вашему времени, "
+             f"в «{_room}»._")
+    return "\n".join(L)
+
+
+def kb_lfg(ch: Character) -> InlineKeyboardMarkup:
+    from engine import lfg as _lfg
+    rows = []
+    if _lfg.is_listed(ch.uid):
+        rows.append([InlineKeyboardButton(text="❌ Выйти из поиска", callback_data="lfgout")])
+    else:
+        rows.append([InlineKeyboardButton(text="✅ Встать в поиск", callback_data="lfgin")])
+    for e in _lfg.board_for(ch):
+        if not e["steps"]:
+            continue                      # здесь же или пути нет — маршрут не нужен
+        rows.append([InlineKeyboardButton(
+            text=f"🧭 Путь к {e['name']} ({e['steps']})",
+            callback_data=f"lfgpath:{e['uid']}")])
+    rows.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="group")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
 def kb_room(ch: Character, world: World) -> InlineKeyboardMarkup:
     rows = []
     # ── мобы: >4 -> первые 3 + «Все враги (N)» ──
@@ -559,30 +612,57 @@ def kb_room(ch: Character, world: World) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def kb_combat(ch: Character, world: World) -> InlineKeyboardMarkup:
-    rows = [[InlineKeyboardButton(text="🗡 Атаковать", callback_data=f"atk:{ch.target}")]]
-    # Дух (RULES_V2): цель бесплотна — режущее/колющее резистится (см. rules2
-    # _CAT_PROFILE["spirit"]). Пометим ✨ умения, чей тип урона ЭТО не задевает
-    # (dmg_type НЕ pierce/slash), чтобы игрок видел контрплей прямо на кнопках.
+# Пометки последствия на кнопках боя. Раньше подсвечивался ровно один частный
+# случай (духи резистят режущее/колющее) — остальные 30 мобов с уязвимостями
+# оставались для игрока чёрным ящиком, и выбор умения не был решением.
+DTYPE_MARK = {"vuln": "🔻", "resist": "🛡", "immune": "🚫"}
+# Пометки ответа на замах (см. combat.windup_answer): контроль срывает удар,
+# щит/уклонение смягчают, лечение даёт запас. Ответ есть у каждого класса.
+WINDUP_MARK = {"control": "🛑", "guard": "🛡", "heal": "💚"}
+
+
+def dtype_mark(dtype: str, mob) -> str:
+    """Пометка кнопки для урона данного типа по цели ('' — обычный урон)."""
     from engine import rules2 as _r2c
-    _is_spirit = False
-    if _r2c.ENABLED and ch.target:
-        _tgt_mob = world.find(ch.room, ch.target)
-        if _tgt_mob is not None:
-            _is_spirit = _r2c.mob_profile(_tgt_mob.meta)["category"] == "spirit"
+    if not _r2c.ENABLED or mob is None:
+        return ""
+    return DTYPE_MARK.get(_r2c.dtype_effect(dtype, mob), "")
+
+
+def kb_combat(ch: Character, world: World) -> InlineKeyboardMarkup:
+    _tgt = world.find(ch.room, ch.target) if ch.target else None
+    # Обычная атака: пометка по типу урона оружия + подсветка комбо по льду.
+    # Комбо «удар по замороженному = гарантированный крит» существует в
+    # combat.player_basic_attack с самого начала, но игрок о нём нигде не узнавал.
+    # Во время замаха контроль решает исход, поэтому помечаем именно его —
+    # иначе предупреждение «замахивается» осталось бы текстом без действия.
+    _windup = _tgt is not None and _combat.is_winding_up(_tgt)
+    _atk_mark = dtype_mark(_combat.weapon_dtype(ch), _tgt)
+    _shatter = _tgt is not None and _combat.mob_is_frozen(_tgt)
+    _atk_label = f"{_atk_mark}🗡 Атаковать" if _atk_mark else "🗡 Атаковать"
+    if _shatter:
+        _atk_label = "❄️💥 Атаковать (раскол: крит)"
+    rows = [[InlineKeyboardButton(text=_atk_label, callback_data=f"atk:{ch.target}")]]
     # скиллы (с учётом кулдауна/маны — показываем статус)
     skill_row = []
     for sid in ch.skills:
         sk = SKILLS[sid]
         cd = ch.cooldowns.get(sid, 0)
-        mark = "✨" if _is_spirit and _combat._skill_dtype(sk) not in ("pierce", "slash") else ""
+        # только у атакующих умений: у лечения/баффа «тип урона» смысла не имеет
+        mark = dtype_mark(_combat.skill_dtype(sk), _tgt) if sk.get("kind") == "damage" else ""
+        if _windup and ch.cooldowns.get(sid, 0) <= 0:
+            # Ответ на замах перебивает пометку типа урона: сейчас важнее не
+            # «сколько пройдёт», а «переживёшь ли». У каждого класса свой ответ.
+            _ans = _combat.windup_answer(sk)
+            mark = WINDUP_MARK.get(_ans, mark)
         if cd > 0:
             label = f"{sk['emoji']}⏳{cd}"
         elif ch.mp < sk["mp"]:
             label = f"{sk['emoji']}{ch.resource_emoji}"
         else:
             label = f"{sk['emoji']} {sk['name']}"
-        if mark:
+        # не дублируем значок, если у умения он уже свой («🛡🛡 Стена щитов»)
+        if mark and not label.startswith(mark):
             label = mark + label
         skill_row.append(InlineKeyboardButton(text=label, callback_data=f"skill:{sid}"))
         if len(skill_row) == 2:
@@ -934,7 +1014,7 @@ def kb_npc(ch: Character, npc: str, highlight: dict = None) -> InlineKeyboardMar
         from engine.character import LEVEL_CAP
         if ch.level >= LEVEL_CAP:
             rows.append([InlineKeyboardButton(
-                text=f"🌟 Реморт (перерождение, +{int(ch.REMORT_BONUS_PER*100)}% силы)",
+                text=f"🌟 Реморт (+{int(ch.REMORT_BONUS_PER*100)}% силы, умения заново)",
                 callback_data="remort")])
     if (npclib.get(npc) or {}).get("role") == "vendor":
         rows.append([InlineKeyboardButton(text="🛒 Купить / Продать", callback_data=f"shop:{npc}")])

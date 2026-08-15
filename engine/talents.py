@@ -13,10 +13,24 @@ def for_class(cls):
     return {tid: t for tid, t in TALENTS.items() if t.get("class") == cls}
 
 
+# Очко таланта выдаётся раз в TALENT_EVERY уровней. При капе 25 это даёт
+# TALENT_BUDGET = 12 очков за прохождение — меньше, чем сумма рангов в дереве
+# класса (15), поэтому вложить всё нельзя и выбор ветки становится настоящим.
+TALENT_EVERY = 2
+
+
+def talent_budget() -> int:
+    """Сколько очков всего можно получить за одно прохождение до капа.
+    ЖЁСТКИЙ потолок: реморт сбрасывает уровень в 1, и без этого потолка очки
+    копились бы с каждым кругом (реморт — основная петля, круги повторяются)."""
+    from .character import LEVEL_CAP
+    return int(LEVEL_CAP) // TALENT_EVERY
+
+
 def points_for_level(level: int) -> int:
     """Сколько очков талантов положено персонажу за достигнутый уровень.
-    Очко выдаётся раз в 4 уровня (уровни 4, 8, ..., 60) → 15 очков к капу 60."""
-    return int(level) // 4
+    Очко раз в TALENT_EVERY уровней, не больше бюджета прохождения."""
+    return min(int(level) // TALENT_EVERY, talent_budget())
 
 
 def migrate_v2(ch):
@@ -80,5 +94,7 @@ def render(ch) -> str:
         rk = rank(ch, tid)
         mark = "🟢" if rk > 0 else "▫️"
         L.append(f"{mark} *{t['name']}* {rk}/{t['max_rank']} — _{t['desc']}_")
-    L.append("\n_Очко таланта — каждые 4 уровня (15 очков к 60). Сброс бесплатный._")
+    from .character import LEVEL_CAP
+    L.append(f"\n_Очко таланта — каждые {TALENT_EVERY} уровня ({talent_budget()} очков "
+             f"к капу {LEVEL_CAP}; на всё дерево не хватит — выбирайте). Сброс бесплатный._")
     return "\n".join(L)

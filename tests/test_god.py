@@ -92,8 +92,14 @@ events.reset(); chronicle.reset()
 
 # _catalog_brief
 _cb = god._catalog_brief()
-check("_catalog_brief перечисляет все 7 событий", _cb.count("\n") + 1 == 7)
+# Считаем ОТ КАТАЛОГА, а не хардкодом: каталог событий пополняется (2026-08-12
+# добавлены два события с общей целью), и жёсткое число делало тест стражем
+# самого себя, а не свойства «бог видит весь каталог».
+check(f"_catalog_brief перечисляет все {len(events._DEFS)} событий каталога",
+      _cb.count("\n") + 1 == len(events._DEFS))
 check("_catalog_brief упоминает миграцию стаи", "миграция_стаи" in _cb)
+check("бог видит и события с общей целью",
+      all(eid in _cb for eid, d in events._DEFS.items() if d.get("goal")))
 
 
 # ─────────────────────── 2. events.start — прямой запуск ───────────────────────
@@ -310,6 +316,35 @@ check("import_state восстанавливает epic", chronicle.get_epic() =
 chronicle.set_epic("")
 check("set_epic('') сбрасывает летопись", chronicle.get_epic() is None)
 chronicle.reset()
+
+
+# ── бог выдаёт ЗАДАЧУ, а не подарок (аудит §7) ──
+print("\n[N] Бог предпочитает события с общей целью")
+_goal_ids = [e for e, d in events._DEFS.items() if d.get("goal")]
+check("в каталоге есть события с общей целью", bool(_goal_ids))
+_cb2 = god._catalog_brief()
+check("каталог помечает общую цель для бога", "ОБЩАЯ ЦЕЛЬ" in _cb2)
+check("системный промпт просит предпочитать общую цель", "ОБЩАЯ ЦЕЛЬ" in god._SYSTEM)
+# fallback без ИИ обязан быть задачей: иначе «бог оживляет мир» держится на ключе
+import random as _rnd
+_fb = [god.fallback_decision(_rnd.Random(s))["event_id"] for s in range(12)]
+check("fallback без ИИ всегда выбирает событие с целью", all(e in _goal_ids for e in _fb))
+_ann = god._template_announce(events._DEFS[_goal_ids[0]])
+check("шаблонный анонс цели — это призыв с числом",
+      "Общими силами" in _ann and "награда" in _ann)
+
+# ── летопись видна лично тому, кто в неё попал ──
+print("\n[N+1] Летопись называет игрока — он должен это увидеть")
+_epic_txt = "Аста удержала Врата, покуда Борн-Хмурый вёл отряд во тьму. Аста пала последней."
+check("упомянутые находятся по границам слова",
+      chronicle.mentioned_names(_epic_txt, ["Аста", "Борн-Хмурый"]) == ["Аста", "Борн-Хмурый"])
+check("неупомянутые не попадают в список",
+      chronicle.mentioned_names(_epic_txt, ["Веда"]) == [])
+check("короткое имя не ловится внутри другого слова",
+      chronicle.mentioned_names("Астральный туман сгустился", ["Аст"]) == [])
+check("пустой текст летописи никого не упоминает",
+      chronicle.mentioned_names("", ["Аста"]) == [])
+check("пустое имя игнорируется", chronicle.mentioned_names(_epic_txt, ["", None]) == [])
 
 
 # ─────────────────────── ИТОГ ───────────────────────

@@ -746,7 +746,7 @@
   emoji: "🛡"
   type: armor
   slot: armor
-  level_req: 45
+  level_req: 22
   bonus: { defense: 46, hp: 260, spi: 6 }
   price: 14463600
   desc: "Доспех из окаменевшего мрака. +46 защиты, +260 HP, +6 Духа."
@@ -755,7 +755,7 @@
   emoji: "🗡"
   type: weapon
   slot: weapon
-  level_req: 48
+  level_req: 23
   bonus: { atk: 62, str: 8, crit: 5 }
   price: 18186800
   desc: "Меч, выкованный из последнего луча умершей звезды. +62 атаки, +8 Силы, +5% крита."
@@ -764,7 +764,7 @@
   emoji: "👑"
   type: accessory
   slot: head
-  level_req: 50
+  level_req: 23
   bonus: { atk: 14, str: 10, int: 10, dex: 10, spi: 10, hp: 220 }
   price: 16780300
   desc: "Корона, вобравшая силу всех Семи Уделов. Носит лишь тот, кто заглянул в Бездну и не дрогнул."

@@ -955,12 +955,12 @@
 бездонный_ужас:
   name: "Бездонный ужас"
   emoji: "🕷"
-  level: 42
-  hp: 300
-  atk: 44
+  level: 23
+  hp: 354
+  atk: 51
   defense: 18
-  xp: 600
-  gold: 8000
+  xp: 347
+  gold: 32029
   respawn: 120
   tick_speed: 4
   dmg_type: negative
@@ -968,12 +968,12 @@
 пожиратель_света:
   name: "Пожиратель света"
   emoji: "🌑"
-  level: 46
-  hp: 360
-  atk: 52
-  defense: 22
-  xp: 850
-  gold: 11000
+  level: 24
+  hp: 370
+  atk: 53
+  defense: 19
+  xp: 363
+  gold: 35956
   respawn: 140
   tick_speed: 4
   dmg_type: negative
@@ -981,12 +981,12 @@
 теневой_левиафан:
   name: "Теневой левиафан"
   emoji: "🐋"
-  level: 50
-  hp: 440
-  atk: 60
-  defense: 26
-  xp: 1200
-  gold: 16000
+  level: 25
+  hp: 386
+  atk: 55
+  defense: 20
+  xp: 379
+  gold: 39883
   respawn: 160
   tick_speed: 3
   dmg_type: cold
@@ -994,11 +994,11 @@
 глашатай_бездны:
   name: "Глашатай Бездны"
   emoji: "📯"
-  level: 52
-  hp: 1300
-  atk: 72
-  defense: 32
-  xp: 6000
+  level: 26
+  hp: 1188
+  atk: 68
+  defense: 26
+  xp: 1975
   gold: 90000
   respawn: 99999
   tick_speed: 3
@@ -1009,11 +1009,11 @@
 титан_первотумана:
   name: "Титан Первотумана"
   emoji: "🗿"
-  level: 60
-  hp: 2400
-  atk: 95
-  defense: 44
-  xp: 11000
+  level: 28
+  hp: 2367
+  atk: 98
+  defense: 37
+  xp: 3914
   gold: 170000
   respawn: 99999
   tick_speed: 3
@@ -1024,11 +1024,11 @@
 предвечная_бездна:
   name: "Предвечная Бездна"
   emoji: "👁"
-  level: 68
-  hp: 4000
-  atk: 130
-  defense: 60
-  xp: 22000
+  level: 30
+  hp: 4236
+  atk: 143
+  defense: 55
+  xp: 8415
   gold: 250000
   respawn: 99999
   tick_speed: 2
@@ -1041,12 +1041,12 @@
 пепельный_ревенант:
   name: "Пепельный ревенант"
   emoji: "🔥"
-  level: 18
-  hp: 140
-  atk: 25
-  defense: 8
-  xp: 90
-  gold: 4500
+  level: 17
+  hp: 259
+  atk: 38
+  defense: 13
+  xp: 252
+  gold: 8467
   respawn: 80
   tick_speed: 4
   dmg_type: fire
@@ -1054,12 +1054,12 @@
 морозный_воевода:
   name: "Морозный воевода"
   emoji: "❄️"
-  level: 22
-  hp: 170
-  atk: 29
-  defense: 10
-  xp: 140
-  gold: 6000
+  level: 18
+  hp: 275
+  atk: 40
+  defense: 14
+  xp: 267
+  gold: 12394
   respawn: 90
   tick_speed: 4
   dmg_type: cold
@@ -1067,12 +1067,12 @@
 костяной_легат:
   name: "Костяной легат"
   emoji: "💀"
-  level: 26
-  hp: 200
-  atk: 33
-  defense: 12
-  xp: 200
-  gold: 7500
+  level: 19
+  hp: 291
+  atk: 42
+  defense: 15
+  xp: 283
+  gold: 16321
   respawn: 95
   tick_speed: 4
   dmg_type: negative
@@ -1080,12 +1080,12 @@
 глубинный_кошмар:
   name: "Глубинный кошмар"
   emoji: "🌀"
-  level: 30
-  hp: 230
-  atk: 37
-  defense: 14
-  xp: 280
-  gold: 9000
+  level: 20
+  hp: 307
+  atk: 44
+  defense: 16
+  xp: 299
+  gold: 20248
   respawn: 100
   tick_speed: 3
   dmg_type: cold
@@ -1093,12 +1093,12 @@
 тварь_разлома:
   name: "Тварь разлома"
   emoji: "👹"
-  level: 34
-  hp: 260
-  atk: 41
-  defense: 16
-  xp: 380
-  gold: 11000
+  level: 21
+  hp: 323
+  atk: 47
+  defense: 17
+  xp: 315
+  gold: 24175
   respawn: 110
   tick_speed: 3
   dmg_type: negative
@@ -1106,12 +1106,12 @@
 первотуманный_жнец:
   name: "Первотуманный жнец"
   emoji: "☠️"
-  level: 38
-  hp: 285
-  atk: 45
-  defense: 18
-  xp: 520
-  gold: 13000
+  level: 22
+  hp: 339
+  atk: 49
+  defense: 17
+  xp: 331
+  gold: 28102
   respawn: 120
   tick_speed: 3
   dmg_type: negative

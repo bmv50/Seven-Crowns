@@ -202,7 +202,7 @@ mighty_blow:
   name: Сокрушающий удар
   emoji: 🔨
   class: warrior
-  learn_level: 35
+  learn_level: 20
   kind: damage
   target: enemy
   mp: 35
@@ -213,7 +213,7 @@ blizzard:
   name: Метель
   emoji: ❄️
   class: mage
-  learn_level: 26
+  learn_level: 18
   kind: damage
   target: enemy
   aoe: true
@@ -225,7 +225,7 @@ meteor:
   name: Метеор
   emoji: ☄️
   class: mage
-  learn_level: 48
+  learn_level: 23
   kind: damage
   target: enemy
   mp: 32
@@ -248,7 +248,7 @@ eviscerate:
   name: Потрошение
   emoji: 🩸
   class: rogue
-  learn_level: 31
+  learn_level: 19
   kind: damage
   target: enemy
   mp: 35
@@ -260,7 +260,7 @@ holy_nova:
   name: Священная вспышка
   emoji: 🌟
   class: priest
-  learn_level: 22
+  learn_level: 17
   kind: damage
   target: enemy
   aoe: true
@@ -272,7 +272,7 @@ greater_heal:
   name: Великое исцеление
   emoji: 💞
   class: priest
-  learn_level: 26
+  learn_level: 18
   kind: heal
   target: self
   mp: 18
@@ -283,7 +283,7 @@ divine_storm:
   name: Божественная буря
   emoji: ⚡
   class: paladin
-  learn_level: 24
+  learn_level: 18
   kind: damage
   target: enemy
   aoe: true
@@ -295,7 +295,7 @@ avenging_wrath:
   name: Гнев караящий
   emoji: 🌅
   class: paladin
-  learn_level: 43
+  learn_level: 22
   kind: damage
   target: enemy
   mp: 16
@@ -306,7 +306,7 @@ corpse_explosion:
   name: Взрыв трупа
   emoji: 💥
   class: necromancer
-  learn_level: 33
+  learn_level: 19
   kind: damage
   target: enemy
   aoe: true
@@ -318,7 +318,7 @@ death_coil:
   name: Кольцо смерти
   emoji: 💀
   class: necromancer
-  learn_level: 46
+  learn_level: 22
   kind: damage
   target: enemy
   mp: 16
@@ -370,7 +370,7 @@ sunder_armor:
   name: Сокрушение брони
   emoji: 🔧
   class: warrior
-  learn_level: 26
+  learn_level: 18
   kind: damage
   target: enemy
   mp: 25
@@ -381,7 +381,7 @@ bladestorm:
   name: Буря клинков
   emoji: 🌪
   class: warrior
-  learn_level: 40
+  learn_level: 21
   kind: damage
   target: enemy
   aoe: true
@@ -393,7 +393,7 @@ crushing_charge:
   name: Сокрушительный натиск
   emoji: 🐂
   class: warrior
-  learn_level: 44
+  learn_level: 22
   kind: damage
   target: enemy
   mp: 35
@@ -405,7 +405,7 @@ iron_skin:
   name: Железная шкура
   emoji: 🛡
   class: warrior
-  learn_level: 31
+  learn_level: 19
   kind: buff
   target: self
   mp: 30
@@ -419,7 +419,7 @@ second_wind:
   name: Второе дыхание
   emoji: 💗
   class: warrior
-  learn_level: 22
+  learn_level: 17
   kind: heal
   target: self
   mp: 30
@@ -430,7 +430,7 @@ reckless_blow:
   name: Безрассудный удар
   emoji: 💢
   class: warrior
-  learn_level: 48
+  learn_level: 23
   kind: damage
   target: enemy
   mp: 35
@@ -442,7 +442,7 @@ savage_sweep:
   name: Дикий покос
   emoji: 🪓
   class: warrior
-  learn_level: 53
+  learn_level: 24
   kind: damage
   target: enemy
   aoe: true
@@ -454,7 +454,7 @@ deep_wound:
   name: Глубокая рана
   emoji: 🗡
   class: warrior
-  learn_level: 57
+  learn_level: 24
   kind: damage
   target: enemy
   mp: 40
@@ -469,7 +469,7 @@ intimidating_roar:
   name: Устрашающий рёв
   emoji: 🦁
   class: warrior
-  learn_level: 38
+  learn_level: 21
   kind: buff
   target: self
   mp: 35
@@ -483,7 +483,7 @@ earthshatter:
   name: Раскол земли
   emoji: 🌋
   class: warrior
-  learn_level: 47
+  learn_level: 22
   kind: damage
   target: enemy
   aoe: true
@@ -495,7 +495,7 @@ executioner_blow:
   name: Удар палача
   emoji: 🔨
   class: warrior
-  learn_level: 59
+  learn_level: 25
   kind: damage
   target: enemy
   mp: 50
@@ -506,7 +506,7 @@ last_stand:
   name: Последний рубеж
   emoji: 🏔
   class: warrior
-  learn_level: 60
+  learn_level: 25
   kind: buff
   target: self
   mp: 55
@@ -575,7 +575,7 @@ blink:
   name: Мерцание
   emoji: 💠
   class: mage
-  learn_level: 22
+  learn_level: 17
   kind: buff
   target: self
   mp: 10
@@ -589,7 +589,7 @@ frost_nova:
   name: Ледяная вспышка
   emoji: ❄️
   class: mage
-  learn_level: 31
+  learn_level: 19
   kind: damage
   target: enemy
   aoe: true
@@ -605,7 +605,7 @@ flame_wave:
   name: Волна пламени
   emoji: 🌋
   class: mage
-  learn_level: 35
+  learn_level: 20
   kind: damage
   target: enemy
   aoe: true
@@ -617,7 +617,7 @@ chain_lightning:
   name: Цепная молния
   emoji: ⚡
   class: mage
-  learn_level: 44
+  learn_level: 22
   kind: damage
   target: enemy
   aoe: true
@@ -630,7 +630,7 @@ icicle_lance:
   name: Ледяное копьё
   emoji: 🪡
   class: mage
-  learn_level: 40
+  learn_level: 21
   kind: damage
   target: enemy
   mp: 16
@@ -644,7 +644,7 @@ pyroblast:
   name: Пиробласт
   emoji: 💥
   class: mage
-  learn_level: 57
+  learn_level: 24
   kind: damage
   target: enemy
   mp: 24
@@ -656,7 +656,7 @@ arcane_barrier:
   name: Чародейский барьер
   emoji: 🟣
   class: mage
-  learn_level: 53
+  learn_level: 24
   kind: buff
   target: self
   mp: 16
@@ -670,7 +670,7 @@ fire_rain:
   name: Огненный дождь
   emoji: 🌧
   class: mage
-  learn_level: 38
+  learn_level: 21
   kind: damage
   target: enemy
   aoe: true
@@ -686,7 +686,7 @@ shatter:
   name: Раскол льда
   emoji: 🧊
   class: mage
-  learn_level: 47
+  learn_level: 22
   kind: damage
   target: enemy
   mp: 22
@@ -698,7 +698,7 @@ arcane_annihilation:
   name: Тайное уничтожение
   emoji: 🌌
   class: mage
-  learn_level: 60
+  learn_level: 25
   kind: damage
   target: enemy
   mp: 32
@@ -709,7 +709,7 @@ absolute_zero:
   name: Абсолютный ноль
   emoji: 🥶
   class: mage
-  learn_level: 59
+  learn_level: 25
   kind: damage
   target: enemy
   aoe: true
@@ -767,7 +767,7 @@ blade_flurry:
   name: Шквал клинков
   emoji: 🔃
   class: rogue
-  learn_level: 22
+  learn_level: 17
   kind: damage
   target: enemy
   aoe: true
@@ -780,7 +780,7 @@ throat_slit:
   name: Перерезанное горло
   emoji: 🔪
   class: rogue
-  learn_level: 26
+  learn_level: 18
   kind: damage
   target: enemy
   mp: 30
@@ -792,7 +792,7 @@ venom_strike:
   name: Ядовитый укол
   emoji: 🟣
   class: rogue
-  learn_level: 35
+  learn_level: 20
   kind: damage
   target: enemy
   mp: 32
@@ -807,7 +807,7 @@ shadow_cloak:
   name: Покров теней
   emoji: 🌫
   class: rogue
-  learn_level: 40
+  learn_level: 21
   kind: buff
   target: self
   mp: 30
@@ -821,7 +821,7 @@ deadly_throw:
   name: Смертельный бросок
   emoji: 🎯
   class: rogue
-  learn_level: 44
+  learn_level: 22
   kind: damage
   target: enemy
   mp: 35
@@ -833,7 +833,7 @@ caltrops:
   name: Колючий шип
   emoji: 🌵
   class: rogue
-  learn_level: 48
+  learn_level: 23
   kind: damage
   target: enemy
   aoe: true
@@ -849,7 +849,7 @@ blind_spot:
   name: Слепая зона
   emoji: 💨
   class: rogue
-  learn_level: 53
+  learn_level: 24
   kind: buff
   target: self
   mp: 25
@@ -863,7 +863,7 @@ gut_ripper:
   name: Вспоротые внутренности
   emoji: 🩸
   class: rogue
-  learn_level: 57
+  learn_level: 24
   kind: damage
   target: enemy
   mp: 40
@@ -878,7 +878,7 @@ shadow_barrage:
   name: Теневой залп
   emoji: 🌀
   class: rogue
-  learn_level: 38
+  learn_level: 21
   kind: damage
   target: enemy
   aoe: true
@@ -891,7 +891,7 @@ vital_strike:
   name: Удар по жизненно важному
   emoji: 🗡
   class: rogue
-  learn_level: 47
+  learn_level: 22
   kind: damage
   target: enemy
   mp: 45
@@ -903,7 +903,7 @@ toxic_cloud:
   name: Ядовитое облако
   emoji: ☠️
   class: rogue
-  learn_level: 59
+  learn_level: 25
   kind: damage
   target: enemy
   aoe: true
@@ -919,7 +919,7 @@ assassinate:
   name: Казнь убийцы
   emoji: 💀
   class: rogue
-  learn_level: 60
+  learn_level: 25
   kind: damage
   target: enemy
   mp: 60
@@ -953,7 +953,7 @@ prayer_of_mending:
   name: Молитва исцеления
   emoji: 🕊
   class: priest
-  learn_level: 35
+  learn_level: 20
   kind: heal
   target: self
   mp: 16
@@ -964,7 +964,7 @@ divine_light:
   name: Божественный свет
   emoji: ✨
   class: priest
-  learn_level: 38
+  learn_level: 21
   kind: heal
   target: self
   mp: 24
@@ -975,7 +975,7 @@ prayer_of_healing:
   name: Молитва о здравии
   emoji: 🙏
   class: priest
-  learn_level: 44
+  learn_level: 22
   kind: heal
   target: allies
   mp: 22
@@ -986,7 +986,7 @@ circle_of_healing:
   name: Круг исцеления
   emoji: 💫
   class: priest
-  learn_level: 59
+  learn_level: 25
   kind: heal
   target: allies
   mp: 28
@@ -1011,7 +1011,7 @@ guardian_spirit:
   name: Дух-хранитель
   emoji: 🛡
   class: priest
-  learn_level: 53
+  learn_level: 24
   kind: buff
   target: self
   mp: 16
@@ -1025,7 +1025,7 @@ aegis_of_faith:
   name: Эгида веры
   emoji: 🌟
   class: priest
-  learn_level: 57
+  learn_level: 24
   kind: buff
   target: allies
   mp: 26
@@ -1039,7 +1039,7 @@ holy_nimbus:
   name: Святой нимб
   emoji: 😇
   class: priest
-  learn_level: 40
+  learn_level: 21
   kind: buff
   target: self
   mp: 12
@@ -1068,7 +1068,7 @@ penance:
   name: Покаяние
   emoji: ⚡
   class: priest
-  learn_level: 31
+  learn_level: 19
   kind: damage
   target: enemy
   mp: 14
@@ -1080,7 +1080,7 @@ condemn:
   name: Изобличение
   emoji: ☀️
   class: priest
-  learn_level: 47
+  learn_level: 22
   kind: damage
   target: enemy
   mp: 22
@@ -1092,7 +1092,7 @@ searing_light:
   name: Опаляющий свет
   emoji: 🌟
   class: priest
-  learn_level: 48
+  learn_level: 23
   kind: damage
   target: enemy
   aoe: true
@@ -1104,7 +1104,7 @@ dawnbreak:
   name: Рассветный взрыв
   emoji: 🌅
   class: priest
-  learn_level: 60
+  learn_level: 25
   kind: damage
   target: enemy
   aoe: true
@@ -1142,7 +1142,7 @@ holy_wrath:
   name: Святой гнев
   emoji: ☀️
   class: paladin
-  learn_level: 59
+  learn_level: 25
   kind: damage
   target: enemy
   mp: 18
@@ -1154,7 +1154,7 @@ sword_of_judgment:
   name: Меч приговора
   emoji: 🗡
   class: paladin
-  learn_level: 60
+  learn_level: 25
   kind: damage
   target: enemy
   mp: 20
@@ -1165,7 +1165,7 @@ hammer_of_wrath:
   name: Молот ярости
   emoji: 🌩
   class: paladin
-  learn_level: 36
+  learn_level: 20
   kind: damage
   target: enemy
   aoe: true
@@ -1180,7 +1180,7 @@ light_of_dawn:
   name: Свет зари
   emoji: 🌄
   class: paladin
-  learn_level: 55
+  learn_level: 24
   kind: damage
   target: enemy
   aoe: true
@@ -1218,7 +1218,7 @@ divine_shield:
   name: Божественный щит
   emoji: ✨
   class: paladin
-  learn_level: 51
+  learn_level: 23
   kind: buff
   target: self
   mp: 16
@@ -1232,7 +1232,7 @@ aura_of_protection:
   name: Аура защиты
   emoji: 🌟
   class: paladin
-  learn_level: 32
+  learn_level: 19
   kind: buff
   target: allies
   mp: 20
@@ -1246,7 +1246,7 @@ hand_of_protection:
   name: Длань защиты
   emoji: 🤚
   class: paladin
-  learn_level: 28
+  learn_level: 18
   kind: buff
   target: self
   mp: 12
@@ -1260,7 +1260,7 @@ blessing_of_freedom:
   name: Благословение свободы
   emoji: 🕊
   class: paladin
-  learn_level: 38
+  learn_level: 21
   kind: buff
   target: allies
   mp: 22
@@ -1274,7 +1274,7 @@ holy_light:
   name: Святой свет
   emoji: 💛
   class: paladin
-  learn_level: 20
+  learn_level: 17
   kind: heal
   target: self
   mp: 14
@@ -1285,7 +1285,7 @@ word_of_glory:
   name: Слово славы
   emoji: 📜
   class: paladin
-  learn_level: 48
+  learn_level: 23
   kind: heal
   target: self
   mp: 18
@@ -1296,7 +1296,7 @@ beacon_of_light:
   name: Маяк света
   emoji: 🔆
   class: paladin
-  learn_level: 47
+  learn_level: 22
   kind: heal
   target: allies
   mp: 24
@@ -1307,7 +1307,7 @@ sacred_flame:
   name: Священное пламя
   emoji: 🔥
   class: paladin
-  learn_level: 40
+  learn_level: 21
   kind: damage
   target: enemy
   mp: 12
@@ -1322,7 +1322,7 @@ searing_brand:
   name: Жгучий свет
   emoji: 🌟
   class: paladin
-  learn_level: 58
+  learn_level: 25
   kind: damage
   target: enemy
   mp: 16
@@ -1387,7 +1387,7 @@ soul_leech:
   name: Пиявка душ
   emoji: 🩸
   class: necromancer
-  learn_level: 25
+  learn_level: 18
   kind: damage
   target: enemy
   mp: 12
@@ -1399,7 +1399,7 @@ festering_wound:
   name: Гниющая рана
   emoji: 🦠
   class: necromancer
-  learn_level: 21
+  learn_level: 17
   kind: damage
   target: enemy
   mp: 14
@@ -1414,7 +1414,7 @@ grave_chill:
   name: Могильный холод
   emoji: 🪦
   class: necromancer
-  learn_level: 37
+  learn_level: 20
   kind: damage
   target: enemy
   mp: 13
@@ -1426,7 +1426,7 @@ bone_shield:
   name: Костяной щит
   emoji: 🛡
   class: necromancer
-  learn_level: 29
+  learn_level: 19
   kind: buff
   target: self
   mp: 12
@@ -1440,7 +1440,7 @@ withering_blight:
   name: Увядающая порча
   emoji: ☣️
   class: necromancer
-  learn_level: 42
+  learn_level: 21
   kind: damage
   target: enemy
   aoe: true
@@ -1456,7 +1456,7 @@ undead_shroud:
   name: Саван нежити
   emoji: 👻
   class: necromancer
-  learn_level: 50
+  learn_level: 23
   kind: buff
   target: self
   mp: 11
@@ -1470,7 +1470,7 @@ soul_harvest:
   name: Жатва душ
   emoji: 💀
   class: necromancer
-  learn_level: 54
+  learn_level: 24
   kind: damage
   target: enemy
   aoe: true
@@ -1483,7 +1483,7 @@ dark_pact:
   name: Тёмный пакт
   emoji: 🖤
   class: necromancer
-  learn_level: 58
+  learn_level: 25
   kind: damage
   target: enemy
   mp: 18
@@ -1495,7 +1495,7 @@ epidemic:
   name: Эпидемия
   emoji: 🧫
   class: necromancer
-  learn_level: 38
+  learn_level: 21
   kind: damage
   target: enemy
   aoe: true
@@ -1511,7 +1511,7 @@ bone_prison:
   name: Костяная темница
   emoji: ⚰️
   class: necromancer
-  learn_level: 47
+  learn_level: 22
   kind: buff
   target: self
   mp: 16
@@ -1525,7 +1525,7 @@ defile:
   name: Осквернение
   emoji: 🩸
   class: necromancer
-  learn_level: 59
+  learn_level: 25
   kind: damage
   target: enemy
   aoe: true
@@ -1538,7 +1538,7 @@ soul_rend:
   name: Разрыв души
   emoji: 🌌
   class: necromancer
-  learn_level: 60
+  learn_level: 25
   kind: damage
   target: enemy
   mp: 28

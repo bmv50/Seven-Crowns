@@ -6,7 +6,7 @@
 import random
 from typing import List, Optional, Tuple
 
-from .content import MOBS, SKILLS, ITEMS, HP_SCALE, MOB_ATK_SCALE
+from .content import MOBS, SKILLS, ITEMS, HP_SCALE, MOB_ATK_SCALE, DEF_SCALE
 from .character import Character, RAGE_ON_ATTACK, RAGE_ON_HIT
 from .world import World, MobInstance
 from . import bestiary
@@ -41,6 +41,13 @@ def _skill_dtype(sk) -> str:
     t = (sk.get("effect") or {}).get("type")
     return {"burn": "fire", "freeze": "cold", "bleed": "pierce",
             "poison": "poison"}.get(t, "energy")
+
+
+# Публичные имена: интерфейсу нужно знать тип урона оружия и умения, чтобы
+# показать игроку последствие выбора (уязвимость/резист цели). Приватные
+# _weapon_dtype/_skill_dtype оставлены — на них завязан код внутри модуля.
+weapon_dtype = _weapon_dtype
+skill_dtype = _skill_dtype
 
 
 def _mark_exploit(mob: MobInstance, uid: int, dtype: str) -> None:
@@ -78,6 +85,80 @@ def threat_mult(ch: Character) -> float:
     return THREAT_MULT.get(ch.cls, 1.0)
 
 
+# ───────── замах (телеграфируемый тяжёлый удар) ─────────
+# Зачем. Рядовой бой не содержал ни одного решения: оптимальная стратегия —
+# «жми умение, когда откатилось, иначе жми атаку» — не менялась с 1 по кап.
+# Замах вводит окно выбора. Моб иногда не бьёт, а ЗАМАХИВАЕТСЯ: следующий его
+# тик — тяжёлый удар. У игрока есть один ход, чтобы решить:
+#   • прервать контролем (заморозка/оглушение) — замах пропадает впустую;
+#   • поставить щит/полечиться — принять удар подготовленным;
+#   • добить, если моб почти мёртв, — рискнуть;
+#   • сбежать.
+# Контроль здесь получает вторую роль помимо «пропуска хода» — и наконец
+# становится осмысленным выбором против обычных мобов, а не только боссов.
+#
+# Хранится псевдоэффектом в mob.effects, а НЕ отдельным полем: у MobInstance
+# фиксированные __slots__, а снапшот мира (world.snapshot) сохраняет только
+# hp/dead_at — замах эфемерен по смыслу и переживать рестарт ему незачем.
+ENABLED_TELEGRAPH = False      # включается ботом из env TELEGRAPH (см. bot/main.py)
+WINDUP = "windup"
+TELEGRAPH_CHANCE = 0.22        # ≈ каждый 4–5-й удар моба
+TELEGRAPH_MULT = 2.2           # во столько раз тяжелее обычного удара
+
+
+def is_winding_up(mob) -> bool:
+    return any(e.get("type") == WINDUP and e.get("turns", 0) > 0
+               for e in getattr(mob, "effects", []) or [])
+
+
+def clear_windup(mob) -> bool:
+    """Снять замах (прерван контролем или уже разряжен). True — если он был."""
+    had = is_winding_up(mob)
+    if had:
+        mob.effects = [e for e in mob.effects if e.get("type") != WINDUP]
+    return had
+
+
+def start_windup(mob) -> str:
+    """Начать замах. Возвращает строку-предупреждение для игрока."""
+    mob.effects.append({"type": WINDUP, "turns": 2})
+    return (f"⚠️ *{mob.meta['name']} замахивается!* "
+            f"Прервите контролем, закройтесь или отойдите.")
+
+
+def telegraph_due(mob) -> bool:
+    """Пора ли мобу замахнуться вместо обычного удара."""
+    if not ENABLED_TELEGRAPH or is_winding_up(mob):
+        return False
+    return random.random() < TELEGRAPH_CHANCE
+
+
+# Чем класс отвечает на замах. Проверено по data/skills.yaml: контроль есть
+# только у мага и паладина (4 умения), поэтому «прервать» не может быть
+# единственным ответом — иначе механика честна для двух классов из шести.
+# Щит и уклонение есть у ВСЕХ шести, лечение — у воина, жреца и паладина.
+_GUARD_EFFECTS = ("shield", "dodge", "resist")
+
+
+def windup_answer(sk: dict) -> str:
+    """Чем это умение отвечает на замах: control | guard | heal | '' (никак).
+
+    control — срывает замах (моб теряет ход целиком);
+    guard   — смягчает: щит поглотит больше, уклонение отменит удар целиком;
+    heal    — принять удар с запасом здоровья.
+    """
+    if not isinstance(sk, dict):
+        return ""
+    eff_t = (sk.get("effect") or {}).get("type")
+    if eff_t in DISABLE_TYPES:
+        return "control"
+    if sk.get("kind") == "buff" and eff_t in _GUARD_EFFECTS:
+        return "guard"
+    if sk.get("kind") == "heal":
+        return "heal"
+    return ""
+
+
 # статусы: DoT (poison/burn/bleed) и контроль (freeze/stun)
 DOT_TYPES = ("poison", "burn", "bleed")
 DISABLE_TYPES = ("freeze", "stun")
@@ -96,6 +177,12 @@ def mob_is_frozen(mob) -> bool:
     return any(e.get("type") == "freeze" and e.get("turns", 0) > 0 for e in mob.effects)
 
 
+# DoT-статус ↔ тип урона, которым он бьёт: нужен, чтобы иммунитет цели к типу
+# урона отменял и сам статус. Без этого нежить с immune=[poison] исправно
+# травилась ядом — движок проверял иммунитет только при подсчёте урона.
+DOT_DTYPE = {"poison": "poison", "burn": "fire", "bleed": "pierce"}
+
+
 def apply_status(mob, eff: dict) -> str:
     """Наложить статус на моба. Возвращает строку-уведомление или ''."""
     t = eff.get("type")
@@ -103,6 +190,12 @@ def apply_status(mob, eff: dict) -> str:
         return ""
     if rules2.ENABLED and t in DISABLE_TYPES and rules2.saves(mob, t):
         return f"   {mob.meta['name']} устоял против контроля!"
+    # Иммунитет к типу урона отменяет соответствующий DoT: иначе интерфейс
+    # честно показывает «🚫 не берёт: яд» и рядом «☠️ яд 3» — противоречие,
+    # которое игрок видит, а движок не замечает.
+    if rules2.ENABLED and t in DOT_TYPES:
+        if rules2.dtype_effect(DOT_DTYPE.get(t, t), mob) == rules2.EFFECT_IMMUNE:
+            return f"   {mob.meta['name']} невосприимчив ({STATUS_LABEL.get(t, t)})."
     mob.effects.append(dict(eff, turns=eff.get("duration", eff.get("turns", 2))))
     return f"   {mob.meta['name']} {STATUS_APPLY.get(t, 'поражён эффектом!')}"
 
@@ -194,7 +287,8 @@ def apply_damage_to_char(ch: Character, raw: int, dtype: str = "bash",
             return 0, True
     if random.random() < player_evasion(ch):
         return 0, True
-    dmg = max(1, raw - ch.defense)
+    # защита живёт в «пространстве здоровья» и масштабируется вместе с ним
+    dmg = max(1, raw - int(ch.defense * DEF_SCALE))
     dmg = int(dmg * (1 - ch.damage_reduction))
     if rules2.ENABLED:
         dmg = rules2.mitigate(dmg, dtype, ch)
@@ -435,11 +529,21 @@ def tick_effects_mob(mob: MobInstance) -> List[str]:
     return out
 
 
-def mob_attack(mob: MobInstance, ch: Character) -> List[str]:
+def mob_attack(mob: MobInstance, ch: Character, heavy: bool = False) -> List[str]:
+    """Удар моба. heavy=True — разряд замаха: тяжелее в TELEGRAPH_MULT раз.
+
+    Тяжёлый удар проходит по тем же правилам, что обычный (уклонение, броня,
+    резисты, щиты, щит новичка) — усиливается только сырой урон. Поэтому
+    подготовка к нему действительно работает: щит поглотит больше, уклонение
+    отменит целиком.
+    """
     out = []
     m = mob.meta
+    _mult = TELEGRAPH_MULT if heavy else 1.0
+    if heavy:
+        out.append(f"💥 *{m['name']} обрушивает удар!*")
     skills = m.get("skills", [])
-    if skills and random.random() < 0.25:
+    if skills and not heavy and random.random() < 0.25:
         sk = SKILLS[random.choice(skills)]
         if sk["kind"] == "damage":
             # множители скиллов рассчитаны под игрока; для мобов ограничиваем
@@ -456,8 +560,9 @@ def mob_attack(mob: MobInstance, ch: Character) -> List[str]:
                 out.append(f"{sk['emoji']} {m['name']} {verb} {ch.name} ({sk['name']}) на {dmg}."
                            + _shield_note(ch))
             return out
-    raw = _roll(int(m["atk"] * MOB_ATK_SCALE))
+    raw = _roll(int(m["atk"] * MOB_ATK_SCALE * _mult))
     dmg, dodged = apply_damage_to_char(ch, raw, rules2.mob_attack_dtype(m), mob)
+    mob.add_contrib(ch.uid, dmg)
     if dodged:
         out.append(f"💨 {ch.name} уклоняется от удара {m['name']}.")
     else:

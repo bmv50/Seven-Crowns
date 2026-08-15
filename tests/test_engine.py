@@ -299,7 +299,12 @@ check("воин стартует с 0 ярости", _w.mp == 0)
 _dummy = World().living_in("well")[0]
 _dummy.hp = 10**9; _dummy.max_hp = 10**9
 _before = _w.mp
-for _ in range(3):
+# Локальный seed и запас ударов: раньше здесь было ровно 3 удара на ОБЩЕМ потоке
+# random, то есть проверка молча зависела от всего, что случайного произошло в
+# файле выше. Любая правка боевых чисел сдвигала поток, три удара подряд могли
+# промахнуться (шанс попадания ~0.9), и тест падал не по делу.
+random.seed(20260812)
+for _ in range(10):
     combat.player_basic_attack(_w, _dummy)
 check("ярость копится от ударов", _w.mp > _before)
 _w.reset_combat_resource()
@@ -472,8 +477,11 @@ from engine import daily as _daily
 
 dch = new_char("warrior", "human", uid=430); dch.gold = 0; dch.xp = 0
 st = _daily.ensure(dch)
-dq = _daily.DAILY[st["id"]]
+# DAILY[id] — ШАБЛОН (без цели и награды); разрешённое задание берётся task_of()
+dq = _daily.task_of(dch)
 check("ежедневное назначено на сегодня", st["date"] and st["id"] in _daily.DAILY)
+check("цель ежедневного разрешена и зафиксирована в флагах",
+      dq.get("mob") and st.get("mob") == dq["mob"] and dq.get("count", 0) > 0)
 _daily.on_kill(dch, "__нет_такого_моба__")
 check("чужой моб не двигает прогресс", dch.flags["daily"]["progress"] == 0)
 for _ in range(dq["count"]):
@@ -483,6 +491,31 @@ g0, x0 = dch.gold, dch.xp
 res = _daily.claim(dch)
 check("награда выдана при заборе", "получена" in res and dch.gold > g0 and dch.xp > x0)
 check("повторный забор отклонён", "уже получена" in _daily.claim(dch))
+
+# Регресс (2026-08-12): раньше моб был зашит в daily.yaml, и на капе ежедневка
+# предлагала убить 8 крыс за 120 опыта при потребности 2 640.
+_dl_seen = {}
+from engine.character import LEVEL_CAP as _DL_CAP
+for _lv in (6, 10, 15, 20, _DL_CAP):
+    _c = new_char("warrior", "human", uid=4300 + _lv)
+    _c.level = _lv
+    _q = _daily.task_of(_c)
+    _ml = MOBS[_q["mob"]]["level"]
+    _dl_seen[_lv] = (_ml, _q["reward"]["xp"])
+    check(f"ур.{_lv}: цель ежедневного в окне уровня (моб ур.{_ml})",
+          _lv - 3 <= _ml <= _lv + 4)
+    _need = int(50 * _lv * (1 + _lv / 20))
+    check(f"ур.{_lv}: награда ежедневного — заметная доля уровня (0.15–0.6)",
+          0.15 <= _q["reward"]["xp"] / _need <= 0.6)
+check("уровень цели ежедневного растёт вместе с игроком",
+      [_dl_seen[k][0] for k in sorted(_dl_seen)] ==
+      sorted(_dl_seen[k][0] for k in sorted(_dl_seen)))
+check("награда ежедневного растёт вместе с уровнем",
+      [_dl_seen[k][1] for k in sorted(_dl_seen)] ==
+      sorted(_dl_seen[k][1] for k in sorted(_dl_seen)))
+check("боссы не попадают в цели ежедневного",
+      all(not MOBS[_daily.task_of(new_char("warrior", "human", uid=4400 + _l)).get("mob", "крыса")].get("boss")
+          for _l in range(6, _DL_CAP + 1)))
 
 
 # ─────────────────────── 17. ГИЛЬДИИ ───────────────────────
@@ -1043,7 +1076,9 @@ from engine.world import World as _W2, ground_items_for, take_ground_item
 from engine.content import WORLD as _WORLD2
 
 # ── кап уровня ──
-check("LEVEL_CAP == 60 (кап снижен, реморт — престиж)", _LVLCAP == 60)
+# Кап 25 (2026-08-12): кривая 1–60 требовала ≈58 ч фарма на диапазон 17–60,
+# обеспеченный 8 комнатами. Проверяем сам инвариант «кап сведён к контенту».
+check("LEVEL_CAP == 25 (кап сведён к объёму контента, реморт — престиж)", _LVLCAP == 25)
 
 # ── remort_bonus капится на REMORT_BONUS_MAX (0.50) ──
 _rb0 = new_char("warrior", "human", uid=750)
@@ -1068,6 +1103,11 @@ _rm.gold = 777000
 _rm.equipment["weapon"] = "ржавый_меч"
 _rm.flags["talent_points"] = 4
 _rm.flags["maxlvl_note"] = True
+# Набор, накопленный к капу. Реморт обязан сбросить умения до базовых: он стал
+# ОСНОВНОЙ петлёй, и с полным арсеналом на 1 ур. круг превращается в каток.
+_rm.learned = list(_rm.class_basics) + ["last_stand", "deep_wound"]
+_rm.loadout = ["last_stand", "deep_wound"]
+_rm.cooldowns = {"last_stand": 3}
 _ok_rm = _rm.remort()
 check("реморт проходит на LEVEL_CAP", _ok_rm)
 check("реморт сбрасывает уровень в 1", _rm.level == 1)
@@ -1077,6 +1117,13 @@ check("реморт сохраняет снаряжение", _rm.equipment["wea
 check("реморт сохраняет очки талантов", _rm.flags.get("talent_points") == 4)
 check("реморт сбрасывает maxlvl_note", not _rm.flags.get("maxlvl_note"))
 check("remort_count увеличился до 1", _rm.remort_count == 1)
+check("реморт сбрасывает выученные умения до базовых класса",
+      sorted(_rm.learned) == sorted(_rm.class_basics))
+check("реморт очищает боевую панель от неклассовых умений",
+      all(s in _rm.class_basics for s in _rm.loadout) and _rm.loadout)
+check("реморт очищает кулдауны", _rm.cooldowns == {})
+check("после реморта в бою доступны только базовые умения",
+      all(s in _rm.class_basics for s in _rm.skills))
 
 # ── name_tag: префикс ⭐N при remort_count>0, без префикса при 0 ──
 _nt0 = new_char("warrior", "human", uid=752); _nt0.name = "Тестиус"
@@ -1500,25 +1547,27 @@ check("well: каждый живой моб — своя кнопка atk:",
 
 
 # ─────────────────────── ПРОГРЕССИЯ 60 ───────────────────────
-print("\n[X] Прогрессия к капу 60 (Этап 2)")
+print(f"\n[X] Прогрессия к капу {LEVEL_CAP}")
 from engine import equip as _eqp, talents as _tal
 import engine.loop as _lp
 
-check("LEVEL_CAP == 60", LEVEL_CAP == 60)
+check(f"LEVEL_CAP == 25", LEVEL_CAP == 25)
 
 # (1) классовые умения не выходят за кап
 _cls_skills = [(k, v) for k, v in SKILLS.items()
                if isinstance(v, dict) and v.get("class") and "learn_level" in v]
-check("нет классовых умений с learn_level > 60",
-      all(v["learn_level"] <= 60 for _, v in _cls_skills))
+check(f"нет классовых умений с learn_level > капа ({LEVEL_CAP})",
+      all(v["learn_level"] <= LEVEL_CAP for _, v in _cls_skills))
 _by_cls = {}
 for _k, _v in _cls_skills:
     _by_cls.setdefault(_v["class"], []).append(_v["learn_level"])
 check("каждый из 6 классов имеет умения", len(_by_cls) == 6)
-check("у каждого класса есть капстоун в 55–60",
-      all(any(55 <= l <= 60 for l in ls) for ls in _by_cls.values()))
-check("максимальный learn_level по всем классам == 60",
-      max(l for ls in _by_cls.values() for l in ls) == 60)
+# Капстоун — умение в верхних 10% лестницы (при капе 25 это 23–25).
+_CAPSTONE_FROM = LEVEL_CAP - max(1, LEVEL_CAP // 10)
+check(f"у каждого класса есть капстоун в {_CAPSTONE_FROM}–{LEVEL_CAP}",
+      all(any(_CAPSTONE_FROM <= l <= LEVEL_CAP for l in ls) for ls in _by_cls.values()))
+check(f"максимальный learn_level по всем классам == капу ({LEVEL_CAP})",
+      max(l for ls in _by_cls.values() for l in ls) == LEVEL_CAP)
 
 # (2) реморт-предметы (вариант C)
 _rem = {k: v for k, v in ITEMS.items()
@@ -1552,13 +1601,20 @@ check("пул дропа при max_remort=0 без реморт-предмет�
 check("пул дропа при max_remort=2 содержит реморт-предметы",
       any(ITEMS[k].get("remort_req") for k in _pool2))
 
-# (5) таланты: 15 очков к капу
-check("points_for_level(60) == 15", _tal.points_for_level(60) == 15)
-check("points_for_level(4)=1, (3)=0",
-      _tal.points_for_level(4) == 1 and _tal.points_for_level(3) == 0)
-check("points_for_level(59) == 14", _tal.points_for_level(59) == 14)
-_tp_sim = sum(1 for _lvl in range(2, LEVEL_CAP + 1) if _lvl % 4 == 0)
-check("симуляция левелапа 1→60 даёт ровно 15 очков", _tp_sim == 15)
+# (5) таланты: бюджет прохождения (очко раз в TALENT_EVERY уровней, с потолком).
+# Потолок принципиален: реморт сбрасывает уровень в 1, и без него очки копились
+# бы с каждым кругом — а реморт теперь основная петля.
+_TB, _TE = _tal.talent_budget(), _tal.TALENT_EVERY
+check(f"points_for_level(кап) == бюджет ({_TB})", _tal.points_for_level(LEVEL_CAP) == _TB)
+check(f"points_for_level({_TE})=1, ({_TE - 1})=0",
+      _tal.points_for_level(_TE) == 1 and _tal.points_for_level(_TE - 1) == 0)
+check("points_for_level за уровень до капа == бюджет − 1 (или бюджет при чётном шаге)",
+      _tal.points_for_level(LEVEL_CAP - 1) in (_TB - 1, _TB))
+_tp_sim = sum(1 for _lvl in range(2, LEVEL_CAP + 1) if _lvl % _TE == 0)
+check(f"симуляция левелапа 1→{LEVEL_CAP} даёт ровно {_TB} очков", _tp_sim == _TB)
+# сверх капа очки НЕ выдаются (защита от накопления через реморт-круги)
+check("points_for_level(кап × 3) не превышает бюджет",
+      _tal.points_for_level(LEVEL_CAP * 3) == _TB)
 
 # (6) миграция v2: легаси с 20 вложенными рангами → остаток 0, ранги целы
 class _Legacy:
@@ -1580,8 +1636,8 @@ class _Legacy2:
         self.level = 60
         self.flags = {"talent_points": 59}
 _leg2 = _Legacy2(); _tal.migrate_v2(_leg2)
-check("migrate_v2: легаси без трат на 60 → 15 очков",
-      _leg2.flags["talent_points"] == 15)
+check(f"migrate_v2: легаси без трат на капе → {_TB} очков",
+      _leg2.flags["talent_points"] == _TB)
 
 # (7) валидатор ловит инъекции сверх капа
 import engine.content as _cnt
@@ -1638,8 +1694,10 @@ check("после снятия инъекции витрины контент с
       (validate() or True))
 
 # (8) эндгейм-босс и квест
-check("босс предвечная_бездна уровня 68",
-      MOBS.get("предвечная_бездна", {}).get("level") == 68)
+# Финальный босс намеренно ВЫШЕ капа («красный», только для группы):
+# при капе 60 это был 68, при капе 25 — 30. Проверяем инвариант, не число.
+check("босс предвечная_бездна выше капа (групповой финал)",
+      MOBS.get("предвечная_бездна", {}).get("level", 0) > LEVEL_CAP)
 check("квест abyss_eternal предупреждает про группу/реморт",
       "без реморта не выжить" in QUESTS.get("abyss_eternal", {}).get("desc", ""))
 

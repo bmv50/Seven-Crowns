@@ -48,13 +48,16 @@ PITY_RECIPES = ["condense_w10", "condense_w20", "condense_w30",
 
 # ───────────────── 1. ФОРМУЛА ПЫЛИ ─────────────────
 print("\n[1] Формула пыли: level_req//4 + бонус за редкость")
-# g_sword_30: level_req 30 → 30//4 = 7
-check("common (без бонуса): 30//4 + 0 = 7", salvage.dust_for("g_sword_30") == 7)
-check("green (+1): 7 + 1 = 8", salvage.dust_for("g_sword_30#green") == 8)
-check("blue (+3): 7 + 3 = 10", salvage.dust_for("g_sword_30#blue") == 10)
-check("purple (+8): 7 + 8 = 15", salvage.dust_for("g_sword_30#purple#1") == 15)
-check("gold (+13): 7 + 13 = 20", salvage.dust_for("g_sword_30#gold#1") == 20)
-check("red (+20): 7 + 20 = 27", salvage.dust_for("g_sword_30#red#1") == 27)
+# База берётся ОТ ДАННЫХ (level_req предмета), а не хардкодом: шкала уровней
+# менялась (кап 60→25, 2026-08-12), и тест должен проверять ФОРМУЛУ, а не числа
+# конкретного тира — иначе он краснеет на каждом ребалансе, ничего не находя.
+_B = equip.level_req(ITEMS["g_sword_30"]) // 4
+check(f"common (без бонуса): level_req//4 = {_B}", salvage.dust_for("g_sword_30") == max(1, _B))
+check(f"green (+1) = {_B + 1}", salvage.dust_for("g_sword_30#green") == _B + 1)
+check(f"blue (+3) = {_B + 3}", salvage.dust_for("g_sword_30#blue") == _B + 3)
+check(f"purple (+8) = {_B + 8}", salvage.dust_for("g_sword_30#purple#1") == _B + 8)
+check(f"gold (+13) = {_B + 13}", salvage.dust_for("g_sword_30#gold#1") == _B + 13)
+check(f"red (+20) = {_B + 20}", salvage.dust_for("g_sword_30#red#1") == _B + 20)
 check("низкий уровень даёт минимум 1 пыль", salvage.dust_for("g_sword_1") == 1)
 check("высокий тир даёт больше пыли (g_two_handed_45 > g_sword_1)",
       salvage.dust_for("g_two_handed_45") > salvage.dust_for("g_sword_1"))
@@ -68,11 +71,12 @@ print("\n[2] Разбор: пыль в сумку, предмет удалён")
 ch = new_char()
 ch.inventory.append("g_sword_30#blue")
 _before_dust = ch.inventory.count(salvage.DUST_ITEM)
+_expect_dust = salvage.dust_for("g_sword_30#blue")
 ok, msg, dust = salvage.salvage(ch, "g_sword_30#blue")
 check("разбор успешен", ok is True)
-check("выдано ровно dust_for пыли (10)", dust == 10)
-check("пыль появилась в сумке (10 шт)",
-      ch.inventory.count(salvage.DUST_ITEM) - _before_dust == 10)
+check(f"выдано ровно dust_for пыли ({_expect_dust})", dust == _expect_dust)
+check(f"пыль появилась в сумке ({_expect_dust} шт)",
+      ch.inventory.count(salvage.DUST_ITEM) - _before_dust == _expect_dust)
 check("разобранный предмет удалён из сумки", "g_sword_30#blue" not in ch.inventory)
 
 # ───────────────── 3. ОТКАЗЫ ─────────────────

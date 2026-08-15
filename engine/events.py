@@ -70,6 +70,7 @@ def drain_announcements():
 def reset():
     _active.clear()
     _announce_buf.clear()
+    _completed.clear()
     global _last_check
     _last_check = 0.0
 
@@ -239,6 +240,20 @@ def _spawn_invasion(world, d, zone, now, rng, ev):
                     ev["spawned"].append((rid, inst))
 
 
+def _new_event(eid, d, zone, ends_at):
+    """Собрать запись активного события.
+
+    ЕДИНСТВЕННОЕ место сборки: раньше словарь события строился отдельно в
+    _start() и в start(), и добавление поля в одном месте молча не доезжало во
+    второе (так общая цель не инициализировалась при запуске богом/админом).
+    """
+    ev = {"id": eid, "def": d, "zone": zone, "ends_at": ends_at, "spawned": []}
+    if d.get("goal"):
+        ev["progress"] = 0
+        ev["contrib"] = {}
+    return ev
+
+
 def _announce(d):
     return f"🌐 *{d.get('name', 'Событие')}!* {d.get('desc', '')}"
 
@@ -250,8 +265,7 @@ def _start(world, eid, d, now, rng, zone="__default__"):
     events._start(w, eid, d, now, rng) в тестах). Иначе — использовать переданную
     (уже разрешённую) зону. Возвращает строку-анонс, добавляет запись в _active."""
     zval = d.get("zone") if zone == "__default__" else zone
-    ev = {"id": eid, "def": d, "zone": zval,
-          "ends_at": now + int(d.get("duration", 1800)), "spawned": []}
+    ev = _new_event(eid, d, zval, now + int(d.get("duration", 1800)))
     if d.get("type") == "invasion":
         _spawn_invasion(world, d, zval, now, rng, ev)
     _active.append(ev)
@@ -285,7 +299,7 @@ def start(eid, zone=None, duration=None, world=None, now=None, rng=None):
     if reason:
         return [], reason
     dur = _clamp_duration(d, duration)
-    ev = {"id": eid, "def": d, "zone": zresolved, "ends_at": now + dur, "spawned": []}
+    ev = _new_event(eid, d, zresolved, now + dur)
     if d.get("type") == "invasion" and world is not None:
         _spawn_invasion(world, d, zresolved, now, rng, ev)
     _active.append(ev)
@@ -337,6 +351,109 @@ def tick(world, now=None):
     return msgs
 
 
+
+# ═════════════════ СОБЫТИЯ С ОБЩЕЙ ЦЕЛЬЮ ═════════════════
+# Раньше любое мировое событие сводилось к множителю: «+25% опыта на час».
+# Игрок не делал ничего нового — он делал то же самое, только цифры больше,
+# поэтому событие не было поводом ни прийти, ни скоординироваться (аудит §4).
+#
+# Событие с целью даёт общий счётчик на весь сервер: «закрыть 40 прорывов за
+# 30 минут». Прогресс копят ВСЕ вместе, награду получает каждый, кто внёс хотя
+# бы одно убийство, и размер награды считается от ЕГО уровня — иначе низкие
+# уровни не могли бы участвовать наравне.
+#
+# Схема в data/events.yaml:
+#   goal:
+#     mob: <id> | mobs: [<id>, ...]   — что засчитывается (пусто = любой моб зоны)
+#     count: 40                        — общая цель на всех
+#     reward_share: 0.5                — доля уровня опытом каждому участнику
+GOAL_REWARD_SHARE = 0.5     # дефолт: половина уровня участника опытом
+GOAL_GOLD_PER_XP = 12       # золото = опыт × это (порядок боевой голды уровня)
+
+# Завершённые цели, ещё не розданные. Забирает take_completions() — так модуль
+# остаётся чистым: он не знает ни про персонажей, ни про рассылку.
+_completed = []
+
+
+def _goal_matches(d, mob_id: str) -> bool:
+    g = d.get("goal") or {}
+    ids = g.get("mobs") or ([g["mob"]] if g.get("mob") else [])
+    return (not ids) or (mob_id in ids)
+
+
+def goal_events(zone=None):
+    """Активные события с целью (опционально — только влияющие на эту зону)."""
+    out = []
+    for e in _active:
+        if not (e["def"].get("goal")):
+            continue
+        ez = e.get("zone", e["def"].get("zone"))
+        if zone is None or ez is None or ez == zone:
+            out.append(e)
+    return out
+
+
+def on_kill(uid: int, mob_id: str, zone=None):
+    """Засчитать убийство в общие цели. -> список строк для игрока."""
+    if not ENABLED:
+        return []
+    out = []
+    for e in goal_events(zone):
+        d = e["def"]
+        if not _goal_matches(d, mob_id):
+            continue
+        need = int((d["goal"] or {}).get("count", 1))
+        if e.get("progress", 0) >= need:
+            continue
+        e["progress"] = e.get("progress", 0) + 1
+        # setdefault ОТДЕЛЬНОЙ строкой: в «a[k] = e["contrib"].get(...)» правая
+        # часть вычисляется раньше цели присваивания, и на первом убийстве это
+        # KeyError, если событие стартовало не через _start (бог/админ/тесты).
+        contrib = e.setdefault("contrib", {})
+        contrib[uid] = contrib.get(uid, 0) + 1
+        left = need - e["progress"]
+        if left <= 0:
+            out.append(f"🎯 *{d.get('name')}* — цель достигнута! Награда всем участникам.")
+            _completed.append({"id": e["id"], "name": d.get("name", "Событие"),
+                               "contrib": dict(e["contrib"]),
+                               "share": float((d["goal"] or {}).get(
+                                   "reward_share", GOAL_REWARD_SHARE))})
+            _queue_announce(
+                f"🎯 *{d.get('name')}*: цель выполнена совместными усилиями!", ENDED_TTL)
+            e["ends_at"] = 0.0            # закрыть на ближайшем tick()
+        elif e["progress"] % max(1, need // 4) == 0:
+            out.append(f"🎯 {d.get('name')}: {e['progress']}/{need}")
+    return out
+
+
+def take_completions():
+    """Забрать выполненные цели (насовсем) — для раздачи наград вызывающим."""
+    out = list(_completed)
+    _completed.clear()
+    return out
+
+
+def goal_reward(level: int, share: float = GOAL_REWARD_SHARE) -> dict:
+    """Награда участнику: доля ЕГО уровня опытом + сопоставимое золото.
+
+    Считается от уровня игрока, а не от события: иначе общая цель была бы
+    аттракционом для высоких уровней и бессмыслицей для низких.
+    """
+    level = max(1, int(level))
+    to_next = int(50 * level * (1 + level / 20))     # та же кривая, что в Character
+    xp = max(1, int(to_next * share))
+    return {"xp": xp, "gold": xp * GOAL_GOLD_PER_XP}
+
+
+def goal_line(e) -> str:
+    """Строка прогресса общей цели для экранов."""
+    d = e["def"]
+    need = int((d.get("goal") or {}).get("count", 1))
+    done = int(e.get("progress", 0))
+    filled = int(10 * done / need) if need else 0
+    return f"🎯 {'█' * filled}{'░' * (10 - filled)} {done}/{need}"
+
+
 def render():
     if not _active:
         return "🌐 Сейчас активных мировых событий нет."
@@ -355,6 +472,8 @@ def render():
         zone = e.get("zone", d.get("zone")) or "везде"
         L.append(f"• *{d.get('name')}* ({zone}) — {d.get('desc', '')}")
         L.append(f"  {', '.join(mods) or '—'} · ещё ~{left} мин")
+        if d.get("goal"):
+            L.append("  " + goal_line(e))
     return "\n".join(L)
 
 
@@ -362,5 +481,12 @@ def banner():
     """Короткая строка-баннер для экрана комнаты (или '')."""
     if not _active:
         return ""
-    names = ", ".join(e["def"].get("name", "?") for e in _active)
-    return f"🌐 _Идёт событие: {names}_"
+    parts = []
+    for e in _active:
+        nm = e["def"].get("name", "?")
+        if e["def"].get("goal"):
+            d = e["def"]
+            need = int((d.get("goal") or {}).get("count", 1))
+            nm += f" {int(e.get('progress', 0))}/{need}"
+        parts.append(nm)
+    return f"🌐 _Идёт событие: {', '.join(parts)}_"

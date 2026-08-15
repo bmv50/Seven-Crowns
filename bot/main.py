@@ -33,7 +33,8 @@ except ImportError:
 # резистивший ВСЕ физ. типы (bash/pierce/slash) — снят решением лида: дробящее
 # (bash) сокрушает бесплотную форму и проходит, режущее/колющее по-прежнему
 # резистится (см. комментарий у rules2.ENABLED ниже и rules2._CAT_PROFILE["spirit"]).
-for _flag in ("NPC_AI", "LAZY_SIM", "WILD_ZONES", "WORLD_EVENTS", "SEASONS", "NOTIFY", "RULES_V2"):
+for _flag in ("NPC_AI", "LAZY_SIM", "WILD_ZONES", "WORLD_EVENTS", "SEASONS", "NOTIFY",
+              "RULES_V2", "TELEGRAPH"):
     os.environ.setdefault(_flag, "1")
 
 from aiogram import Bot, Dispatcher, F
@@ -128,6 +129,9 @@ PROXY_URL = os.environ.get("PROXY_URL", "").strip()
 # 2 персонажа) проходят без исключений — флаг включён.
 from engine import rules2
 rules2.ENABLED = os.environ.get("RULES_V2", "0").strip() in ("1", "true", "True", "yes", "on")
+# Замах: мобы иногда предупреждают о тяжёлом ударе, давая игроку ход на решение
+# (прервать контролем / закрыться / добить / сбежать). См. engine/combat.py.
+combat.ENABLED_TELEGRAPH = os.environ.get("TELEGRAPH", "1").strip() in ("1", "true", "True", "yes", "on")
 
 # «Живые» NPC: Utility AI + FSM (мобы вне боя бродят/отдыхают, раненые в страхе бегут).
 # Включается переменной окружения NPC_AI=1; по умолчанию ВКЛЮЧЕНО (см. setdefault выше).
@@ -714,6 +718,66 @@ def set_combat_line(uid: int, who: str, text: str):
     _cv(uid)[who] = text
 
 
+# Русские названия типов урона для подсказок боя (те же, что в mudview).
+_DT_RU_COMBAT = {"fire": "огонь", "cold": "холод", "holy": "свет", "poison": "яд",
+                 "bash": "дробящий", "pierce": "колющий", "slash": "режущий",
+                 "lightning": "молния", "acid": "кислота", "negative": "тьма",
+                 "energy": "энергия", "mental": "разум", "disease": "болезнь",
+                 "light": "свет"}
+
+
+def _combat_target_hints(ch: Character, mob) -> list:
+    """Строки-подсказки под целью: статусы, слабости и последствие ТЕКУЩЕГО оружия.
+
+    До этого в шапке боя жил ровно один частный случай — духи. Остальные ~30
+    мобов с уязвимостями были для игрока чёрным ящиком: движок считал резисты,
+    а решение «чем бить» игрок принять не мог. Показываем только действенное и
+    не больше трёх строк — сообщение переписывается на каждом тике.
+    """
+    out = []
+    # 0) замах — самое срочное, поэтому первой строкой
+    if combat.is_winding_up(mob):
+        out.append("   ⚠️ *ЗАМАХИВАЕТСЯ* — следующий удар тяжёлый. "
+                   "Прервите контролем, закройтесь или отойдите.")
+    # 1) статусы на мобе (яд/горение/кровотечение/заморозка) — раньше не видны
+    st = []
+    for eff in getattr(mob, "effects", []) or []:
+        t = eff.get("type")
+        if t in combat.STATUS_TYPES and eff.get("turns", 0) > 0:
+            st.append(f"{combat.STATUS_LABEL.get(t, t)} {eff['turns']}")
+    if st:
+        out.append("   " + " · ".join(st))
+    if not rules2.ENABLED:
+        return out
+    p = rules2.mob_profile(mob.meta)
+    # 2) слабости и защиты цели
+    parts = []
+    if p["vuln"]:
+        parts.append("🔻 бьёт сильнее: "
+                     + ", ".join(_DT_RU_COMBAT.get(t, t) for t in sorted(p["vuln"])))
+    if p["immune"]:
+        parts.append("🚫 не берёт: "
+                     + ", ".join(_DT_RU_COMBAT.get(t, t) for t in sorted(p["immune"])))
+    elif p["resist"]:
+        parts.append("🛡 держит удар: "
+                     + ", ".join(_DT_RU_COMBAT.get(t, t) for t in sorted(p["resist"])))
+    if parts:
+        out.append("   _" + "  ·  ".join(parts) + "_")
+    # 3) что это значит для ТЕКУЩЕГО оружия игрока — самая полезная строка
+    wdt = combat.weapon_dtype(ch)
+    eff = rules2.dtype_effect(wdt, mob)
+    wname = _DT_RU_COMBAT.get(wdt, wdt)
+    if eff == rules2.EFFECT_IMMUNE:
+        out.append(f"   ⚔️ _Ваш урон ({wname}) не проходит — бейте умениями_")
+    elif eff == rules2.EFFECT_RESIST:
+        out.append(f"   ⚔️ _Ваш урон ({wname}) слабо берёт — бейте умениями_")
+    elif eff == rules2.EFFECT_VULN:
+        out.append(f"   ⚔️ _Ваш урон ({wname}) — точно в слабость_")
+    if combat.mob_is_frozen(mob):
+        out.append("   ❄️💥 _Заморожен: следующий удар — гарантированный крит_")
+    return out
+
+
 def render_combat_view(ch: Character) -> str:
     cv = combat_view.get(ch.uid, {})
     mob = world.find(ch.room, ch.target) if ch.target else None
@@ -726,12 +790,7 @@ def render_combat_view(ch: Character) -> str:
     if mob:
         L.append(f"{mob.meta['emoji']} *{mob.meta['name']}* "
                  f"[{ui.bar(mob.hp, mob.max_hp, 8)}] {mob.hp}/{mob.max_hp}")
-        # Дух (RULES_V2): бесплотную форму не разрезать и не проколоть — режущее/
-        # колющее резистится, но дробящее и «нефизические» умения проходят
-        # полновесно. Подсказка контрплея видна прямо в шапке боя (только когда
-        # резисты фактически действуют — т.е. при rules2.ENABLED).
-        if rules2.ENABLED and rules2.mob_profile(mob.meta)["category"] == "spirit":
-            L.append("👻 _Бесплотное: режущее/колющее слабо — бей дробящим или умениями_")
+        L.extend(_combat_target_hints(ch, mob))
     L.append(f"❤️ {ch.name} [{ui.bar(ch.hp, ch.max_hp)}] {ch.hp}/{ch.max_hp}  "
              f"{ch.resource_emoji} {ch.mp}/{ch.max_resource}")
     return "\n".join(L)
@@ -2924,7 +2983,8 @@ async def on_cb(cb: CallbackQuery):
                          if ch.remort_bonus_maxed else "")
             await safe_edit(cb,
                 f"🌟 *Перерождение №{ch.remort_count}!* Вы вновь 1 уровня, но навсегда сильнее "
-                f"(+{int(ch.remort_bonus*100)}% к силе и HP). Снаряжение, монеты и таланты сохранены."
+                f"(+{int(ch.remort_bonus*100)}% к силе и HP). Снаряжение, монеты и таланты "
+                f"сохранены; умения сброшены до базовых — учите их заново по уровням."
                 f"{_cap_note}",
                 ui.kb_room(ch, world))
         else:
@@ -3123,6 +3183,26 @@ async def on_cb(cb: CallbackQuery):
         await safe_edit(cb, bestiary.render(ch), ui.kb_back("stats"))
     elif action == "chronicle":
         await safe_edit(cb, _chronicle.render(), ui.kb_back("more"))
+    elif action in ("lfg", "lfgin", "lfgout", "lfgpath"):
+        # Доска поиска группы. Гейт тот же, что у группы: без неё группа при
+        # низком онлайне не собирается (мир — 291 комната, встретиться нельзя).
+        if not _uigate.unlocked("party", ch.level):
+            await cb.answer(_uigate.hint("party"), show_alert=True); return
+        from engine import lfg as _lfg
+        if action == "lfgin":
+            _lfg.join(ch)
+            await cb.answer("Вы в поиске — вас увидят игроки близкого уровня.")
+        elif action == "lfgout":
+            _lfg.leave(ch.uid)
+            await cb.answer("Вы убрали себя из поиска.")
+        elif action == "lfgpath":
+            _tgt = next((e for e in _lfg.board_for(ch) if str(e["uid"]) == str(arg)), None)
+            if not _tgt or not _tgt.get("route"):
+                await cb.answer("Игрок уже недоступен или пути нет.", show_alert=True)
+            else:
+                _steps = " → ".join(d.capitalize() for d in _tgt["route"])
+                await cb.answer(f"К {_tgt['name']}: {_steps}"[:190], show_alert=True)
+        await safe_edit(cb, ui.render_lfg(ch), ui.kb_lfg(ch))
     elif action == "talents":
         if not _uigate.unlocked("talents", ch.level):
             await cb.answer(_uigate.hint("talents"), show_alert=True); return
@@ -4213,7 +4293,14 @@ def render_group(ch: Character) -> str:
 async def show_group(cb: CallbackQuery, ch: Character):
     party = party_mgr.party_of(ch.uid)
     members = set(party["members"]) if party else set()
-    rows = []
+    # Доска поиска — первой строкой. Экран «Группа» перечисляет игроков В КОМНАТЕ,
+    # а при низком онлайне комната пуста почти всегда; без доски экран был
+    # тупиком: «пригласить некого» и никакого способа кого-то найти.
+    from engine import lfg as _lfg
+    _n_lfg = len(_lfg.board_for(ch))
+    rows = [[InlineKeyboardButton(
+        text=(f"🔎 Ищу группу ({_n_lfg})" if _n_lfg else "🔎 Ищу группу"),
+        callback_data="lfg")]]
     for o in players_in_room(ch):
         line = []
         if o.uid not in members:
@@ -5075,6 +5162,39 @@ async def _god_save_state(st: dict):
 _god_load_state._mem = {}
 
 
+async def _epic_outward(prev_season, epic: str):
+    """Вынести летопись сезона наружу: персонально — тем, кто в неё попал,
+    и постом в канал сообщества, если он настроен.
+
+    Зачем. Хроника и летопись — сильнейшее отличие проекта, но до этого они
+    жили внутри: летопись уходила общей рассылкой вместе со всем прочим и
+    терялась. Игрок должен УВИДЕТЬ СЕБЯ в истории мира — иначе хроника
+    остаётся логом для разработчика (аудит §7).
+    """
+    # (1) персонально — тем, кого летопись назвала поимённо
+    try:
+        _named = _chronicle.mentioned_names(epic, [c.name for c in chars.values()])
+        _by_name = {c.name: c for c in chars.values()}
+        for _nm in _named:
+            _ch = _by_name.get(_nm)
+            if _ch is None:
+                continue
+            await send(_ch.uid,
+                       f"🏛 *Вы вошли в летопись сезона {prev_season}.*\n\n{epic}")
+    except Exception as e:                      # noqa: BLE001
+        _elog.log_err(_log, "epic_personal_push_failed", e, season=prev_season)
+    # (2) пост в канал сообщества — только если задан ID чата и бот там админ.
+    # Ссылки COMMUNITY_URL для этого мало: постить можно лишь по chat_id.
+    _cid = (os.environ.get("COMMUNITY_CHAT_ID") or "").strip()
+    if not _cid:
+        return
+    try:
+        await bot.send_message(_cid, f"🏛 *Летопись сезона {prev_season}*\n\n{epic}",
+                               parse_mode="Markdown")
+    except Exception as e:                      # noqa: BLE001
+        _elog.log_err(_log, "epic_channel_post_failed", e, chat=_cid)
+
+
 async def god_worker(interval: float = None):
     """Фон: бог-оркестратор. Раз в interval (env GOD_INTERVAL):
       (а) при смене сезона — летопись минувшего сезона (LLM/шаблон), рассылка
@@ -5108,6 +5228,7 @@ async def god_worker(interval: float = None):
                     if _notify.ENABLED:
                         await broadcast_all(
                             f"🏛 *Летопись сезона {prev}*\n\n{epic}", "season_rollover")
+                    await _epic_outward(prev, epic)
                 st["season"] = sid
                 await _god_save_state(st)
 

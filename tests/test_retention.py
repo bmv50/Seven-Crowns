@@ -272,9 +272,11 @@ check("найдена ISO-неделя с задачей daily_claims", target_w
 
 # берём существующий id ежедневного задания из data/daily.yaml
 existing_daily_id = next(iter(daily.DAILY))
-daily_quest = daily.DAILY[existing_daily_id]
 
 ch = new_char()
+# DAILY[id] — шаблон без цели: разрешаем задание для этого персонажа и берём
+# его фактический count (цель зависит от уровня, см. engine/daily.task_of)
+daily_quest = daily.task_of(ch)
 # принудительно проставляем персонажу недельный набор на найденную неделю (без подмены системного времени —
 # просто пишем то же значение, которое ensure() вычислил бы сам для этой недели)
 ch.flags["weekly"] = {"week": target_week[0], "id": target_week[1], "progress": {}, "claimed": False}
@@ -282,12 +284,13 @@ weekly_set = weekly.WEEKLY[target_week[1]]
 daily_claim_task = next(t for t in weekly_set["tasks"] if t["type"] == "daily_claims")
 progress_before = ch.flags["weekly"]["progress"].get(daily_claim_task["id"], 0)
 
-ch.flags["daily"] = {
-    "date": today_iso,
-    "id": existing_daily_id,
-    "progress": daily_quest["count"],
-    "claimed": False,
-}
+# Дописываем прогресс в УЖЕ РАЗРЕШЁННОЕ задание, а не собираем флаг вручную:
+# ensure() хранит в нём разрешённую цель/награду, и частичный словарь заставил
+# бы его пересоздать задание, обнулив прогресс.
+_d = daily.ensure(ch)
+_d["date"] = today_iso
+_d["progress"] = daily_quest["count"]
+_d["claimed"] = False
 
 result = daily.claim(ch)
 check("daily.claim() возвращает подтверждение награды", "🎁" in result)

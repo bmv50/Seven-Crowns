@@ -92,6 +92,56 @@ def _wrap(draw, text, font, max_w):
     return lines
 
 
+def _art_bg(path, default=None):
+    """Цвет фона спрайта: медиана рамки в 6 px по краю кадра (или default).
+
+    Берём именно с краёв: там гарантированно фон, даже если вырезание оставило
+    ореол вокруг предмета."""
+    if not path or not _PIL:
+        return default
+    try:
+        im = Image.open(path).convert("RGB")
+        w, h = im.size
+        px = im.load()
+        edge = []
+        step = max(1, w // 100)
+        for x in range(0, w, step):
+            for y in range(6):
+                edge.append(px[x, y]); edge.append(px[x, h - 1 - y])
+        for y in range(0, h, step):
+            for x in range(6):
+                edge.append(px[x, y]); edge.append(px[w - 1 - x, y])
+        if not edge:
+            return default
+        return tuple(sorted(c[i] for c in edge)[len(edge) // 2] for i in range(3))
+    except Exception:
+        return default
+
+
+def _draw_panel(img, d, box, base, rar_col):
+    """Панель под спрайт: радиальная подсветка из центра в тон фона арта.
+
+    Плоская заливка не спасала: у спрайта своя виньетка (центр светлее краёв),
+    и её остаток лежал на ровной панели заметным пятном. Повторяем виньетку —
+    пятно совпадает с подложкой и читается как подсветка предмета. Цвет
+    редкости подмешан слабо: он несёт рамку и подпись, а не фон под спрайтом.
+    """
+    x0, y0, x1, y1 = box
+    pw, ph = x1 - x0, y1 - y0
+    cx, cy = pw / 2.0, ph / 2.0
+    rmax = (cx ** 2 + cy ** 2) ** 0.5
+    centre = _mix(_mix(base, (255, 255, 255), 0.18), rar_col, 0.06)
+    layer = Image.new("RGB", (pw, ph), base)
+    lp = layer.load()
+    for yy in range(ph):
+        for xx in range(pw):
+            t = min(1.0, (((xx - cx) ** 2 + (yy - cy) ** 2) ** 0.5) / rmax)
+            lp[xx, yy] = _mix(centre, base, t ** 0.85)
+    mask = Image.new("L", (pw, ph), 0)
+    ImageDraw.Draw(mask).rounded_rectangle([0, 0, pw - 1, ph - 1], radius=20, fill=255)
+    img.paste(layer, (x0, y0), mask)
+
+
 def card_image(key: str) -> str:
     """Вернуть путь к PNG-карточке предмета нужной редкости (с кэшем) или None."""
     if not _PIL:
@@ -120,8 +170,14 @@ def card_image(key: str) -> str:
     for i, w in enumerate(range(14, 0, -2)):
         d.rounded_rectangle([i, i, W - 1 - i, H - 1 - i], radius=26,
                             outline=_mix(col, (255, 255, 255), 0.15), width=2)
-    # внутренняя панель (оставляем место под подпись внизу)
-    d.rounded_rectangle([46, 46, W - 46, H - 156], radius=20, fill=_mix(dark, (0, 0, 0), 0.25))
+    # Внутренняя панель — В ЦВЕТ ФОНА САМОГО АРТА, а не в цвет редкости.
+    # AI-спрайты приходят с тёмной виньеткой, вырезать её начисто под 140 файлов
+    # нельзя: заливка либо оставляет серый ореол, либо проедает тёмные предметы
+    # (кольчугу, амулеты). Если же панель совпадает с фоном арта, остаток
+    # виньетки читается как подсветка предмета, а не как грязное пятно.
+    px0, py0, px1, py1 = 46, 46, W - 46, H - 156
+    panel = _art_bg(art0) or _mix(dark, (0, 0, 0), 0.25)
+    _draw_panel(img, d, (px0, py0, px1, py1), panel, col)
 
     # базовый рисунок предмета или плейсхолдер
     art = art0
