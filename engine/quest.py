@@ -157,6 +157,8 @@ def available_quests(ch: Character, npc: str) -> List[str]:
     for qid, q in QUESTS.items():
         if q.get("giver") != npc:
             continue
+        if ch.remort_count < int(q.get("min_remort", 0)):
+            continue
         status = ch.quests.get(qid)
         if status in ("active", "done"):
             continue
@@ -197,8 +199,12 @@ def accept(ch: Character, qid: str) -> Tuple[bool, str]:
         return False, "Задание уже взято."
     if is_locked(ch, qid):
         return False, "Этот путь для тебя закрыт."
-    ch.quests[qid] = "active"
     q = QUESTS[qid]
+    # Обработчик кнопки передаёт qid напрямую: скрытого UI-гейта недостаточно.
+    # Для испытаний реморта сверяем и круг, и уровень, и всю цепочку.
+    if q.get("min_remort") and qid not in available_quests(ch, q["giver"]):
+        return False, "Это испытание пока недоступно."
+    ch.quests[qid] = "active"
     obj = q["objective"]
     if obj["type"] == "kill":
         ch.quests[qid + ":kills"] = "0"
@@ -207,12 +213,21 @@ def accept(ch: Character, qid: str) -> Tuple[bool, str]:
     return True, f"📜 Принято задание: *{q['name']}*\n{q['desc'].strip()}"
 
 
+def required_kills(ch: Character, qid: str) -> int:
+    """Цель ветерана растёт по кругам, но перестаёт разгонять гринд после 4-го."""
+    q = QUESTS[qid]
+    base = int(q["objective"]["count"])
+    per = int(q.get("extra_kills_per_remort", 0))
+    extra_cycles = min(3, max(0, ch.remort_count - int(q.get("min_remort", 1))))
+    return base + per * extra_cycles
+
+
 def is_complete(ch: Character, qid: str) -> bool:
     q = QUESTS[qid]
     obj = q["objective"]
     t = obj["type"]
     if t == "kill":
-        return int(ch.quests.get(qid + ":kills", "0")) >= obj["count"]
+        return int(ch.quests.get(qid + ":kills", "0")) >= required_kills(ch, qid)
     if t == "collect":
         return ch.inventory.count(obj["item"]) >= obj["count"]
     if t == "talk":
@@ -239,9 +254,11 @@ def on_kill(ch: Character, mob_id: str) -> List[str]:
         obj = q["objective"]
         if obj["type"] == "kill" and obj["mob"] == mob_id:
             key = qid + ":kills"
+            need = required_kills(ch, qid)
+            if int(ch.quests.get(key, "0")) >= need:
+                continue
             kills = int(ch.quests.get(key, "0")) + 1
             ch.quests[key] = str(kills)
-            need = obj["count"]
             if kills >= need:
                 msgs.append(f"✅ Задание «{q['name']}»: цель выполнена! Вернись к "
                             f"{q['turn_in'].replace('_',' ')}.")
@@ -357,7 +374,7 @@ def _goal_text(ch: Character, qid: str, q: dict) -> str:
     if t == "kill":
         cnt = int(ch.quests.get(qid + ":kills", "0"))
         nm = MOBS.get(obj["mob"], {}).get("name", obj["mob"])
-        return f"🎯 Убить: {nm} — {cnt}/{obj['count']}"
+        return f"🎯 Убить: {nm} — {cnt}/{required_kills(ch, qid)}"
     if t == "collect":
         have = ch.inventory.count(obj["item"])
         nm = ITEMS.get(obj["item"], {}).get("name", obj["item"])

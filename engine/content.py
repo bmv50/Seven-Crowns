@@ -60,6 +60,10 @@ if os.path.exists(os.path.join(DATA_DIR, "quests_story.yaml")):
     QUESTS.update(_load("quests_story.yaml"))
 if os.path.exists(os.path.join(DATA_DIR, "quests_endgame.yaml")):
     QUESTS.update(_load("quests_endgame.yaml"))
+# Отдельная цепочка для каждого нового круга героя; исходные сюжетные
+# прохождения остаются в истории и не выдают награды повторно.
+if os.path.exists(os.path.join(DATA_DIR, "quests_remort.yaml")):
+    QUESTS.update(_load("quests_remort.yaml"))
 RECIPES = _load("recipes.yaml")
 NPCS = _load("npcs.yaml")
 FACTIONS = _load("factions.yaml")
@@ -255,6 +259,17 @@ def validate():
     for qid, q in QUESTS.items():
         obj = q.get("objective", {})
         otype = obj.get("type")
+        if q.get("repeat_on_remort"):
+            if int(q.get("min_remort", 0)) < 1:
+                errors.append(f"Квест '{qid}': повторяемый реморт требует min_remort≥1")
+            if q.get("exclusive_group") or q.get("locks") or q.get("on_complete"):
+                errors.append(f"Квест '{qid}': повторяемый реморт не может менять постоянный сюжет")
+        extra_kills = int(q.get("extra_kills_per_remort", 0))
+        if extra_kills < 0 or (extra_kills and otype != "kill"):
+            errors.append(f"Квест '{qid}': extra_kills_per_remort допустим только для kill и ≥0")
+        if q.get("repeat_on_remort") and otype == "kill" and not any(
+                obj.get("mob") in (room.get("spawns") or []) for room in WORLD.values()):
+            errors.append(f"Квест '{qid}': цель-моб не появляется в мире")
         if otype == "kill" and obj.get("mob") not in MOBS:
             errors.append(f"Квест '{qid}': цель-моб '{obj.get('mob')}' не найден")
         if otype == "collect" and obj.get("item") not in ITEMS:

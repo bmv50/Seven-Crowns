@@ -3,7 +3,7 @@
 Провайдер LLM мокается (DeepSeek недоступен из песочницы). Запуск: python test_ai_dialog.py"""
 import asyncio
 from ai import cost, npc_ai, provider
-from engine.character import Character
+from engine.character import Character, LEVEL_CAP
 
 
 def _ch():
@@ -75,9 +75,43 @@ def test_persistent_memory_across_sessions():
         provider.enabled, provider.chat = orig_enabled, orig_chat
 
 
+def test_remort_refreshes_npc_context_and_cache():
+    original_enabled, original_chat = provider.enabled, provider.chat
+    calls = []
+
+    async def fake_chat(system, messages, tier="mid", **kwargs):
+        calls.append(system)
+        return "Помню твой путь."
+
+    provider.enabled = lambda: True
+    provider.chat = fake_chat
+    ch = Character(uid=778, name="Аск", cls="warrior")
+    ch.level = LEVEL_CAP
+    ch.quests["main_arrival"] = "done"
+    npc_ai.reset(ch.uid)
+    cost.CACHE.clear()
+    try:
+        asyncio.run(npc_ai.say_action(ch, "старейшина", "узнаёшь меня?", now=1000.0))
+        assert len(calls) == 1
+        ch.quests["sample_talk_elder"] = "active"
+        asyncio.run(npc_ai.say_action(ch, "старейшина", "узнаёшь меня?", now=1000.5))
+        assert len(calls) == 2, "Изменение журнала должно обновить ответ NPC"
+        assert ch.remort()
+        npc_ai.reset(ch.uid)
+        asyncio.run(npc_ai.say_action(ch, "старейшина", "узнаёшь меня?", now=1001.0))
+        assert len(calls) == 3, "Старый ответ не должен пережить реморт"
+        assert "круга перерождения №1" in calls[-1]
+        assert "Странник у ворот" in calls[-1]
+    finally:
+        provider.enabled, provider.chat = original_enabled, original_chat
+        npc_ai.reset(ch.uid)
+        cost.CACHE.clear()
+
+
 if __name__ == "__main__":
     test_summarize_history()
     test_quest_context()
     test_system_prompt_blocks()
     test_persistent_memory_across_sessions()
+    test_remort_refreshes_npc_context_and_cache()
     print("\n=== ai dialog OK ===")

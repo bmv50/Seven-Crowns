@@ -3,7 +3,7 @@
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
-from .content import CLASSES, ITEMS, SKILLS, RACES, HP_SCALE
+from .content import CLASSES, ITEMS, SKILLS, RACES, QUESTS, HP_SCALE
 
 # ───────── ресурсы классов ─────────
 # mana — кастеры (копится медленно), energy — разбойник (быстрый реген),
@@ -265,6 +265,21 @@ class Character:
         """
         if self.level < LEVEL_CAP:
             return False
+        # Сюжет первого прохождения и последствия выборов остаются навсегда.
+        # Только испытания нового круга выдаются заново; завершённые круги
+        # учитываются отдельно, чтобы NPC помнили их после очистки журнала.
+        for qid, q in QUESTS.items():
+            if not q.get("repeat_on_remort"):
+                continue
+            if self.quests.get(qid) == "done":
+                history = self.flags.get("remort_quest_history")
+                if not isinstance(history, dict):
+                    history = {}
+                    self.flags["remort_quest_history"] = history
+                history[qid] = int(history.get(qid, 0)) + 1
+            for key in [key for key in self.quests
+                        if key == qid or key.startswith(qid + ":")]:
+                self.quests.pop(key, None)
         self.flags["remort"] = self.remort_count + 1
         self.level = 1
         self.xp = 0

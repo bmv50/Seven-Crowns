@@ -123,6 +123,20 @@ async def run_integration(dsn):
         raw = await admin.fetchrow("SELECT learned, loadout FROM characters WHERE uid=$1", hero.uid)
         assert json.loads(raw["learned"]) == hero.learned
         assert json.loads(raw["loadout"]) == hero.loadout
+
+        # Второй круг: старая история не теряется, испытания ветерана
+        # переоткрываются, архив завершений сохраняется в PostgreSQL JSONB.
+        reborn.level = 25
+        reborn.quests = {"main_arrival": "done", "remort_witness": "done",
+                         "remort_pack": "active", "remort_pack:kills": "1"}
+        reborn.flags["quest_choices"] = {"sample_choose_faith": "light"}
+        assert reborn.remort()
+        await db.save(reborn)
+        again = (await db.load_all())[reborn.uid]
+        assert again.remort_count == 2
+        assert again.quests == {"main_arrival": "done"}
+        assert again.flags["quest_choices"] == {"sample_choose_faith": "light"}
+        assert again.flags["remort_quest_history"] == {"remort_witness": 1}
     finally:
         try:
             await db.close()

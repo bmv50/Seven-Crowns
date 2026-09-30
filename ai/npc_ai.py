@@ -10,6 +10,7 @@
   • тайм-аут диалога со сжатием истории в «воспоминание».
 Действия NPC из ответа модели (offer_quest и т.п.) валидируются в ai/actions.py.
 """
+import hashlib
 import time
 from typing import Dict, List, Optional, Tuple, Union
 
@@ -25,7 +26,7 @@ from . import textguard
 # (WORLD_CANON / _system_prompt / rules) — ОБЯЗАТЕЛЬНО инкрементируй версию
 # ("npc-v3" -> "npc-v4"). Версия уходит в журнал ai/llmlog вместе с каждым
 # вызовом, чтобы по логам было видно, какой промпт породил какой исход/стоимость.
-PROMPT_VERSION = "npc-v3"
+PROMPT_VERSION = "npc-v4"
 
 # короткая память диалога: (uid, npc_id) -> [{role, content}, ...]
 _history: Dict[Tuple[int, str], List[dict]] = {}
@@ -50,6 +51,20 @@ def _quest_context(ch, npc_id: str) -> str:
     except Exception:
         return ""
     bits = []
+    if ch.remort_count:
+        bits.append(f"герой вернулся после круга перерождения №{ch.remort_count} "
+                    "и помнит прежний путь")
+        completed = [QUESTS[qid]["name"] for qid, status in ch.quests.items()
+                     if status == "done" and qid in QUESTS
+                     and npc_id in (QUESTS[qid].get("giver"), QUESTS[qid].get("turn_in"))]
+        history = ch.flags.get("remort_quest_history") or {}
+        if isinstance(history, dict):
+            for qid, count in history.items():
+                q = QUESTS.get(qid)
+                if q and npc_id in (q.get("giver"), q.get("turn_in")) and count:
+                    completed.append(f"{q['name']} ({count} прежних кругов)")
+        if completed:
+            bits.append("ранее ты видел его подвиги: " + ", ".join(completed[-4:]))
     av = quest.available_quests(ch, npc_id)
     if av:
         bits.append("ты можешь предложить ему: " + ", ".join(QUESTS[q]["name"] for q in av))
@@ -139,6 +154,15 @@ def _player_brief(ch, player_text: Optional[str]) -> str:
     return f"{who} подходит к тебе. Поприветствуй его коротко, в характере."
 
 
+def _quest_cache_scope(ch) -> str:
+    """Не повторять старую реплику после реморта, нового квеста или выбора."""
+    choices = ch.flags.get("quest_choices") or {}
+    state = (ch.remort_count, ch.level, ch.room,
+             tuple(sorted(ch.quests.items())),
+             tuple(sorted(choices.items())) if isinstance(choices, dict) else ())
+    return hashlib.blake2s(repr(state).encode("utf-8"), digest_size=8).hexdigest()
+
+
 async def say_action(ch, npc_id: str,
                      player_text: Optional[str] = None,
                      now: float = None) -> Tuple[Optional[str], Optional[dict]]:
@@ -175,7 +199,9 @@ async def say_action(ch, npc_id: str,
 
     # пространство кэша — на (игрок, NPC), чтобы реплики с личной памятью/уровнем
     # НЕ протекали другим игрокам
-    cache_ns = f"{uid}:{npc_id}"
+    # Состояние квестов и уровень участвуют в системном промпте. Кэш ответа
+    # должен смениться при изменении этих фактов, а не только по TTL.
+    cache_ns = f"{uid}:{npc_id}:{_quest_cache_scope(ch)}"
     cache_key = player_text or "__greet__"
     cached = cost.CACHE.get(cache_ns, cache_key, now=now)
     if cached is not None:

@@ -1,0 +1,73 @@
+# Второй и последующие круги. Сюжет первого прохождения остаётся закрытым:
+# герой помнит его, а новые испытания повторяются один раз за круг.
+remort_witness:
+  name: "Память о прежнем пути"
+  giver: старейшина
+  turn_in: старейшина
+  min_remort: 1
+  repeat_on_remort: true
+  desc: >
+    Хальдер узнаёт тебя, хотя годы будто прошли мимо. Расскажи наставнику,
+    что помнишь о прошлом пути, и вернись: теперь он доверит тебе опасные дела.
+  objective: { type: talk, npc: наставник }
+  reward: { xp: 80, gold: 1000 }
+
+remort_pack:
+  name: "Стая помнит твоё имя"
+  giver: старейшина
+  turn_in: старейшина
+  min_remort: 1
+  min_level: 4
+  requires: remort_witness
+  repeat_on_remort: true
+  extra_kills_per_remort: 1
+  desc: >
+    Обычных волков ты уже одолел. Теперь вожаки собирают стаи у Брода;
+    срази их, прежде чем они ворвутся в город.
+  objective: { type: kill, mob: вожак_стаи, count: 2 }
+  reward: { xp: 240, gold: 4500 }
+
+remort_knight:
+  name: "Стражи за старым рубежом"
+  giver: старейшина
+  turn_in: старейшина
+  min_remort: 1
+  min_level: 9
+  requires: remort_pack
+  repeat_on_remort: true
+  extra_kills_per_remort: 1
+  desc: >
+    Ты знаешь, что один тёмный рыцарь не удерживал Руины в одиночку.
+    Вернись к вратам и сломай дозор его собратьев.
+  objective: { type: kill, mob: тёмный_рыцарь, count: 3 }
+  reward: { xp: 650, gold: 10000 }
+
+remort_nightmare:
+  name: "Кошмары под пеплом"
+  giver: разведчик_крон
+  turn_in: разведчик_крон
+  min_remort: 1
+  min_level: 18
+  requires: remort_knight
+  repeat_on_remort: true
+  extra_kills_per_remort: 1
+  desc: >
+    Крон помнит твоё прежнее донесение из Глуби. Теперь кошмары выходят
+    выше, чем прежде. Выследи и уничтожь их, пока отряд ещё держит проход.
+  objective: { type: kill, mob: глубинный_кошмар, count: 4 }
+  reward: { xp: 2500, gold: 30000 }
+
+remort_reaper:
+  name: "Жнецы нового круга"
+  giver: хранитель_бездны
+  turn_in: хранитель_бездны
+  min_remort: 1
+  min_level: 22
+  requires: remort_nightmare
+  repeat_on_remort: true
+  extra_kills_per_remort: 1
+  desc: >
+    Морн видел, как ты возвращался из смерти. Бездна тоже это помнит и
+    послала первотуманных жнецов. Останови их прежде, чем они найдут Брод.
+  objective: { type: kill, mob: первотуманный_жнец, count: 6 }
+  reward: { xp: 5500, gold: 65000 }

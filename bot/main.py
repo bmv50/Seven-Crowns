@@ -3070,6 +3070,7 @@ async def on_cb(cb: CallbackQuery):
             await cb.answer("Перерождение недоступно во время боя.", show_alert=True)
             return
         if ch.remort():
+            npc_ai.reset(ch.uid)             # новые реплики учитывают новый круг
             await save(ch, force=True)      # реморт (сброс уровня) — фиксируем сразу
             await cb.answer("🌟 Перерождение!", show_alert=True)
             _cap_note = ("\nСила достигла предела смертных — дальше только слава."

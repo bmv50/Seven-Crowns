@@ -496,6 +496,29 @@ async def scenario_remort_skill_reset_persists():
     check("whirlwind" not in loaded.loadout, "remort: старый пресет не возвращает сброшенное умение")
 
 
+async def scenario_remort_quest_history_persists():
+    db, _ = build()
+    ch = mkchar(uid=401)
+    ch.init_skills()
+    ch.level = 25
+    ch.flags["remort"] = 1
+    ch.flags["quest_choices"] = {"sample_choose_faith": "light"}
+    ch.quests = {"main_arrival": "done", "remort_witness": "done",
+                 "remort_pack": "active", "remort_pack:kills": "1"}
+    await db.create_character(ch)
+    check(ch.remort(), "remort quests: новый круг выполнен")
+    await db.save(ch)
+    loaded = (await db.load_all())[ch.uid]
+    check(loaded.remort_count == 2 and loaded.quests["main_arrival"] == "done",
+          "remort quests: прежний сюжет и новый круг пережили рестарт")
+    check(loaded.flags["quest_choices"]["sample_choose_faith"] == "light",
+          "remort quests: прежний выбор пережил рестарт")
+    check(loaded.flags["remort_quest_history"] == {"remort_witness": 1},
+          "remort quests: выполненное испытание архивировано и сохранено")
+    check("remort_witness" not in loaded.quests and "remort_pack:kills" not in loaded.quests,
+          "remort quests: старые статусы и незавершённый счётчик очищены")
+
+
 async def scenario_legacy_and_empty_loadout():
     """Старые строки получают базовые умения, но не все умения своего уровня."""
     db, conn = build()
@@ -537,6 +560,7 @@ async def run_all():
                scenario_skills_survive_restart_all_classes,
                scenario_skills_restore_and_recreate,
                scenario_remort_skill_reset_persists,
+               scenario_remort_quest_history_persists,
                scenario_legacy_and_empty_loadout):
         await fn()
 
