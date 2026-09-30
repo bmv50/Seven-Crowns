@@ -12,7 +12,7 @@ import random
 from engine.content import (validate, CLASSES, SKILLS, RACES, ITEMS, MOBS,
                             WORLD, QUESTS, RECIPES, NPCS, FACTIONS,
                             sell_price, SELL_RATE)
-from engine.character import Character, LEVEL_CAP
+from engine.character import Character, LEVEL_CAP, START_ROOM
 from engine.world import World
 from engine import combat, quest, craft, npc as npclib
 
@@ -1096,13 +1096,19 @@ check("3 реморта (15%) бонус ещё не упёрся в потол�
 # ── remort(): условие по LEVEL_CAP (не хардкод), сброс уровня/опыта, сохранение снаряжения/золота/талантов ──
 _rm = new_char("warrior", "human", uid=751)
 _rm.level = _LVLCAP - 1
+_rm.room = "old_dungeon"
 check("реморт НЕ проходит ниже LEVEL_CAP", not _rm.remort())
+check("неудачный реморт не телепортирует", _rm.room == "old_dungeon")
 _rm.level = _LVLCAP
 _rm.xp = 12345
 _rm.gold = 777000
 _rm.equipment["weapon"] = "ржавый_меч"
 _rm.flags["talent_points"] = 4
 _rm.flags["maxlvl_note"] = True
+_rm.flags["bind"] = "old_dungeon"
+_rm.flags["dungeon_run"] = "old_dungeon"
+_rm.target = "old_mob"
+_rm.effects = [{"type": "attr", "attr": "str", "amount": 1}]
 # Набор, накопленный к капу. Реморт обязан сбросить умения до базовых: он стал
 # ОСНОВНОЙ петлёй, и с полным арсеналом на 1 ур. круг превращается в каток.
 _rm.learned = list(_rm.class_basics) + ["last_stand", "deep_wound"]
@@ -1112,6 +1118,10 @@ _ok_rm = _rm.remort()
 check("реморт проходит на LEVEL_CAP", _ok_rm)
 check("реморт сбрасывает уровень в 1", _rm.level == 1)
 check("реморт сбрасывает опыт в 0", _rm.xp == 0)
+check("реморт возвращает в безопасный хаб", _rm.room == START_ROOM)
+check("реморт меняет точку возрождения на хаб", _rm.flags["bind"] == START_ROOM)
+check("реморт закрывает прежний забег", _rm.flags["dungeon_run"] is None)
+check("реморт очищает цель и временные эффекты", _rm.target is None and not _rm.effects)
 check("реморт сохраняет золото", _rm.gold == 777000)
 check("реморт сохраняет снаряжение", _rm.equipment["weapon"] == "ржавый_меч")
 check("реморт сохраняет очки талантов", _rm.flags.get("talent_points") == 4)

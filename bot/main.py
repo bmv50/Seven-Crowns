@@ -46,7 +46,7 @@ from aiogram.client.session.aiohttp import AiohttpSession
 
 from engine import content
 from engine.content import validate, CLASSES, SKILLS, ITEMS, WORLD, MOBS, RACES, QUESTS
-from engine.character import Character
+from engine.character import Character, START_ROOM
 from engine.world import World, ground_items_for, take_ground_item
 from engine.loop import GameLoop
 from engine.db import Database
@@ -274,7 +274,7 @@ chars: dict[int, Character] = {}
 # независимо от расы — расовые столицы (races.yaml start_room) больше не
 # раскидывают новичков по разным комнатам без наставника/туториала. Расовая
 # столица сохраняется как ch.flags["home_room"] (см. cmd на создание ниже).
-HUB_ROOM = "village"
+HUB_ROOM = START_ROOM
 # процесс создания: uid -> {"race": ..., "cls": ...}
 creating: dict[int, dict] = {}
 # ожидающие привязки реферера: uid нового игрока -> uid реферера (до создания
@@ -3077,7 +3077,8 @@ async def on_cb(cb: CallbackQuery):
             await safe_edit(cb,
                 f"🌟 *Перерождение №{ch.remort_count}!* Вы вновь 1 уровня, но навсегда сильнее "
                 f"(+{int(ch.remort_bonus*100)}% к силе и HP). Снаряжение, монеты и таланты "
-                f"сохранены; умения сброшены до базовых — учите их заново по уровням."
+                f"сохранены; умения сброшены до базовых — учите их заново по уровням. "
+                f"Вы вернулись в безопасный хаб."
                 f"{_cap_note}",
                 ui.kb_room(ch, world))
         else:

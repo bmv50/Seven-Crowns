@@ -22,6 +22,7 @@ RAGE_ON_HIT = 6               # ярость за полученный удар
 # Кап сведён к объёму рукотворного контента — полное прохождение ≈2,5–3 ч, —
 # а долгая игра вынесена в реморт-круги (см. remort() ниже).
 LEVEL_CAP = 25
+START_ROOM = "village"       # общий безопасный хаб создания и перерождения
 DURAB_MAX = 100           # макс. прочность снаряжения
 REPAIR_RATE = 50          # бронза за очко ремонта
 WEAR_SLOTS = ("weapon", "armor")
@@ -33,7 +34,7 @@ class Character:
     name: str
     cls: str                      # ключ класса
     race: str = "human"           # ключ расы
-    room: str = "village"
+    room: str = START_ROOM
     level: int = 1
     xp: int = 0
     hp: int = 0
@@ -250,7 +251,9 @@ class Character:
         навсегда +5% к силе (до потолка REMORT_BONUS_MAX).
 
         Сохраняются: золото, снаряжение, таланты, постоянный бонус реморта.
-        СБРАСЫВАЮТСЯ: выученные умения — до базовых класса.
+        СБРАСЫВАЮТСЯ: выученные умения — до базовых класса; текущий бой,
+        незавершённый забег и опасная точка возрождения. Новый круг начинается
+        в безопасном общем хабе.
 
         Почему умения сбрасываются (изменено 2026-08-12 вместе с капом 60→25):
         реморт стал ОСНОВНОЙ петлёй повторной игры, а не редкой наградой. Если
@@ -265,7 +268,12 @@ class Character:
         self.flags["remort"] = self.remort_count + 1
         self.level = 1
         self.xp = 0
+        self.room = START_ROOM
+        self.flags["bind"] = START_ROOM
+        self.flags["dungeon_run"] = None
         self.flags.pop("maxlvl_note", None)
+        self.target = None
+        self.effects = []
         self.learned = list(self.class_basics)
         self.loadout = [s for s in self.loadout if s in self.class_basics] \
             or list(self.class_basics)

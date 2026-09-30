@@ -22,7 +22,7 @@ import json
 import sys
 import time
 
-from engine.character import Character
+from engine.character import Character, START_ROOM
 from engine.content import CLASSES
 from engine.db import Database
 from engine import skills
@@ -478,12 +478,19 @@ async def scenario_remort_skill_reset_persists():
     skills.learn(ch, "whirlwind")
     ch.loadout = ["whirlwind"]
     skills.save_preset(ch, 1)
+    ch.room = "old_dungeon"
+    ch.flags["bind"] = "old_dungeon"
+    ch.flags["dungeon_run"] = "old_dungeon"
     await db.create_character(ch)
     check(ch.remort(), "remort: выполнен")
     await db.save(ch)
     loaded = (await db.load_all())[ch.uid]
     check(loaded.level == 1 and loaded.learned == list(ch.class_basics),
           "remort: сброс изученных умений пережил рестарт")
+    check(loaded.room == START_ROOM and loaded.flags["bind"] == START_ROOM,
+          "remort: безопасная комната и точка возрождения пережили рестарт")
+    check(loaded.flags["dungeon_run"] is None,
+          "remort: старый данж не возобновился после рестарта")
     check(loaded.loadout == ch.loadout, "remort: базовая панель пережила рестарт")
     skills.load_preset(loaded, 1)
     check("whirlwind" not in loaded.loadout, "remort: старый пресет не возвращает сброшенное умение")
