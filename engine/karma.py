@@ -94,15 +94,38 @@ def death_drop_chance(ch) -> float:
 SOFT_DEATH_LEVEL = 5
 
 
+def newcomer_protected(ch) -> bool:
+    """Первое прохождение до 5-го уровня защищено от принудительного PvP."""
+    return ch.level < SOFT_DEATH_LEVEL and ch.remort_count == 0
+
+
+def open_pvp_allowed(attacker, target) -> bool:
+    """Новичок не может ни начать, ни принять открытый бой; дуэли добровольны."""
+    return not (newcomer_protected(attacker) or newcomer_protected(target))
+
+
 def maybe_drop_on_death(ch):
-    """С шансом по карме выронить случайный предмет из сумки. Возвращает item|None.
-    Новичкам (уровень < SOFT_DEATH_LEVEL) — ничего не роняем (мягкая смерть)."""
+    """С шансом по карме выронить свободный предмет из сумки.
+
+    Надетые экземпляры не выпадают: иначе тот же предмет появится у победителя,
+    но останется активным в слоте проигравшего. Новичкам дроп отключён.
+    """
     if getattr(ch, "level", 99) < SOFT_DEATH_LEVEL:
         return None
     if not ch.inventory:
         return None
+    from collections import Counter
+    equipped = Counter(key for key in ch.equipment.values() if key)
+    available = []
+    for item in ch.inventory:
+        if equipped[item]:
+            equipped[item] -= 1
+        else:
+            available.append(item)
+    if not available:
+        return None
     if random.random() < death_drop_chance(ch):
-        item = random.choice(ch.inventory)
+        item = random.choice(available)
         ch.inventory.remove(item)
         return item
     return None

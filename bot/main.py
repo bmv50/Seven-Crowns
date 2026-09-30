@@ -4401,6 +4401,7 @@ async def show_group(cb: CallbackQuery, ch: Character):
     # а при низком онлайне комната пуста почти всегда; без доски экран был
     # тупиком: «пригласить некого» и никакого способа кого-то найти.
     from engine import lfg as _lfg
+    from engine import karma as _karma
     _n_lfg = len(_lfg.board_for(ch))
     rows = [[InlineKeyboardButton(
         text=(f"🔎 Ищу группу ({_n_lfg})" if _n_lfg else "🔎 Ищу группу"),
@@ -4412,7 +4413,7 @@ async def show_group(cb: CallbackQuery, ch: Character):
                                              callback_data=f"pinvite:{o.uid}"))
         line.append(InlineKeyboardButton(text=f"⚔️ Дуэль: {o.name}",
                                          callback_data=f"duel:{o.uid}"))
-        if not WORLD.get(ch.room, {}).get("safe"):
+        if not WORLD.get(ch.room, {}).get("safe") and _karma.open_pvp_allowed(ch, o):
             line.append(InlineKeyboardButton(text=f"🗡 Напасть: {o.name}",
                                              callback_data=f"pvpatk:{o.uid}"))
         rows.append(line)
@@ -4535,7 +4536,7 @@ async def start_duel(a_uid: int, b_uid: int):
             pass
 
 
-async def end_duel(winner: Character, loser: Character, lines):
+async def end_duel(winner: Character, loser: Character, lines, *, killed: bool = True):
     ranked = duel_mgr.duels.get(winner.uid, {}).get("ranked")
     is_open = duel_mgr.duels.get(winner.uid, {}).get("open")
     rank_line = {winner.uid: "", loser.uid: ""}
@@ -4547,24 +4548,25 @@ async def end_duel(winner: Character, loser: Character, lines):
             loser.gold -= stake
             winner.gold += stake
             lines.append(f"💰 Трофей: {money.fmt(stake)} переходит к {winner.name}.")
-        # карма убийце, если жертва была мирной
-        for kl in karma.on_pvp_kill(winner, loser, safe_zone=WORLD.get(winner.room, {}).get("safe", False)):
-            lines.append(kl)
-        # выпавший предмет жертвы достаётся победителю
-        drop = karma.maybe_drop_on_death(loser)
-        if drop:
-            winner.inventory.append(drop)
-            lines.append(f"🎒 {winner.name} забирает выроненное: {ITEMS.get(drop,{}).get('name',drop)}.")
-        await save(winner); await save(loser)
+        # Сдача — поражение со ставкой, но не убийство: без PK-кармы и дропа.
+        if killed:
+            for kl in karma.on_pvp_kill(winner, loser, safe_zone=WORLD.get(winner.room, {}).get("safe", False)):
+                lines.append(kl)
+            drop = karma.maybe_drop_on_death(loser)
+            if drop:
+                winner.inventory.append(drop)
+                lines.append(f"🎒 {winner.name} забирает выроненное: {ITEMS.get(drop,{}).get('name',drop)}.")
     if ranked:
         dw, dl = arena.update(winner, loser)
         rank_line[winner.uid] = f"\n🏟 Рейтинг арены: {arena.rating(winner)} ({dw:+d})"
         rank_line[loser.uid] = f"\n🏟 Рейтинг арены: {arena.rating(loser)} ({dl:+d})"
-        await save(winner); await save(loser)
     duel_mgr.end(winner.uid)
     for c in (winner, loser):
         c.hp = c.max_hp
         c.mp = c.start_resource()
+    # Сохраняем уже восстановленные HP/ресурс; денежные трофеи фиксируем сразу.
+    await save(winner, force=bool(is_open))
+    await save(loser, force=bool(is_open))
     for c, res in ((winner, "🏆 *Победа!*" + rank_line.get(winner.uid, "")),
                    (loser, "🏳️ *Поражение.*" + rank_line.get(loser.uid, ""))):
         dv = duel_view.pop(c.uid, None)
@@ -4604,12 +4606,18 @@ async def duel_challenge(cb: CallbackQuery, ch: Character, target_uid: int):
 
 async def pvp_attack(cb: CallbackQuery, ch: Character, target_uid: int):
     """Открытое нападение без согласия (только в опасных зонах)."""
+    if target_uid == ch.uid:
+        await cb.answer("Нельзя напасть на себя", show_alert=True); return
     target = chars.get(target_uid)
     if (not target or target.room != ch.room or target.hp <= 0
             or target.flags.get("dead") or not _presence.active(target_uid)):
         await cb.answer("Игрок не в этой комнате", show_alert=True); return
     if WORLD.get(ch.room, {}).get("safe"):
         await cb.answer("В безопасной зоне нападать нельзя", show_alert=True); return
+    from engine import karma as _karma
+    if not _karma.open_pvp_allowed(ch, target):
+        await cb.answer("Открытый PvP доступен обоим героям с 5 уровня первого прохождения. Дуэль — по согласию.",
+                        show_alert=True); return
     if world.living_in(ch.room) or ch.target:
         await cb.answer("Сначала закончите бой с монстрами", show_alert=True); return
     if duel_mgr.in_duel(ch.uid) or duel_mgr.in_duel(target_uid):
@@ -4662,7 +4670,14 @@ async def duel_attack(cb: CallbackQuery, ch: Character):
         await cb.answer("Сейчас не ваш ход"); return
     opp = chars.get(duel_mgr.opponent(ch.uid))
     if not opp:
-        await end_duel(ch, ch, ["Соперник вышел."]); return
+        duel_mgr.end(ch.uid)
+        duel_view.pop(ch.uid, None)
+        ch.init_vitals()
+        await save(ch)
+        await safe_edit(cb, "Соперник вышел. Дуэль отменена.\n\n" +
+                        ui.render_room(ch, world, others_in(ch.room)), ui.kb_room(ch, world))
+        await cb.answer()
+        return
     if not await _combat_action_ready(ch, cb.answer, duel=True):
         return
     ev = combat.player_vs_player(ch, opp)
@@ -4703,10 +4718,12 @@ async def duel_yield(cb: CallbackQuery, ch: Character):
         await cb.answer(); return
     opp = chars.get(duel_mgr.opponent(ch.uid))
     if opp:
-        await end_duel(opp, ch, [f"🏳️ {ch.name} сдаётся."])
+        await end_duel(opp, ch, [f"🏳️ {ch.name} сдаётся."], killed=False)
     else:
         duel_mgr.end(ch.uid)
         duel_view.pop(ch.uid, None)
+        ch.init_vitals()
+        await save(ch)
         await safe_edit(cb, ui.render_room(ch, world, others_in(ch.room)), ui.kb_room(ch, world))
     await cb.answer()
 
