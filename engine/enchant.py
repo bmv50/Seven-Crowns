@@ -21,11 +21,11 @@ def _set(ch, slot: str, v: int):
 
 
 def bonus_atk(ch) -> int:
-    return level(ch, "weapon") * ATK_PER if ch.equipment.get("weapon") else 0
+    return level(ch, "weapon") * ATK_PER if ch.active_item("weapon") else 0
 
 
 def bonus_def(ch) -> int:
-    return level(ch, "armor") * DEF_PER if ch.equipment.get("armor") else 0
+    return level(ch, "armor") * DEF_PER if ch.active_item("armor") else 0
 
 
 def cost(cur: int) -> int:

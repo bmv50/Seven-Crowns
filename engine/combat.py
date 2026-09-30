@@ -22,7 +22,7 @@ _WEAPON_DTYPE_KW = [
 
 
 def _weapon_dtype(ch) -> str:
-    w = ch.equipment.get("weapon")
+    w = ch.active_item("weapon")
     if w and w in ITEMS:
         it = ITEMS[w]
         if it.get("dmg_type"):

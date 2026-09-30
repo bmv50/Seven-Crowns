@@ -76,11 +76,27 @@ class Character:
         race_mod = self.race_data.get("attr_mod", {}).get(attr, 0)
         return base + growth + race_mod
 
+    def active_item(self, slot: str) -> Optional[str]:
+        """Надетый предмет действует только при текущем уровне и целой прочности.
+
+        Реморт сохраняет вещи на своих местах, но не обходит требования к ним.
+        """
+        key = self.equipment.get(slot)
+        if not key or key not in ITEMS:
+            return None
+        if slot in WEAR_SLOTS and self.durab(slot) == 0:
+            return None
+        from .equip import level_req
+        meta = ITEMS[key]
+        if self.level < level_req(meta) or self.remort_count < int(meta.get("remort_req", 0) or 0):
+            return None
+        return key
+
     def attr(self, name: str) -> int:
         """Итоговый атрибут с учётом экипировки и эффектов."""
         val = self._base_attr(name)
-        for slot, item_key in self.equipment.items():
-            if item_key and not (slot in WEAR_SLOTS and self.durab(slot) == 0):
+        for slot in self.equipment:
+            if item_key := self.active_item(slot):
                 val += ITEMS[item_key].get("bonus", {}).get(name, 0)
         for eff in self.effects:
             if eff.get("type") == "attr" and eff.get("attr") == name:
@@ -158,8 +174,8 @@ class Character:
         """Базовый урон обычной атаки = основной атрибут + бонус оружия."""
         prim = self.attr(self.primary_attr)
         weap = 0
-        w = self.equipment.get("weapon")
-        if w and self.durab("weapon") > 0:
+        w = self.active_item("weapon")
+        if w:
             weap = ITEMS[w].get("bonus", {}).get("atk", 0)
         from . import enchant, pets
         ench = enchant.bonus_atk(self) + pets.atk_bonus(self)
@@ -168,8 +184,8 @@ class Character:
     @property
     def defense(self) -> int:
         d = 0
-        for slot, item_key in self.equipment.items():
-            if item_key and not (slot in WEAR_SLOTS and self.durab(slot) == 0):
+        for slot in self.equipment:
+            if item_key := self.active_item(slot):
                 d += ITEMS[item_key].get("bonus", {}).get("defense", 0)
         from . import enchant, sockets
         return d + self.attr("dex") // 3 + enchant.bonus_def(self) + sockets.stat_bonus(self, "defense")
@@ -191,8 +207,8 @@ class Character:
         base += pets.crit_bonus(self)
         # крит с экипировки (аффиксы редких предметов), в процентах
         ecrit = 0
-        for slot, k in self.equipment.items():
-            if k and not (slot in WEAR_SLOTS and self.durab(slot) == 0):
+        for slot in self.equipment:
+            if k := self.active_item(slot):
                 ecrit += ITEMS[k].get("bonus", {}).get("crit", 0)
         base += ecrit / 100.0
         from . import sockets

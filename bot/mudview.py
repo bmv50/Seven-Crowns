@@ -214,8 +214,18 @@ def render_score(ch) -> str:
         pass
 
     # снаряжение
-    eq = [cmds.item_label(it) for slot in ("weapon", "armor", "shield")
-          if (it := ch.equipment.get(slot))]
+    from engine.equip import level_req
+    eq = []
+    for slot in ("weapon", "armor", "shield"):
+        it = ch.equipment.get(slot)
+        if not it:
+            continue
+        label = cmds.item_label(it)
+        if it in ITEMS and ch.level < level_req(ITEMS[it]):
+            label += f" 🔒 до уровня {level_req(ITEMS[it])}"
+        elif not ch.active_item(slot):
+            label += " ⚠️ не действует"
+        eq.append(label)
     if eq:
         L.append("━━━━━━━━━━━━━━━━━━")
         L.append("🎽 *Снаряжение:*")

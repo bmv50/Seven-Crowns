@@ -60,7 +60,7 @@ def stat_bonus(ch, stat: str) -> int:
     total = 0
     store = ch.flags.get("sockets", {})
     for slot, runes in store.items():
-        if not ch.equipment.get(slot):
+        if not ch.active_item(slot):
             continue
         for rk in runes:
             total += ITEMS.get(rk, {}).get("rune_bonus", {}).get(stat, 0)

@@ -633,7 +633,7 @@ check("учёт изученных видов", len(bc.flags["bestiary"]) == 1)
 
 # ─────────────────────── 21. ПРОЧНОСТЬ И РЕМОНТ ───────────────────────
 print("\n[21] Прочность снаряжения и ремонт")
-dd = new_char("warrior", "human", uid=460); dd.init_vitals()
+dd = new_char("warrior", "human", uid=460); dd.level = LEVEL_CAP; dd.init_vitals()
 dd.inventory = ["железный_меч"]; dd.equipment["weapon"] = "железный_меч"; dd.set_durab("weapon", 100)
 ap_full = dd.attack_power
 dd.set_durab("weapon", 0)
@@ -660,7 +660,7 @@ check("оружие изнашивается в бою", dd.durab("weapon") < 10
 # ─────────────────────── 22. ЗАЧАРОВАНИЕ ───────────────────────
 print("\n[22] Зачарование снаряжения")
 from engine import enchant as _ench
-ec = new_char("warrior", "human", uid=470); ec.init_vitals()
+ec = new_char("warrior", "human", uid=470); ec.level = LEVEL_CAP; ec.init_vitals()
 ec.inventory = ["железный_меч"]; ec.equipment["weapon"] = "железный_меч"; ec.set_durab("weapon", 100)
 ec.gold = 10_000_000
 ap0 = ec.attack_power
@@ -1015,6 +1015,7 @@ for _s in range(50):
     aff = _RA.affixes_for("red", _s)
     if any(a[0]=="crit" for a in aff): _critkey=_b+"#red#"+str(_s); break
 if _critkey:
+    _rg.level = max(_rg.level, _EQ.level_req(ITEMS[_critkey]))
     _rg.equipment["weapon"]=_critkey; _rg.set_durab("weapon",100)
     check("крит-аффикс поднимает крит", _rg.crit_chance > _c0)
 else:
