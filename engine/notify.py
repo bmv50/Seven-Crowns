@@ -8,12 +8,12 @@ Push-реактивация: чистое ядро уведомлений (бе�
 
 Модель:
   • Каталог категорий (CATEGORIES) + человекочитаемые названия (LABELS).
-  • Настройки игрока в ch.flags["notify"] = {категория: bool}, дефолт — всё вкл.
+  • Явное согласие push_enabled (по умолчанию False) + прежние prefs категорий.
   • Квота: ≤ N push/сутки на игрока, N — персональный пресет из
     ch.flags["notify"]["limit"] ∈ LIMIT_PRESETS (дефолт DEFAULT_LIMIT=2),
     счётчик+дата — в ch.flags["notify_quota"], КРОМЕ auction_* (сделки не
     режем — игрок ждёт их лично).
-  • Тихие часы 23:00–09:00 серверного времени: world_boss протухает (дроп),
+  • Тихие часы 23:00–09:00 в часовом поясе игрока: world_boss протухает (дроп),
     daily_reset/dungeon_ready/rested_full откладываются до 09:00. Игрок может
     отключить их тумблером ch.flags["notify"]["quiet_off"].
   • Очередь в памяти: emit() кладёт, due(now) отдаёт готовые к отправке.
@@ -22,7 +22,7 @@ Push-реактивация: чистое ядро уведомлений (бе�
 игры не меняется.
 """
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 ENABLED = False
 
@@ -73,6 +73,15 @@ _QUEUE = []
 def enabled(ch, cat: str) -> bool:
     """Включена ли категория у игрока (дефолт — всё включено)."""
     return bool(ch.flags.get("notify", {}).get(cat, True))
+
+
+def opted_in(ch) -> bool:
+    """Фоновые push только после явного включения игроком; прежние prefs не стираем."""
+    return ch.flags.get("notify", {}).get("push_enabled") is True
+
+
+def set_opt_in(ch, on: bool):
+    ch.flags.setdefault("notify", {})["push_enabled"] = bool(on)
 
 
 def set_pref(ch, cat: str, on: bool):
@@ -172,32 +181,33 @@ def is_quiet(now: float, ch=None) -> bool:
     return h >= QUIET_START or h < QUIET_END
 
 
-def next_morning(now: float) -> float:
-    """Ближайшие 09:00 (>= now)."""
-    dt = datetime.fromtimestamp(now)
+def next_morning(now: float, ch=None) -> float:
+    """Ближайшие 09:00 в часовом поясе игрока, независимо от TZ сервера."""
+    dt = datetime.fromtimestamp(now, timezone.utc) + timedelta(hours=tz_offset(ch))
     morning = dt.replace(hour=QUIET_END, minute=0, second=0, microsecond=0)
-    ts = morning.timestamp()
+    ts = (morning - timedelta(hours=tz_offset(ch))).timestamp()
     if ts <= now:
         ts += 86400
     return ts
 
 
 # ───────── квота (чистые функции) ─────────
-def _today(now: float) -> str:
-    return datetime.fromtimestamp(now).strftime("%Y-%m-%d")
+def _today(now: float, ch=None) -> str:
+    return (datetime.fromtimestamp(now, timezone.utc) +
+            timedelta(hours=tz_offset(ch))).strftime("%Y-%m-%d")
 
 
 def quota_left(ch, now: float) -> int:
     lim = limit(ch)
     q = ch.flags.get("notify_quota") or {}
-    if q.get("date") != _today(now):
+    if q.get("date") != _today(now, ch):
         return lim
     return max(0, lim - int(q.get("count", 0)))
 
 
 def _quota_bump(ch, now: float):
     """Учесть один отправленный push (со сбросом счётчика по дате)."""
-    today = _today(now)
+    today = _today(now, ch)
     q = ch.flags.get("notify_quota") or {}
     if q.get("date") != today:
         q = {"date": today, "count": 0}
@@ -211,7 +221,7 @@ def record_sent(ch, cat: str, now: float):
     Нужно для рассылок broadcast_all: там политика проверяется через allow()
     (читает квоту), но САМ счётчик надо двигать явно — иначе мировые пуши
     (world_event/world_boss/…) не расходуют лимит и он не соблюдается. Сделки
-    (_OFF_QUOTA) вне лимита — их не считаем (как и в due())."""
+    (_OFF_QUOTA) вне лимита — их не считаем. due() квоту не изменяет."""
     if cat in _OFF_QUOTA:
         return
     _quota_bump(ch, now)
@@ -220,7 +230,7 @@ def record_sent(ch, cat: str, now: float):
 def allow(ch, cat: str, now: float) -> str:
     """Решение по политике для одной записи (чистое, без сайд-эффектов).
     -> "send" | "drop" | "defer" (defer => отложить до 09:00)."""
-    if not enabled(ch, cat):
+    if cat not in CATEGORIES or not opted_in(ch) or not enabled(ch, cat):
         return "drop"
     if is_quiet(now, ch):
         if cat in _QUIET_DROP:
@@ -236,20 +246,22 @@ def allow(ch, cat: str, now: float) -> str:
 
 
 # ───────── очередь ─────────
-def emit(uid: int, category: str, text: str, fire_at: float = None):
+def emit(uid: int, category: str, text: str, fire_at: float = None,
+         expires_at: float = None):
     """Положить уведомление в очередь (fire_at — не раньше этого времени)."""
     if not ENABLED:
         return
     _QUEUE.append({"uid": uid, "category": category, "text": text,
-                   "fire_at": fire_at or 0.0})
+                   "fire_at": fire_at or 0.0, "expires_at": expires_at})
 
 
-def emit_broadcast(category: str, text: str, fire_at: float = None):
+def emit_broadcast(category: str, text: str, fire_at: float = None,
+                   expires_at: float = None):
     """Широковещательное уведомление (uid=None → bot разошлёт всем целям)."""
     if not ENABLED:
         return
     _QUEUE.append({"uid": None, "category": category, "text": text,
-                   "fire_at": fire_at or 0.0})
+                   "fire_at": fire_at or 0.0, "expires_at": expires_at})
 
 
 def pending() -> int:
@@ -265,12 +277,15 @@ def due(now: float, chars: dict = None):
 
     chars: uid -> Character (для проверки настроек/квоты). Широковещательные
     (uid=None) отдаются как есть — bot применит политику per-uid при рассылке.
-    Записи с fire_at в будущем остаются в очереди. Отправленные персональные
-    учитываются в квоте. Отложенные (defer) переставляются на 09:00.
+    Записи с fire_at в будущем остаются в очереди. Выдача НЕ расходует квоту:
+    record_sent вызывается доставщиком только после успешной отправки.
+    Отложенные (defer) переставляются на 09:00 в часовом поясе игрока.
     """
     chars = chars or {}
     ready, keep = [], []
     for rec in _QUEUE:
+        if rec.get("expires_at") is not None and rec["expires_at"] <= now:
+            continue
         if rec["fire_at"] > now:
             keep.append(rec)
             continue
@@ -278,16 +293,16 @@ def due(now: float, chars: dict = None):
             ready.append(rec)
             continue
         ch = chars.get(rec["uid"])
-        if ch is None:                    # оффлайн: bot решит по БД сам
+        if ch is None:                    # нет настроек: доставщик откажет безопасно
             ready.append(rec)
             continue
         verdict = allow(ch, rec["category"], now)
         if verdict == "send":
-            _quota_bump(ch, now)
             ready.append(rec)
         elif verdict == "defer":
-            rec["fire_at"] = next_morning(now)
-            keep.append(rec)
+            rec["fire_at"] = next_morning(now, ch)
+            if rec.get("expires_at") is None or rec["fire_at"] < rec["expires_at"]:
+                keep.append(rec)
         # drop — просто выбрасываем
     _QUEUE[:] = keep
     return ready

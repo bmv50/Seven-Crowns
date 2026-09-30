@@ -9,7 +9,7 @@
 import os
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 from engine import notify
 from engine.character import Character
@@ -29,12 +29,14 @@ def check(name, cond):
 
 
 def new_char(uid=1):
-    return Character(uid=uid, name="Тест", cls="warrior", race="human")
+    ch = Character(uid=uid, name="Тест", cls="warrior", race="human")
+    notify.set_opt_in(ch, True)
+    return ch
 
 
 def ts(y=2026, mo=7, d=2, h=12, mi=0):
-    """unix-время для заданного локального часа (тихие часы — по локали)."""
-    return datetime(y, mo, d, h, mi, 0).timestamp()
+    """Локальное время игрока +3; не зависит от TZ машины с тестами."""
+    return datetime(y, mo, d, h, mi, 0, tzinfo=timezone(timedelta(hours=3))).timestamp()
 
 
 notify.ENABLED = True   # для тестов очереди
@@ -74,7 +76,7 @@ check("auction_sold в тихие часы всё равно -> send", notify.al
 
 # next_morning
 _nm = notify.next_morning(_night)
-check("next_morning указывает на 09:00", datetime.fromtimestamp(_nm).hour == 9)
+check("next_morning указывает на 09:00", notify._hour(_nm) == 9)
 check("next_morning в будущем", _nm > _night)
 _late = ts(h=23, mi=30)
 check("после 23:00 next_morning — утро следующего дня", notify.next_morning(_late) > _late)
@@ -113,7 +115,7 @@ check("emit кладёт в очередь", notify.pending() == 1)
 _ready = notify.due(_day, chars)
 check("due отдаёт готовую запись", len(_ready) == 1 and _ready[0]["text"] == "текст-1")
 check("после выдачи очередь пуста", notify.pending() == 0)
-check("выдача учтена в квоте", notify.quota_left(ch, _day) == 1)
+check("выдача НЕ расходует квоту до доставки", notify.quota_left(ch, _day) == 2)
 
 # fire_at в будущем — не отдаётся сейчас
 notify.clear()

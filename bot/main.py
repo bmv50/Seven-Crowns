@@ -54,6 +54,9 @@ from engine.lifecycle_errors import (
     ActiveCharacterExists, StaleCharacterWrite, CharacterNotFound, RestoreExpired,
     NameTaken)
 from engine.persist import CharDirtySet
+from engine.interaction import Presence, ActionPacer, PlayerClock
+from engine.notification_delivery import NotificationDelivery
+from bot.input_middleware import InputMiddleware
 from engine import persist as _persist
 from engine import log as _elog
 from engine import textsafe as _ts
@@ -442,16 +445,42 @@ def _mark_session(uid: int):
 
 async def _touch_seen(uid: int):
     """Обновить last_seen не чаще раза в 60 сек на игрока (не душим БД)."""
-    if not (_notify.ENABLED and db and db.pool):
+    if not (db and db.pool) or uid not in chars:
         return
     now = asyncio.get_event_loop().time()
-    if now - _last_seen_at.get(uid, 0) < 60:
+    if uid in _last_seen_at and now - _last_seen_at[uid] < 60:
         return
-    _last_seen_at[uid] = now
     try:
-        await db.touch_last_seen(uid)
-    except Exception:
-        pass
+        async with asyncio.timeout(2.0):
+            await db.touch_last_seen(uid)
+        _last_seen_at[uid] = now
+    except Exception as e:
+        _elog.log_err(_log, "touch_last_seen_failed", e, uid=uid)
+
+
+_presence = Presence()
+_action_pacer = ActionPacer()
+_player_clock = PlayerClock(changed=lambda uid: _char_dirty.mark(uid))
+_seen_tasks: dict[int, asyncio.Task] = {}
+
+
+async def _on_input(uid: int):
+    _mark_session(uid)
+    # Метаданные присутствия не должны останавливать бой при медленной БД.
+    # Один фоновый запрос на uid; настоящий ввод уже отмечен middleware.
+    if uid not in chars or uid in _seen_tasks:
+        return
+    task = asyncio.create_task(_touch_seen(uid))
+    _seen_tasks[uid] = task
+    task.add_done_callback(lambda done: _seen_tasks.pop(uid, None)
+                           if _seen_tasks.get(uid) is done else None)
+
+
+_input_middleware = InputMiddleware(
+    _presence, _on_input,
+    blocked=lambda uid: _mod.is_banned(uid) and not is_admin(uid))
+dp.message.outer_middleware(_input_middleware)
+dp.callback_query.outer_middleware(_input_middleware)
 
 
 async def send(uid: int, text: str):
@@ -467,7 +496,6 @@ async def send(uid: int, text: str):
             try:
                 await bot.send_message(uid, text)
                 _elog.log_err(_log, "send_markdown_fallback", None, uid=uid)
-                await _touch_seen(uid)
                 return
             except Exception as e2:
                 e, _msg = e2, str(e2).lower()
@@ -476,7 +504,6 @@ async def send(uid: int, text: str):
         if not ("blocked" in _msg or "forbidden" in _msg or "deactivated" in _msg
                 or "chat not found" in _msg):
             _elog.log_err(_log, "send_failed", e, uid=uid, cid=_cid_var.get())
-    await _touch_seen(uid)
 
 
 EPHEMERAL_TTL = 40   # сек — сколько живёт эфемерная строка окружения по умолчанию
@@ -496,7 +523,8 @@ async def send_ephemeral(uid: int, text: str, ttl: float = EPHEMERAL_TTL):
     другого игрока, ambient-реплика NPC). Плейтест владельца: такие строки
     спамили чат — теперь исчезают сами через ttl секунд, не засоряя историю."""
     try:
-        m = await bot.send_message(uid, text, parse_mode="Markdown")
+        m = await bot.send_message(uid, text, parse_mode="Markdown",
+                                   disable_notification=True)
     except Exception:
         return
     asyncio.create_task(_delete_after(uid, m.message_id, ttl))
@@ -508,11 +536,14 @@ async def broadcast_world_event(text: str, ttl: float):
     ttl приходит из движка и равен остатку жизни события (для сообщения о
     завершении — короткий events.ENDED_TTL). Плейтест владельца: анонсы
     накапливались в чате и через сутки утверждали, что нашествие идёт прямо
-    сейчас. Оффлайн-игрокам такие события шлёт broadcast_all — там удаление
-    тоже включено, см. параметр ttl.
+    сейчас. Кладём запись с дедлайном в очередь: сетевые вызовы не должны
+    останавливать игровой тик. Оффлайн-рассылка использует broadcast_all.
     """
+    import time as _time
+    deadline = _time.time() + ttl
     for c in list(chars.values()):
-        await send_ephemeral(c.uid, text, ttl)
+        if _presence.active(c.uid):
+            _notify.emit(c.uid, "world_event", text, expires_at=deadline)
 
 
 async def broadcast_ephemeral(room: str, text: str, ttl: float = EPHEMERAL_TTL,
@@ -520,8 +551,9 @@ async def broadcast_ephemeral(room: str, text: str, ttl: float = EPHEMERAL_TTL,
     """broadcast, но каждое сообщение — эфемерное (см. send_ephemeral).
     Как и gl.broadcast, шлём только живым игрокам комнаты (мёртвый «заморожен»
     на экране смерти — ambient-спам ему ни к чему)."""
-    for c in chars.values():
-        if c.room == room and c.hp > 0 and c.uid != exclude:
+    for c in list(chars.values()):
+        if (c.room == room and c.hp > 0 and c.uid != exclude
+                and _presence.active(c.uid)):
             await send_ephemeral(c.uid, text, ttl)
 
 
@@ -541,6 +573,12 @@ def _evict_stale(uid: int) -> None:
     затирает нового/восстановленного героя, а игрок не застревает в крашах."""
     chars.pop(uid, None)
     _char_dirty.discard(uid)
+    _presence.forget(uid)
+    _player_clock.forget(uid)
+    _action_pacer.refund(uid)
+    task = _seen_tasks.pop(uid, None)
+    if task is not None:
+        task.cancel()
 
 
 async def save(ch: Character, force: bool = False):
@@ -581,65 +619,45 @@ async def flush_dirty_chars():
                       pending=len(_char_dirty), last_ok=ok)
 
 
-async def broadcast_all(text: str, category: str, ttl: float = None):
-    """Рассылка по ВСЕМ uid из БД (а не только онлайн из chars) с батчингом и
-    rate-limit ~25 msg/сек. Учёт настроек/квоты per-uid; 403 -> пометить в БД.
-    world_boss: кто был замечен (last_seen) в последние 10 минут — уже онлайн
-    и получит внутриигровой анонс напрямую (см. GameLoop.tick), повторный
-    push ему не нужен — исключаем через exclude_recent_sec.
+async def broadcast_all(text: str, category: str, ttl: float = None,
+                         expires_at: float = None):
+    """Единая рассылка: согласие, настройки, квота и тихие часы для каждого uid.
 
-    ttl (сек) — если задан, каждое отправленное сообщение самоудалится через
-    это время. Нужен для анонсов мировых событий: событие временное, значит
-    и сообщение о нём не должно висеть в чате вечно."""
+    chars — кэш ВСЕХ загруженных героев, не список онлайн. Пустой список целей
+    БД не подменяем кэшем: он может означать, что все адресаты заблокировали бота.
+    У временного анонса общий срок годности, не новый ttl на каждого адресата.
+    """
     import time as _time
-    _exclude_recent = 600 if category == "world_boss" else None
-    targets = await db.list_notify_targets(exclude_recent_sec=_exclude_recent) \
-        if (db and db.pool) else []
-    if not targets:
-        # без БД — хотя бы онлайн-игрокам (деградация)
-        targets = [(u,) for u in chars]
-    now = _time.time()
+    if not _notify.ENABLED:
+        return 0
+    targets = await db.list_notify_targets() if (db and db.pool) else [
+        (u,) for u in list(chars) if _presence.active(u)]
+    deadline = expires_at if expires_at is not None else (
+        _time.time() + ttl if ttl is not None else None)
+    if deadline is not None and deadline <= _time.time():
+        return 0
     sent = 0
     for i, (uid,) in enumerate(targets):
-        ch = chars.get(uid)
-        # для онлайн-игроков уважаем их настройки/квоту; оффлайн — шлём (это
-        # именно тот случай, ради которого push и придуман — вернуть игрока)
-        if ch is not None and _notify.allow(ch, category, now) != "send":
-            continue
-        try:
-            _m = await bot.send_message(uid, text, parse_mode="Markdown")
-            if ttl:
-                asyncio.create_task(_delete_after(uid, _m.message_id, ttl))
+        if await _notify_deliver(uid, category, text, expires_at=deadline) == "sent":
             sent += 1
-            # Этап 7.2 (bugfix): рассылка учитывает суточную квоту онлайн-игрока —
-            # раньше allow() лишь ЧИТАЛ квоту, а счётчик здесь не двигался, и лимит
-            # для world_event/world_boss де-факто не соблюдался. record_sent сам
-            # пропускает off-quota категории (сделки аукциона).
-            if ch is not None:
-                _notify.record_sent(ch, category, now)
-            if db and db.pool:
-                await db.log_notify(uid, category, True)
-        except Exception as e:
-            code = getattr(e, "error_code", None) or getattr(
-                getattr(e, "response", None), "status_code", None)
-            msg = str(e).lower()
-            if code == 403 or "blocked" in msg or "forbidden" in msg or "deactivated" in msg:
-                if db and db.pool:
-                    await db.mark_notify_blocked(uid)
-            else:
-                _note_tg_error(e)   # 429 -> счётчик Health
-                # неожиданная ошибка доставки (не блокировка) — фиксируем контекст
-                _elog.log_err(_log, "broadcast_send_failed", e, uid=uid,
-                              category=category, cid=_cid_var.get())
-            if db and db.pool:
-                await db.log_notify(uid, category, False)
-        if sent % 25 == 0 and sent:
+        if (i + 1) % 25 == 0:
             await asyncio.sleep(1.0)     # rate-limit Telegram (~25/сек)
     return sent
 
 
+async def _queue_world_notify(text: str, category: str):
+    """Синхронная постановка из GameLoop; доставкой занимается отдельный воркер."""
+    import time as _time
+    deadline = _time.time() + 300 if category == "world_boss" else None
+    _notify.emit_broadcast(category, text, expires_at=deadline)
+
+
+async def _queue_personal_notify(uid: int, category: str, text: str):
+    _notify.emit(uid, category, text)
+
+
 def others_in(room: str):
-    return [c for c in chars.values() if c.room == room]
+    return [c for c in chars.values() if c.room == room and _presence.active(c.uid)]
 
 
 _ATTR_RU = {"str": "Сила", "dex": "Ловкость", "int": "Интеллект", "spi": "Дух"}
@@ -652,7 +670,7 @@ def apply_attrbuff(ch: Character, eff: dict) -> str:
     for attr, amt in eff["attrbuff"].items():
         ch.effects.append({"type": "attr", "attr": attr, "amount": amt, "turns": dur})
         parts.append(f"+{amt} {_ATTR_RU.get(attr, attr)}")
-    return f"🍖 Подкрепление: {', '.join(parts)} ({dur} ходов)"
+    return f"🍖 Подкрепление: {', '.join(parts)} ({dur} сек.)"
 
 
 async def clear_intro(uid: int):
@@ -1207,6 +1225,13 @@ async def do_pets(cb: CallbackQuery, ch: Character, action: str, arg: str):
 
 async def do_dungeon(cb: CallbackQuery, ch: Character, did: str):
     from engine import dungeon
+    if _in_combat(ch):
+        await cb.answer("Сначала завершите бой или сбегите.", show_alert=True)
+        return
+    cfg = dungeon.DUNGEONS.get(did)
+    if cfg and ch.room != cfg.get("entrance_room"):
+        await cb.answer("Вы не у входа в это подземелье.", show_alert=True)
+        return
     ok, reason = dungeon.can_enter(ch, did)
     if not ok:
         await cb.answer(reason, show_alert=True)
@@ -1696,7 +1721,6 @@ async def on_text(message: Message):
     uid = message.from_user.id
     text = (message.text or "").strip()
     _cid_var.set(uuid.uuid4().hex[:8])   # Этап 9: correlation id этой цепочки
-    _mark_session(uid)   # Этап 7.1: session_start по тишине ≥30 мин
 
     # Этап 7.2: гейт бана — забаненный не проходит дальше (админов не трогаем).
     if _mod.is_banned(uid) and not is_admin(uid):
@@ -1960,11 +1984,12 @@ async def on_text(message: Message):
             await message.answer(f"👥 Вы (группе): {arg}")
         return
     if cmd in ("кто", "who"):
-        if not chars:
+        active_chars = [c for c in chars.values() if _presence.active(c.uid)]
+        if not active_chars:
             await message.answer("Никого нет.")
         else:
             L = ["🌐 *Онлайн:*"]
-            for c in chars.values():
+            for c in active_chars:
                 L.append(f"• {CLASSES[c.cls]['emoji']} {c.name} (ур.{c.level}) — {WORLD[c.room]['name']}")
             await message.answer("\n".join(L), parse_mode="Markdown")
         return
@@ -1993,11 +2018,55 @@ async def on_text(message: Message):
 
 
 # ───────── действия ─────────
-async def move_core(ch: Character, direction: str) -> bool:
-    """Переместить игрока (без показа экрана). True — успех."""
+def _in_combat(ch: Character) -> bool:
+    return duel_mgr.in_duel(ch.uid) or any(ch.uid in m.aggro for m in world.living_in(ch.room))
+
+
+def _combat_mob(ch: Character):
+    target = world.find(ch.room, ch.target) if ch.target else None
+    if target and ch.uid in target.aggro:
+        return target
+    return next((m for m in world.living_in(ch.room) if ch.uid in m.aggro), None)
+
+
+def _leave_combat(ch: Character):
+    for mob in world.living_in(ch.room):
+        if ch.uid in mob.aggro:
+            mob.aggro.remove(ch.uid)
+        mob.threat.pop(ch.uid, None)
+    ch.target = None
+    ch.reset_combat_resource()
+
+
+def _combat_party(ch: Character):
+    """Загруженный, но неактивный герой не становится бесплатной целью лечения."""
+    return [c for c in chars.values() if c.room == ch.room and c.hp > 0
+            and not duel_mgr.in_duel(c.uid)
+            and (c.uid == ch.uid or _presence.active(c.uid) or _in_combat(c))]
+
+
+async def _combat_action_ready(ch: Character, answer, duel: bool = False) -> bool:
+    if ch.hp <= 0 or ch.flags.get("dead"):
+        await answer("💀 Вы пали. Возродитесь через экран смерти.")
+        return False
+    if duel_mgr.in_duel(ch.uid) and not duel:
+        await answer("В дуэли используйте её боевую панель.")
+        return False
+    _player_clock.advance(ch)
+    wait = _action_pacer.acquire(ch.uid)
+    if wait > 0:
+        await answer(f"⌛ Следующее боевое действие через {wait:.1f} сек.")
+        return False
+    return True
+
+
+async def move_core(ch: Character, direction: str) -> tuple[bool, bool]:
+    """Переместить игрока без экрана; (успех, вступил в бой)."""
+    if _in_combat(ch):
+        return False, False  # карта/старое меню не обходят команду побега
     exits = WORLD[ch.room]["exits"]
     if direction not in exits:
-        return False
+        return False, False
     old = ch.room
     for m in world.living_in(old):
         if ch.uid in m.aggro:
@@ -2042,7 +2111,11 @@ def _help_text(ch: Character) -> str:
 async def do_move(target, ch: Character, direction: str, cb=None):
     moved, _ = await move_core(ch, direction)
     if not moved:
-        if cb: await cb.answer("Туда нельзя", show_alert=True)
+        reason = "Сначала сбегите из боя (flee / 🏃)." if _in_combat(ch) else "Туда нельзя."
+        if cb:
+            await cb.answer(reason, show_alert=True)
+        else:
+            await target.answer(reason)
         return
     await enter_room(ch, cb=cb)
     await send_tutorial(ch, "move")
@@ -2061,13 +2134,14 @@ async def do_attack(cb: CallbackQuery, ch: Character, mob_key: str):
         await safe_edit(cb, "🤷 Враг повержен или ушёл.\n\n" +
                         ui.render_room(ch, world, others_in(ch.room)), ui.kb_room(ch, world))
         return
+    if not await _combat_action_ready(ch, cb.answer):
+        return
     started = bool(combat_view.get(ch.uid, {}).get("id"))
     ch.target = mob.key
     if ch.uid not in mob.aggro:
         mob.aggro.append(ch.uid)
     # на первом ходу панель временно привязана к меню комнаты (для пере-поста при мгновенном килле)
     cv = _cv(ch.uid); cv["chat"] = cb.message.chat.id; cv["id"] = cb.message.message_id
-    combat.advance_player_turn(ch)          # тик кулдаунов/баффов
     ev = combat.player_basic_attack(ch, mob)
     set_combat_line(ch.uid, "player", "\n".join(ev))
     await send_tutorial(ch, "attack")       # первый удар — шаг обучения
@@ -2084,17 +2158,14 @@ async def do_attack(cb: CallbackQuery, ch: Character, mob_key: str):
 
 
 async def do_skill(cb: CallbackQuery, ch: Character, sid: str):
-    party = [c for c in chars.values() if c.room == ch.room and c.hp > 0]
+    if not await _combat_action_ready(ch, cb.answer):
+        return
+    party = _combat_party(ch)
     ok, ev = combat.use_skill(ch, sid, world, party)
     if not ok:
+        _action_pacer.refund(ch.uid)
         await cb.answer(ev[0].replace("*", ""), show_alert=True)
         return
-    sk = SKILLS[sid]
-    # успешный скилл = ход прошёл: тикаем кулдауны/баффы, но сохраняем
-    # только что выставленный кулдаун этого скилла
-    _fresh_cd = ch.cooldowns.get(sid, 0)
-    combat.advance_player_turn(ch)
-    ch.cooldowns[sid] = _fresh_cd
     set_combat_line(ch.uid, "player", "\n".join(ev))
     await send_tutorial(ch, "skill")        # первое умение — шаг обучения
     analytics.track_once(ch, "first_skill")   # Этап 7.1
@@ -2141,10 +2212,8 @@ def _seven_crowns_block(ch) -> str:
     return "\n".join(L)
 
 
-async def do_use(cb: CallbackQuery, ch: Character, key: str):
-    if key not in ch.inventory:
-        await cb.answer("Нет такого предмета", show_alert=True)
-        return
+def _consume_item(ch: Character, key: str):
+    """Одинаковые эффекты/квесты для текстовой команды и кнопки (без await)."""
     eff = ITEMS[key].get("effect", {})
     _is_potion = "heal" in eff        # зелье лечения — шаг обучения
     msg = []
@@ -2161,10 +2230,18 @@ async def do_use(cb: CallbackQuery, ch: Character, key: str):
     _quse = quest.on_use_item(ch, key)
     if _quse:
         msg.extend(_quse)
+    return msg or [f"Использовано: {ITEMS[key]['name']}"], _is_potion
+
+
+async def do_use(cb: CallbackQuery, ch: Character, key: str):
+    if key not in ch.inventory or ITEMS.get(key, {}).get("type") != "consumable":
+        await cb.answer("Нет подходящего расходника", show_alert=True)
+        return
+    if not await _combat_action_ready(ch, cb.answer):
+        return
+    msg, _is_potion = _consume_item(ch, key)
     # если в бою — остаёмся в боевой клаве
     in_combat = ch.target and world.find(ch.room, ch.target)
-    if in_combat:
-        combat.advance_player_turn(ch)      # глоток зелья в бою — ход
     await save(ch)
     if _is_potion:
         await send_tutorial(ch, "potion")
@@ -2184,6 +2261,8 @@ async def do_equip(cb: CallbackQuery, ch: Character, key: str):
     ok, reason = _equip.can_equip(ch, key)
     if not ok:
         await cb.answer(reason, show_alert=True); return
+    if _in_combat(ch) and not await _combat_action_ready(ch, cb.answer):
+        return
     meta = ITEMS[key]
     slot = meta.get("slot")
     if slot == "ring":
@@ -2196,14 +2275,14 @@ async def do_equip(cb: CallbackQuery, ch: Character, key: str):
 
 
 async def do_flee(cb: CallbackQuery, ch: Character):
-    mob = world.find(ch.room, ch.target) if ch.target else None
+    mob = _combat_mob(ch)
     if not mob:
         await show_room(cb.message, ch, edit_cb=cb); return
-    combat.advance_player_turn(ch)          # побег — тоже ход
+    if not await _combat_action_ready(ch, cb.answer):
+        return
     if random.random() < 0.5:
-        if ch.uid in mob.aggro:
-            mob.aggro.remove(ch.uid)
-        ch.target = None
+        _leave_combat(ch)
+        await save(ch)
         await drop_combat_photo(ch.uid)
         combat_view.pop(ch.uid, None)
         await gl.broadcast(ch.room, f"🏃 {ch.name} отступает.", exclude=ch.uid)
@@ -2225,14 +2304,13 @@ async def text_action(message, ch: Character, verb: str, arg: str):
     """Текстовые команды действий: cast/bash/flee/get/use/wield/drop/kill."""
     from bot import mudnames
     if verb == "flee":
-        mob = world.find(ch.room, ch.target) if ch.target else None
+        mob = _combat_mob(ch)
         if not mob:
             await message.answer("Вы не в бою."); return
-        combat.advance_player_turn(ch)
+        if not await _combat_action_ready(ch, message.answer):
+            return
         if random.random() < 0.5:
-            if ch.uid in mob.aggro:
-                mob.aggro.remove(ch.uid)
-            ch.target = None
+            _leave_combat(ch)
             await drop_combat_photo(ch.uid)
             combat_view.pop(ch.uid, None)
             await save(ch)
@@ -2255,8 +2333,19 @@ async def text_action(message, ch: Character, verb: str, arg: str):
             sid = mudnames.match_skill(arg, ch.skills)
         if not sid:
             await message.answer("🚫 Такого умения нет в вашей боевой панели."); return
-        party = [c for c in chars.values() if c.room == ch.room and c.hp > 0]
+        if not await _combat_action_ready(ch, message.answer):
+            return
+        party = _combat_party(ch)
         ok, lines = combat.use_skill(ch, sid, world, party)
+        if not ok:
+            _action_pacer.refund(ch.uid)
+        else:
+            await send_tutorial(ch, "skill")
+            analytics.track_once(ch, "first_skill")
+            for mob in list(world.living_in(ch.room)):
+                if mob.hp <= 0:
+                    killers = [chars[u] for u in mob.aggro if u in chars]
+                    await gl.on_mob_death(mob, killers)
         await save(ch)
         await message.answer("\n".join(lines), parse_mode="Markdown")
         return
@@ -2285,6 +2374,8 @@ async def text_action(message, ch: Character, verb: str, arg: str):
             okq, reason = _equip.can_equip(ch, key)
             if not okq:
                 await message.answer("🚫 " + reason); return
+            if _in_combat(ch) and not await _combat_action_ready(ch, message.answer):
+                return
             slot = ITEMS[key].get("slot")
             if slot == "ring":
                 slot = "ring1" if not ch.equipment.get("ring1") else "ring2"
@@ -2293,14 +2384,16 @@ async def text_action(message, ch: Character, verb: str, arg: str):
             await save(ch)
             await message.answer(f"⚙️ Экипировано: {mudnames.item_label(key)}")
         else:
-            eff = ITEMS[key].get("effect", {})
-            if eff.get("heal"):
-                ch.hp = min(ch.max_hp, ch.hp + eff["heal"] * content.HP_SCALE)
-            if eff.get("mana"):
-                ch.mp = min(ch.max_resource, ch.mp + eff["mana"])
-            ch.inventory.remove(key)
+            if ITEMS.get(key, {}).get("type") != "consumable":
+                await message.answer("🚫 Этот предмет нельзя использовать как расходник.")
+                return
+            if not await _combat_action_ready(ch, message.answer):
+                return
+            lines, is_potion = _consume_item(ch, key)
             await save(ch)
-            await message.answer(f"🧪 Использовано: {mudnames.item_label(key)}")
+            if is_potion:
+                await send_tutorial(ch, "potion")
+            await message.answer(f"🧪 Использовано: {mudnames.item_label(key)}\n" + "\n".join(lines))
         return
     if verb == "kill":
         mob = None
@@ -2414,23 +2507,15 @@ async def card_buy(cb: CallbackQuery, ch: Character, key: str):
 
 
 async def card_use(cb: CallbackQuery, ch: Character, key: str):
-    if key not in ch.inventory:
+    if key not in ch.inventory or ITEMS.get(key, {}).get("type") != "consumable":
         await cb.answer("Нет предмета", show_alert=True); return
-    eff = ITEMS[key].get("effect", {})
-    msg = []
-    if "heal" in eff:
-        before = ch.hp; ch.hp = min(ch.max_hp, ch.hp + eff["heal"] * content.HP_SCALE)
-        msg.append(f"+{ch.hp - before} HP")
-    if "mana" in eff and ch.resource_type == "mana":
-        before = ch.mp; ch.mp = min(ch.max_resource, ch.mp + eff["mana"])
-        msg.append(f"+{ch.mp - before} MP")
-    if "attrbuff" in eff:
-        msg.append(apply_attrbuff(ch, eff))
-    if not msg:
-        await cb.answer("Этот предмет нельзя использовать так", show_alert=True); return
-    ch.inventory.remove(key)
+    if not await _combat_action_ready(ch, cb.answer):
+        return
+    msg, is_potion = _consume_item(ch, key)
     await save(ch)
-    await cb.answer("🧪 " + ", ".join(msg))
+    if is_potion:
+        await send_tutorial(ch, "potion")
+    await cb.answer(("🧪 " + ", ".join(msg))[:190])
     if key in ch.inventory:
         await safe_edit_caption(cb, ui.item_caption(key, "inv", ch), ui.kb_item_card(key, "inv", ch))
     else:
@@ -2448,6 +2533,8 @@ async def card_unequip(cb: CallbackQuery, ch: Character, key: str):
             break
     if not slot:
         await cb.answer("Этот предмет не надет", show_alert=True); return
+    if _in_combat(ch) and not await _combat_action_ready(ch, cb.answer):
+        return
     ch.equipment[slot] = None
     await save(ch)
     await cb.answer("🚫 Снято")
@@ -2461,6 +2548,8 @@ async def card_equip(cb: CallbackQuery, ch: Character, key: str):
     ok, reason = _equip.can_equip(ch, key)
     if not ok:
         await cb.answer(reason, show_alert=True); return
+    if _in_combat(ch) and not await _combat_action_ready(ch, cb.answer):
+        return
     meta = ITEMS[key]
     slot = meta.get("slot")
     if slot == "ring":
@@ -2695,7 +2784,6 @@ async def on_cb(cb: CallbackQuery):
     data = cb.data or ""
     action, _, arg = data.partition(":")
     _cid_var.set(uuid.uuid4().hex[:8])   # Этап 9: correlation id этой цепочки
-    _mark_session(uid)   # Этап 7.1: session_start по тишине ≥30 мин
     _note_action(uid, data[:48])         # хвост действий для отчёта /bug
     # нажал кнопку вместо описания бага — значит, передумал (см. cmd_bug)
     if action != "bug":
@@ -2819,8 +2907,7 @@ async def on_cb(cb: CallbackQuery):
             await cb.answer("Не получилось удалить. Попробуйте ещё раз.", show_alert=True)
             return
         pending_reset.pop(uid, None)
-        chars.pop(uid, None)
-        _char_dirty.discard(uid)
+        _evict_stale(uid)
         try:
             await cb.message.edit_text("🔄 Прогресс сброшен. Напишите /start, чтобы начать заново.")
         except Exception:
@@ -2885,7 +2972,8 @@ async def on_cb(cb: CallbackQuery):
             await cb.answer("Не удалось отправить файл.", show_alert=True)
         return
 
-    if ch.flags.get("dead") and action != "respawn":
+    _non_game_settings = {"settings", "notify", "nmaster", "ntog", "nlim", "nquiet", "ntz", "ntzset"}
+    if ch.flags.get("dead") and action != "respawn" and action not in _non_game_settings:
         await cb.answer("Вы мертвы. Нажмите «⚰️ Возродиться».", show_alert=True)
         return
     if action == "respawn":
@@ -2931,7 +3019,9 @@ async def on_cb(cb: CallbackQuery):
     elif action == "inv":
         await safe_edit(cb, ui.render_inventory(ch), ui.kb_inventory(ch))
     elif action == "rest":
-        if not WORLD[ch.room].get("rest"):
+        if _in_combat(ch):
+            await cb.answer("Сначала завершите бой или сбегите.", show_alert=True)
+        elif not WORLD[ch.room].get("rest"):
             await cb.answer("Здесь не отдохнуть.", show_alert=True)
         else:
             ch.hp = ch.max_hp
@@ -2976,6 +3066,9 @@ async def on_cb(cb: CallbackQuery):
         from engine import professions
         await safe_edit(cb, professions.render(ch), ui.kb_player(ch))
     elif action == "remort":
+        if _in_combat(ch):
+            await cb.answer("Перерождение недоступно во время боя.", show_alert=True)
+            return
         if ch.remort():
             await save(ch, force=True)      # реморт (сброс уровня) — фиксируем сразу
             await cb.answer("🌟 Перерождение!", show_alert=True)
@@ -3296,6 +3389,9 @@ async def on_cb(cb: CallbackQuery):
     elif action == "map":
         await send_map(cb, ch)
     elif action == "mapgo":
+        if _in_combat(ch):
+            await cb.answer("Сначала сбегите из боя (flee / 🏃).", show_alert=True)
+            return
         moved, engaged = await move_core(ch, arg)
         if moved and engaged:
             await enter_room(ch, cb=cb)      # бой — закрыть карту, выйти в главное меню
@@ -3416,6 +3512,10 @@ async def on_cb(cb: CallbackQuery):
     elif action == "settings":
         await safe_edit(cb, ui.render_settings(ch), ui.kb_settings(ch))
     elif action == "notify":
+        await safe_edit(cb, ui.render_notify(ch), ui.kb_notify(ch))
+    elif action == "nmaster":
+        _notify.set_opt_in(ch, not _notify.opted_in(ch))
+        await save(ch)
         await safe_edit(cb, ui.render_notify(ch), ui.kb_notify(ch))
     elif action == "ntog":
         if arg in _notify.CATEGORIES:
@@ -3661,7 +3761,8 @@ async def _admin_card_data(target: int):
     ch = chars.get(target)
     if ch is not None:
         return {"uid": target, "name": ch.name, "level": ch.level, "gold": ch.gold,
-                "room": WORLD.get(ch.room, {}).get("name", ch.room), "online": True}
+                "room": WORLD.get(ch.room, {}).get("name", ch.room),
+                "online": _presence.active(ch.uid)}
     if db and db.pool:
         row = await db.pool.fetchrow(
             "SELECT uid,name,level,gold,room FROM characters "
@@ -4251,7 +4352,8 @@ def render_map(ch: Character) -> str:
 # ───────── ГРУППЫ И ДУЭЛИ ─────────
 def players_in_room(ch: Character):
     """Другие онлайн-игроки в этой же комнате."""
-    return [c for c in chars.values() if c.uid != ch.uid and c.room == ch.room and c.hp > 0]
+    return [c for c in chars.values() if c.uid != ch.uid and c.room == ch.room
+            and c.hp > 0 and _presence.active(c.uid)]
 
 
 def _kb(rows):
@@ -4481,7 +4583,8 @@ async def end_duel(winner: Character, loser: Character, lines):
 
 async def duel_challenge(cb: CallbackQuery, ch: Character, target_uid: int):
     target = chars.get(target_uid)
-    if not target or target.room != ch.room:
+    if (not target or target.room != ch.room or target.hp <= 0
+            or target.flags.get("dead") or not _presence.active(target_uid)):
         await cb.answer("Игрок не в этой комнате", show_alert=True); return
     if world.living_in(ch.room) or ch.target:
         await cb.answer("Сначала закончите бой с монстрами", show_alert=True); return
@@ -4500,7 +4603,8 @@ async def duel_challenge(cb: CallbackQuery, ch: Character, target_uid: int):
 async def pvp_attack(cb: CallbackQuery, ch: Character, target_uid: int):
     """Открытое нападение без согласия (только в опасных зонах)."""
     target = chars.get(target_uid)
-    if not target or target.room != ch.room:
+    if (not target or target.room != ch.room or target.hp <= 0
+            or target.flags.get("dead") or not _presence.active(target_uid)):
         await cb.answer("Игрок не в этой комнате", show_alert=True); return
     if WORLD.get(ch.room, {}).get("safe"):
         await cb.answer("В безопасной зоне нападать нельзя", show_alert=True); return
@@ -4521,6 +4625,13 @@ async def pvp_attack(cb: CallbackQuery, ch: Character, target_uid: int):
 
 
 async def duel_accept(cb: CallbackQuery, ch: Character):
+    challenger = chars.get(duel_mgr.requests.get(ch.uid))
+    if (challenger is None or challenger.room != ch.room or challenger.hp <= 0
+            or challenger.flags.get("dead") or not _presence.active(challenger.uid)
+            or _in_combat(ch) or _in_combat(challenger)):
+        duel_mgr.decline(ch.uid)
+        await cb.answer("Вызов истёк или участник уже занят боем.", show_alert=True)
+        return
     pair = duel_mgr.accept(ch.uid)
     if not pair:
         await cb.answer("Вызов истёк", show_alert=True); return
@@ -4550,7 +4661,11 @@ async def duel_attack(cb: CallbackQuery, ch: Character):
     opp = chars.get(duel_mgr.opponent(ch.uid))
     if not opp:
         await end_duel(ch, ch, ["Соперник вышел."]); return
+    if not await _combat_action_ready(ch, cb.answer, duel=True):
+        return
     ev = combat.player_vs_player(ch, opp)
+    await save(ch)
+    await save(opp)
     if opp.hp <= 1:
         await end_duel(ch, opp, ev)
         await cb.answer()
@@ -4567,13 +4682,14 @@ async def duel_potion(cb: CallbackQuery, ch: Character):
     pot = _has_heal_potion(ch)
     if not pot:
         await cb.answer("Нет зелья", show_alert=True); return
-    eff = ITEMS[pot].get("effect", {})
+    if not await _combat_action_ready(ch, cb.answer, duel=True):
+        return
     before = ch.hp
-    ch.hp = min(ch.max_hp, ch.hp + eff.get("heal", 0) * content.HP_SCALE)
-    ch.inventory.remove(pot)
+    _consume_item(ch, pot)
     line = [f"🧪 {ch.name} пьёт зелье (+{ch.hp - before} HP)."]
     opp = chars.get(duel_mgr.opponent(ch.uid))
     duel_mgr.pass_turn(ch.uid)
+    await save(ch)
     await refresh_duel(ch, line)
     if opp:
         await refresh_duel(opp, line)
@@ -5062,28 +5178,52 @@ async def guild_manage(cb: CallbackQuery, ch: Character):
     rows.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="guild")])
     await safe_edit(cb, "⚙️ *Управление составом*\n⬆ повысить · ⬇ понизить · ❌ исключить", _kb(rows))
 
-async def _notify_deliver(uid: int, category: str, text: str):
-    """Доставить одну персональную запись (оффлайн — прямо; онлайн — по политике)."""
+async def _send_notification(uid: int, category: str, text: str, ttl: float = None):
+    """Только транспорт. Политику и квоту применяет NotificationDelivery."""
     import time as _time
-    ch = chars.get(uid)
-    if ch is not None and _notify.allow(ch, category, _time.time()) != "send":
-        return
+    deadline = _time.time() + ttl if ttl is not None else None
+    success = False
+    blocked = False
     try:
-        await bot.send_message(uid, text, parse_mode="Markdown")
-        analytics.track(uid, "notification_sent", {"category": category})   # Этап 7.1
+        try:
+            msg = await bot.send_message(uid, text, parse_mode="Markdown")
+        except TelegramBadRequest as e:
+            if "can't parse entities" not in str(e).lower():
+                raise
+            msg = await bot.send_message(uid, text)
+        success = True
+        if deadline is not None:
+            asyncio.create_task(_delete_after(uid, msg.message_id, max(0, deadline - _time.time())))
+        analytics.track(uid, "notification_sent", {"category": category})
         _last_notify_sent[uid] = _time.time()
-        if db and db.pool:
-            await db.log_notify(uid, category, True)
     except Exception as e:
+        _note_tg_error(e)
         code = getattr(e, "error_code", None) or getattr(
             getattr(e, "response", None), "status_code", None)
-        if code == 403 or "blocked" in str(e).lower() or "forbidden" in str(e).lower():
-            if db and db.pool:
-                await db.mark_notify_blocked(uid)
-        else:
+        err = str(e).lower()
+        blocked = code == 403 or any(s in err for s in (
+            "blocked", "forbidden", "deactivated", "chat not found"))
+        if not blocked:
             _elog.log_err(_log, "notify_deliver_failed", e, uid=uid, category=category)
-        if db and db.pool:
-            await db.log_notify(uid, category, False)
+    # Ошибка телеметрии после успешного send НЕ отменяет доставку и квоту.
+    if db and db.pool:
+        try:
+            if blocked:
+                await db.mark_notify_blocked(uid)
+            await db.log_notify(uid, category, success)
+        except Exception as e:
+            _elog.log_err(_log, "notify_log_failed", e, uid=uid, category=category)
+    return success
+
+
+_notification_delivery = NotificationDelivery(
+    chars.get, _send_notification, changed=lambda uid: _char_dirty.mark(uid))
+
+
+async def _notify_deliver(uid: int, category: str, text: str, ttl: float = None,
+                          expires_at: float = None):
+    return await _notification_delivery.deliver(
+        uid, category, text, ttl=ttl, expires_at=expires_at)
 
 
 async def _daily_reset_broadcast():
@@ -5112,28 +5252,35 @@ async def _daily_reset_broadcast():
 _daily_reset_broadcast._done = None
 
 
-async def notify_worker(interval: float = 60.0):
-    """Фон: раз в минуту разбирает БД-расписание и очередь notify.due()."""
+async def notify_worker(interval: float = 1.0):
+    """Очередь проверяем каждую секунду; БД-расписание и ежедневку раз в минуту.
+
+    Массовая доставка выполняется здесь, а не внутри GameLoop.tick().
+    """
     import time as _time
     await asyncio.sleep(10)      # дать боту прогреться
+    next_schedule_poll = 0.0
     while True:
         try:
             now = _time.time()
             # 1) созревшие записи из БД-расписания (dungeon_ready и т.п.)
-            if db and db.pool:
-                for uid, category, payload in await db.pop_due_schedule(now):
-                    if uid == 0:
-                        continue
-                    text = payload or _notify.LABELS.get(category, "🔔 Уведомление")
-                    await _notify_deliver(uid, category, text)
+            if now >= next_schedule_poll:
+                if db and db.pool:
+                    for uid, category, payload in await db.pop_due_schedule(now):
+                        if uid == 0:
+                            continue
+                        text = payload or _notify.LABELS.get(category, "🔔 Уведомление")
+                        await _notify_deliver(uid, category, text)
+                await _daily_reset_broadcast()
+                next_schedule_poll = now + 60.0
             # 2) очередь в памяти (боссы-broadcast, отложенные emit)
-            for rec in _notify.due(now, chars):
+            for rec in _notify.due(_time.time(), chars):
                 if rec["uid"] is None:
-                    await broadcast_all(rec["text"], rec["category"])
+                    await broadcast_all(rec["text"], rec["category"],
+                                         expires_at=rec.get("expires_at"))
                 else:
-                    await _notify_deliver(rec["uid"], rec["category"], rec["text"])
-            # 3) ежедневный ресет в 09:00
-            await _daily_reset_broadcast()
+                    await _notify_deliver(rec["uid"], rec["category"], rec["text"],
+                                          expires_at=rec.get("expires_at"))
         except Exception as e:
             _elog.log_err(_log, "notify_worker_tick_failed", e)
         await asyncio.sleep(interval)
@@ -5179,7 +5326,7 @@ async def _epic_outward(prev_season, epic: str):
             _ch = _by_name.get(_nm)
             if _ch is None:
                 continue
-            await send(_ch.uid,
+            await _notify_deliver(_ch.uid, "season_rollover",
                        f"🏛 *Вы вошли в летопись сезона {prev_season}.*\n\n{epic}")
     except Exception as e:                      # noqa: BLE001
         _elog.log_err(_log, "epic_personal_push_failed", e, season=prev_season)
@@ -5534,6 +5681,9 @@ async def main():
             _elog.log_err(_log, "guild_db_init_failed", e)
 
     gl = GameLoop(world, chars, send, save)
+    gl.is_active = _presence.active
+    gl.player_clock = _player_clock
+    gl.on_personal_notify = _queue_personal_notify
     # восстановить снимок мира и таймеры боссов (после создания World, ДО gl.run)
     if db and db.pool:
         try:
@@ -5551,16 +5701,15 @@ async def main():
     gl.on_combat_reward = combat_reward  # награда за убийство пере-постит панель вниз
     gl.on_death = death_screen           # экран смерти с кнопкой возрождения
     gl.referral_lookup = chars.get       # найти реферера по uid (награда на левелапе друга)
-    gl.on_referral = send                # доставить текст рефереру (оффлайн — молча, см. send())
+    gl.on_referral = lambda uid, text: _queue_personal_notify(uid, "guild_event", text)
     gl.on_ambient = broadcast_ephemeral  # анонс забредания + ambient NPC — эфемерные строки
     gl.on_world_event = broadcast_world_event  # анонс события живёт столько же, сколько событие
-    if _notify.ENABLED:
-        gl.on_world_notify = broadcast_all   # анонс босса — по всем uid из БД
+    gl.on_world_notify = _queue_world_notify  # рассылка не блокирует боевой тик
     # Этап 9: воркеры регистрируются в реестре (_spawn_worker) — watchdog держит
     # их ссылки, ловит падение и перезапускает (до 3/час, дальше — алерт админам).
     _spawn_worker("game_loop", lambda: gl.run(interval=1.0))
     if _notify.ENABLED:
-        _spawn_worker("notify_worker", lambda: notify_worker(interval=60.0))
+        _spawn_worker("notify_worker", lambda: notify_worker(interval=1.0))
         print("🔔 Push-реактивация включена (NOTIFY=1).")
     # бог-оркестратор: мировые события по решению LLM (или fallback) + летопись
     # сезона. Запускаем только если мировые события включены.

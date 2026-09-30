@@ -656,7 +656,7 @@ def kb_combat(ch: Character, world: World) -> InlineKeyboardMarkup:
             _ans = _combat.windup_answer(sk)
             mark = WINDUP_MARK.get(_ans, mark)
         if cd > 0:
-            label = f"{sk['emoji']}⏳{cd}"
+            label = f"{sk['emoji']}⏳{cd}с"
         elif ch.mp < sk["mp"]:
             label = f"{sk['emoji']}{ch.resource_emoji}"
         else:
@@ -1149,7 +1149,9 @@ def render_notify(ch: Character) -> str:
                   if _nf.quiet_off(ch) else
                   "_Тихие часы 23:00–09:00: часть уведомлений откладывается до утра._")
     L = ["🔔 *Уведомления*", "",
-         "_Бот пишет первым о важных событиях. Настройте, что получать._",
+         ("✅ Фоновые уведомления разрешены." if _nf.opted_in(ch) else
+          "🔕 Фоновые уведомления выключены. Включите их, если хотите получать push."),
+         "_Ответы на ваши команды и сообщения текущего боя приходят как обычно._",
          f"_Не более {lim} в сутки (сделки аукциона — вне лимита)._",
          quiet_line, ""]
     for cat in _nf.CATEGORIES:
@@ -1160,7 +1162,9 @@ def render_notify(ch: Character) -> str:
 
 def kb_notify(ch: Character) -> InlineKeyboardMarkup:
     from engine import notify as _nf
-    rows = []
+    rows = [[InlineKeyboardButton(
+        text="🔕 Выключить все push" if _nf.opted_in(ch) else "🔔 Разрешить push",
+        callback_data="nmaster")]]
     for cat in _nf.CATEGORIES:
         on = _nf.enabled(ch, cat)
         mark = "🔔" if on else "🔕"

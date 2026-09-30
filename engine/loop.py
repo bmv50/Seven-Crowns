@@ -122,6 +122,9 @@ class GameLoop:
         # push по всем uid из БД (bot привяжет broadcast_all). loop не знает про
         # Telegram; при None — молча пропускаем (поведение без NOTIFY не меняется).
         self.on_world_notify = None
+        self.on_personal_notify = None  # async (uid, category, text), политика транспорта
+        self.is_active = None           # uid -> bool; None для headless-симуляций
+        self.player_clock = None        # общее серверное время кнопок/текста/тика
         # опц. колбэк: callable uid -> Character|None — найти реферера по uid
         # (bot привяжет chars.get). Нужен для награды рефереру на левелапе.
         self.referral_lookup = None
@@ -148,7 +151,19 @@ class GameLoop:
         self._roam_announced: Dict[str, float] = {}
 
     def party_in(self, room: str) -> List[Character]:
-        return [c for c in self.chars.values() if c.room == room and c.hp > 0]
+        return [c for c in self.chars.values() if c.room == room and c.hp > 0
+                and self.active(c.uid)]
+
+    def active(self, uid: int) -> bool:
+        return self.is_active is None or self.is_active(uid)
+
+    async def announce(self, text: str, category: str):
+        if self.on_world_notify:
+            await self.on_world_notify(text, category)
+        else:
+            for ch in list(self.chars.values()):
+                if self.active(ch.uid):
+                    await self.send(ch.uid, text)
 
     def roam_announce_allowed(self, room: str, now: float = None) -> bool:
         """Можно ли анонсировать «забредает сюда» в этой комнате прямо сейчас.
@@ -169,6 +184,8 @@ class GameLoop:
 
     async def on_mob_death(self, mob: MobInstance, killers: List[Character]):
         """Раздать награды всем, кто был в аггро-листе (кооп)."""
+        if not mob.alive:
+            return  # один моб — одна награда, даже при повторе callback/тика
         self.world.kill(mob)
         m = mob.meta
         # Пати: к убийцам добавляем сопартийцев в той же комнате — но только
@@ -245,6 +262,11 @@ class GameLoop:
             loot_items.append(_red)
         corpse = self.world.add_corpse(mob.room, mob, loot_items) if loot_items else None
         _diff_tag = {"green": "", "yellow": " 🟡", "red": " 🔴"}
+        # Общую цель двигает смерть моба, а не число получателей награды.
+        # Вызываем после отбора участников, но до индивидуальной раздачи:
+        # все (включая лекаря) попадут в вклад даже на завершающем убийстве.
+        _event_lines = events.on_mob_kill(
+            (ch.uid for ch in killers), mob.mob_id, _zone) if events.ENABLED else []
         for ch in killers:
             _df = combat.mob_difficulty(ch.level, mob_lvl)
             _xp = int(base_xp * ch.xp_mult * combat.DIFF_XP[_df] * content.XP_RATE * _emod["xp"] * streak.xp_mult(ch))
@@ -288,10 +310,7 @@ class GameLoop:
             # прогресс квестов на убийство
             for qline in quest.on_kill(ch, mob.mob_id):
                 msg.append(qline)
-            # вклад в ОБЩУЮ цель мирового события (счётчик один на всех)
-            if events.ENABLED:
-                for eline in events.on_kill(ch.uid, mob.mob_id, _zone):
-                    msg.append(eline)
+            msg.extend(_event_lines)
             _dl = daily.on_kill(ch, mob.mob_id)
             if _dl:
                 msg.append(_dl)
@@ -323,8 +342,8 @@ class GameLoop:
         # смена контроля над территорией
         if _terr_flip:
             _fn = MOBS and __import__("engine.content", fromlist=["FACTIONS"]).FACTIONS.get(_terr_flip, {}).get("name", _terr_flip)
-            for c in self.chars.values():
-                await self.send(c.uid, f"⚔️ *{_fn}* установил контроль над зоной «{_zone}»!")
+            await self.announce(
+                f"⚔️ *{_fn}* установил контроль над зоной «{_zone}»!", "guild_event")
             chronicle.record("territory", f"«{_fn}» установил контроль над зоной «{_zone}»")
         # боссовое событие
         if m.get("boss"):
@@ -334,9 +353,8 @@ class GameLoop:
             _raid_note = (" 🔴 С тела пала БОЖЕСТВЕННАЯ добыча!"
                           if mob.mob_id in RAID_IDS and len({k.uid for k in killers}) >= 2 else "")
             _title = "РЕЙД-БОСС" if mob.mob_id in RAID_IDS else "МИРОВОЙ БОСС"
-            for c in self.chars.values():
-                await self.send(c.uid, f"🏆 *{_title} {m['name']} ПОВЕРЖЕН!* "
-                                       f"Слава победителям: {names}.{_raid_note}")
+            await self.announce(f"🏆 *{_title} {m['name']} ПОВЕРЖЕН!* "
+                                f"Слава победителям: {names}.{_raid_note}", "world_boss")
             chronicle.record("boss", f"{names} сразил(и) {m['name']}")
 
     async def _reward_event_goal(self, done: dict):
@@ -349,7 +367,7 @@ class GameLoop:
         for uid, n in (done.get("contrib") or {}).items():
             ch = self.chars.get(uid)
             if ch is None or n <= 0:
-                continue                 # оффлайн-участник награду не получает
+                continue                 # персонажа нет в кэше / нет вклада
             rew = events.goal_reward(ch.level, done.get("share", 0.5))
             ch.xp += rew["xp"]
             ch.gold += rew["gold"]
@@ -357,7 +375,10 @@ class GameLoop:
                       f"Ваш вклад: {n}. Награда: +{rew['xp']} опыта, "
                       f"+{money.fmt(rew['gold'])}."]
             await self._check_levelup(ch, _lines)
-            await self.send(uid, "\n".join(_lines))
+            if self.active(uid):
+                await self.send(uid, "\n".join(_lines))
+            elif self.on_personal_notify:
+                await self.on_personal_notify(uid, "world_event", "\n".join(_lines))
             await self.save(ch)
         chronicle.record("event", f"Цель события «{done.get('name')}» выполнена "
                                   f"общими усилиями ({len(done.get('contrib') or {})} участн.)")
@@ -422,10 +443,19 @@ class GameLoop:
     async def tick(self):
         now = time.time()
         occupied = {c.room for c in self.chars.values()
-                    if c.hp > 0 and not c.flags.get("dead")}
-        # Ленивый режим: обрабатываем только активные комнаты (игроки + соседи).
-        # Бой возможен лишь там, где есть игроки, поэтому ограничение безопасно.
-        rooms_iter = catchup.active_set(occupied) if catchup.ENABLED \
+                    if c.hp > 0 and not c.flags.get("dead") and self.active(c.uid)}
+        # Ушедший из чата игрок не замораживает уже начатый бой и не получает
+        # бессмертие. Но просто загруженные из БД герои не оживляют все комнаты.
+        engaged = {uid for room, mobs in self.world.mobs.items() for mob in mobs
+                   if mob.alive for uid in mob.aggro
+                   if uid in self.chars and self.chars[uid].room == room
+                   and self.chars[uid].hp > 0 and not self.chars[uid].flags.get("dead")}
+        simulated = occupied | {self.chars[uid].room for uid in engaged}
+        if self.player_clock:
+            for ch in list(self.chars.values()):
+                if ch.hp > 0 and not ch.flags.get("dead"):
+                    self.player_clock.advance(ch, regenerate=self.active(ch.uid) or ch.uid in engaged)
+        rooms_iter = catchup.active_set(simulated) if catchup.ENABLED \
             else list(self.world.mobs.keys())
         # 1) мобы атакуют по таймерам
         for room in rooms_iter:
@@ -489,13 +519,17 @@ class GameLoop:
                             await self.broadcast(room, line)
                     continue
                 all_lines = poison_lines + combat.mob_attack(mob, victim, heavy=_heavy)
+                if victim.hp <= 0:
+                    # Смерть фиксируем ДО сетевого обновления панели. Иначе в
+                    # ожидании Telegram игрок успевал выпить зелье с HP <= 0.
+                    await self.on_player_death(victim)
+                    continue
+                await self.save(victim)  # HP/износ сохраняются и без ответа игрока
                 if self.on_combat_hit:
                     await self.on_combat_hit(victim, mob, all_lines)
                 else:
                     for line in all_lines:
                         await self.broadcast(room, line)
-                if victim.hp <= 0:
-                    await self.on_player_death(victim)
         # Час сбора: раз в сутки в локальные 20:00 зовём игроков в общую точку.
         # Дешёвая проверка (сравнение часа и даты), поэтому живёт прямо в тике.
         lfg.tick_gather(self.chars, now)
@@ -538,11 +572,7 @@ class GameLoop:
                     _bmsg = (f"🐉 *МИРОВОЙ БОСС*: {inst.meta['name']} "
                              f"объявился в «{rn}»! Соберите отряд за щедрой наградой!")
                     # онлайн-игрокам — сразу; всем зарегистрированным — через push
-                    if self.on_world_notify:
-                        await self.on_world_notify(_bmsg, "world_boss")
-                    else:
-                        for c in self.chars.values():
-                            await self.send(c.uid, _bmsg)
+                    await self.announce(_bmsg, "world_boss")
         # «живые» NPC: Utility AI + FSM (вне боя), только если слой включён.
         # В ленивом режиме обрабатываем только активные комнаты (как и бой/респавн).
         # Ambient-реплики — эфемерные (self-destruct через bot.on_ambient), чтобы
@@ -575,11 +605,12 @@ class GameLoop:
                 # но буфер всё равно чистим, иначе он растёт бесконечно.
                 events.drain_announcements()
                 for line in _started + _ended:
-                    for c in self.chars.values():
-                        await self.send(c.uid, line)
+                    for c in list(self.chars.values()):
+                        if self.active(c.uid):
+                            await self.send(c.uid, line)
         # 2) респавн и истлевание трупов
         if catchup.ENABLED:
-            catchup.tick(self.world, occupied, now, npc_ai)
+            catchup.tick(self.world, simulated, now, npc_ai)
         else:
             self.world.process_respawns()
         self.world.process_corpse_decay()

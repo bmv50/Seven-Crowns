@@ -375,7 +375,7 @@ def use_skill(ch: Character, skill_id: str, world: World,
         return False, ["🚫 Вы не владеете этим умением."]
     sk = SKILLS[skill_id]
     if ch.cooldowns.get(skill_id, 0) > 0:
-        return False, [f"⏳ {sk['name']} перезаряжается ({ch.cooldowns[skill_id]})."]
+        return False, [f"⏳ {sk['name']} перезаряжается ({ch.cooldowns[skill_id]} сек.)."]
     cost = sk["mp"]
     if ch.mp < cost:
         return False, [f"{ch.resource_emoji} Не хватает: {ch.resource_name} {ch.mp}/{cost}."]
@@ -469,10 +469,10 @@ def use_skill(ch: Character, skill_id: str, world: World,
         if sk.get("target") == "allies":
             for ally in party:
                 ally.effects.append(dict(eff))
-            out.append(f"   🛡 Эффект на всех союзников ({eff['turns']} ходов).")
+            out.append(f"   🛡 Эффект на всех союзников ({eff['turns']} сек.).")
         else:
             ch.effects.append(eff)
-            out.append(f"   🛡 Эффект наложен на {eff['turns']} ходов.")
+            out.append(f"   🛡 Эффект наложен на {eff['turns']} сек.")
         # бафф — тоже участие в бою (см. _credit_support у лечения)
         _credit_support(world, ch, ch.max_hp * 0.05)
         # танки защитной стойкой стягивают угрозу на себя (провокация)
@@ -489,12 +489,12 @@ def use_skill(ch: Character, skill_id: str, world: World,
     return True, out
 
 
-def tick_effects_char(ch: Character) -> List[str]:
+def tick_effects_char(ch: Character, turns: int = 1) -> List[str]:
     out = []
     survived = []
     for eff in ch.effects:
         if "turns" in eff:
-            eff["turns"] -= 1
+            eff["turns"] -= turns
         if eff.get("type") == "shield" and eff.get("amount", 1) <= 0:
             continue
         if eff.get("turns", 1) > 0:
@@ -502,13 +502,13 @@ def tick_effects_char(ch: Character) -> List[str]:
     ch.effects = survived
     for sk in list(ch.cooldowns):
         if ch.cooldowns[sk] > 0:
-            ch.cooldowns[sk] -= 1
+            ch.cooldowns[sk] = max(0, ch.cooldowns[sk] - turns)
     return out
 
 
 def advance_player_turn(ch: Character) -> None:
-    """Продвинуть «ход» игрока: тик кулдаунов/баффов и реген ресурса.
-    Вызывается на каждом боевом действии игрока."""
+    """Один шаг headless-симуляции. Живой бот использует PlayerClock;
+    вызов этой функции из обработчика ввода снова сделал бы таймеры кликовыми."""
     tick_effects_char(ch)
     ch.regen_resource()
 

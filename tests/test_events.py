@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 """Тесты динамических мировых событий. Запуск: python test_events.py"""
+import asyncio
+
 from engine import events
 from engine.world import World
 
@@ -219,6 +221,93 @@ def test_events_without_goal_unchanged():
     assert events.take_completions() == []
     print("✓ события без цели не изменились")
 
+
+async def _group_kill(size, with_support=False):
+    """Настоящий GameLoop: одно убийство, N бойцов; опционально лекарь и AFK."""
+    from engine.character import Character
+    from engine.content import WORLD
+    from engine.loop import GameLoop
+
+    events.ENABLED = True
+    events.reset()
+    world = World()
+    mob = next(m for room, mobs in world.mobs.items() for m in mobs
+               if WORLD.get(room, {}).get("zone") and not m.meta.get("boss"))
+    zone = WORLD[mob.room]["zone"]
+    events.start(_goal_event_id(), zone=zone, world=world, now=1000.0)
+    event = events.active()[0]
+    event["def"] = dict(event["def"])
+    event["def"]["goal"] = dict(event["def"]["goal"], count=4)
+    chars = {}
+    active = range(1, size + 1)
+    for uid in range(1, size + (2 if with_support else 1)):
+        ch = Character(uid=uid, name=f"Участник{uid}", cls="priest" if uid == 2 else "warrior",
+                       room=mob.room, level=10)
+        ch.init_vitals()
+        chars[uid] = ch
+        if uid in active:
+            mob.add_contrib(uid, 10)
+    messages = []
+
+    async def send(uid, text):
+        messages.append((uid, text))
+
+    async def no_save(*args, **kwargs):
+        pass
+
+    loop = GameLoop(world, chars, send, no_save)
+    loop._check_levelup = no_save
+    if with_support:
+        class Party:
+            def members(self, uid):
+                return list(chars)
+        loop.party_mgr = Party()
+        killers = [chars[1]]  # лекаря с вкладом добавит пати; AFK не получит зачёт
+    else:
+        killers = list(chars.values())
+    await loop.on_mob_death(mob, killers)
+    assert event["progress"] == 1, f"Одно убийство группой {size} засчитано {event['progress']} раз"
+    assert event["contrib"] == {uid: 1 for uid in active}, event["contrib"]
+    rewards = [(uid, text) for uid, text in messages if "повержен" in text]
+    assert {uid for uid, _ in rewards} == set(active), rewards
+    assert all("1/4" in text for _, text in rewards), "Всем участникам показываем один общий прогресс"
+
+
+def test_group_kill_counts_once_in_game_loop():
+    for size in (1, 2, 4):
+        asyncio.run(_group_kill(size))
+    asyncio.run(_group_kill(2, with_support=True))
+    print("✓ GameLoop: одно убийство = один зачёт для соло, дуо и группы; лекарь учтён, AFK исключён")
+
+
+def test_group_goal_completion_includes_every_participant():
+    events.ENABLED = True
+    events.reset()
+    zone = "Пепельные Пустоши"
+    events.start(_goal_event_id(), zone=zone, world=World(), now=1000.0)
+    event = events.active()[0]
+    event["def"] = dict(event["def"])
+    event["def"]["goal"] = dict(event["def"]["goal"], count=1)
+    events.on_mob_kill([101, 202, 101, 303, 404], "крыса", zone)
+    assert event["progress"] == 1
+    assert event["contrib"] == {101: 1, 202: 1, 303: 1, 404: 1}
+    done = events.take_completions()
+    assert len(done) == 1 and done[0]["contrib"] == event["contrib"]
+    assert events.on_mob_kill([505], "крыса", zone) == []
+    assert events.take_completions() == [], "После достижения цели нет второго начисления"
+    print("✓ Завершающее убийство учитывает всех участников, повторяющийся uid не удваивает вклад")
+
+
+def test_empty_group_does_not_progress_goal():
+    events.ENABLED = True
+    events.reset()
+    zone = "Пепельные Пустоши"
+    events.start(_goal_event_id(), zone=zone, world=World(), now=1000.0)
+    event = events.active()[0]
+    assert events.on_mob_kill([], "крыса", zone) == []
+    assert event["progress"] == 0 and event["contrib"] == {}
+    print("✓ Без участников общая цель не продвигается")
+
 if __name__ == "__main__":
     test_disabled_noop()
     test_start_and_modifiers()
@@ -230,5 +319,8 @@ if __name__ == "__main__":
     test_goal_ignores_wrong_mob_and_zone()
     test_goal_progress_visible()
     test_events_without_goal_unchanged()
+    test_group_kill_counts_once_in_game_loop()
+    test_group_goal_completion_includes_every_participant()
+    test_empty_group_does_not_progress_goal()
     events.ENABLED = False; events.reset()
     print("\n=== events OK ===")

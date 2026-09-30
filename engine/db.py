@@ -55,6 +55,8 @@ CREATE TABLE IF NOT EXISTS characters (
     inventory  JSONB NOT NULL DEFAULT '[]',
     quests     JSONB NOT NULL DEFAULT '{}',
     flags      JSONB NOT NULL DEFAULT '{}',
+    learned    JSONB NOT NULL DEFAULT '[]',
+    loadout    JSONB NOT NULL DEFAULT '[]',
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     last_seen  TIMESTAMPTZ,
     notify_blocked BOOLEAN NOT NULL DEFAULT FALSE,
@@ -254,6 +256,13 @@ class Database:
             # все они получают generation=1 и продолжают писаться save() как обычно.
             await con.execute(
                 "ALTER TABLE characters ADD COLUMN IF NOT EXISTS generation BIGINT NOT NULL DEFAULT 1")
+            # Изученные умения и порядок боевой панели — постоянный прогресс,
+            # а не рантайм боя. Старые строки получают []: при загрузке им
+            # выдаются только базовые умения, без угадывания оплаченного обучения.
+            await con.execute(
+                "ALTER TABLE characters ADD COLUMN IF NOT EXISTS learned JSONB NOT NULL DEFAULT '[]'")
+            await con.execute(
+                "ALTER TABLE characters ADD COLUMN IF NOT EXISTS loadout JSONB NOT NULL DEFAULT '[]'")
             # Этап 3.2: колонка ref — по ней в economy_ledger видны ВСЕ движения
             # конкретной гильдии (ref=gid). У аукциона (econ_tx) остаётся NULL.
             await con.execute(
@@ -319,7 +328,14 @@ class Database:
             inventory=json.loads(r["inventory"]),
             quests=json.loads(r["quests"]),
             flags=json.loads(r["flags"]),
+            learned=json.loads(r.get("learned", "[]")),
+            loadout=json.loads(r.get("loadout", "[]")),
         )
+        # Обратная совместимость со строками до миграции. Не вызываем
+        # init_skills() для заполненного learned: явно пустая панель игрока
+        # должна остаться пустой, а выбранный порядок — неизменным.
+        if not ch.learned and not ch.loadout:
+            ch.init_skills()
         try:
             ch.generation = int(r["generation"])
         except (KeyError, TypeError):
@@ -351,13 +367,15 @@ class Database:
             status = await con.execute("""
                 UPDATE characters SET
                     name=$2, cls=$3, race=$4, room=$5, level=$6, xp=$7, hp=$8, mp=$9, gold=$10,
-                    equipment=$11, inventory=$12, quests=$13, flags=$14, updated_at=now()
+                    equipment=$11, inventory=$12, quests=$13, flags=$14,
+                    learned=$16, loadout=$17, updated_at=now()
                 WHERE uid=$1 AND generation=$15 AND deleted_at IS NULL
             """,
                 ch.uid, ch.name, ch.cls, ch.race, ch.room, ch.level, ch.xp, ch.hp, ch.mp, ch.gold,
                 json.dumps(ch.equipment), json.dumps(ch.inventory),
                 json.dumps(ch.quests), json.dumps(ch.flags),
                 int(getattr(ch, "generation", 1)),
+                json.dumps(ch.learned), json.dumps(ch.loadout),
             )
         if _rowcount(status) == 0:
             raise StaleCharacterWrite(
@@ -378,6 +396,8 @@ class Database:
         inventory = json.dumps(ch.inventory)
         quests = json.dumps(ch.quests)
         flags = json.dumps(ch.flags)
+        learned = json.dumps(ch.learned)
+        loadout = json.dumps(ch.loadout)
         nname = textsafe.name_norm(ch.name)   # Аудит-2б.1: ключ уникальности
         try:
             async with self.pool.acquire() as con:
@@ -393,10 +413,12 @@ class Database:
                         await con.execute("""
                             INSERT INTO characters
                                 (uid,name,cls,race,room,level,xp,hp,mp,gold,
-                                 equipment,inventory,quests,flags,updated_at,generation,name_norm)
-                            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14, now(), $15,$16)
+                                 equipment,inventory,quests,flags,updated_at,generation,name_norm,
+                                 learned,loadout)
+                            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14, now(), $15,$16,$17,$18)
                         """, ch.uid, ch.name, ch.cls, ch.race, ch.room, ch.level, ch.xp,
-                            ch.hp, ch.mp, ch.gold, equipment, inventory, quests, flags, gen, nname)
+                            ch.hp, ch.mp, ch.gold, equipment, inventory, quests, flags, gen, nname,
+                            learned, loadout)
                     else:
                         gen = int(row["generation"]) + 1
                         await con.execute("""
@@ -404,10 +426,11 @@ class Database:
                                 name=$2, cls=$3, race=$4, room=$5, level=$6, xp=$7, hp=$8,
                                 mp=$9, gold=$10, equipment=$11, inventory=$12, quests=$13,
                                 flags=$14, updated_at=now(), generation=$15, deleted_at=NULL,
-                                name_norm=$16
+                                name_norm=$16, learned=$17, loadout=$18
                             WHERE uid=$1
                         """, ch.uid, ch.name, ch.cls, ch.race, ch.room, ch.level, ch.xp,
-                            ch.hp, ch.mp, ch.gold, equipment, inventory, quests, flags, gen, nname)
+                            ch.hp, ch.mp, ch.gold, equipment, inventory, quests, flags, gen, nname,
+                            learned, loadout)
                     await con.execute(
                         "INSERT INTO audit_log (ts, uid, action, details) VALUES ($1,$2,$3,$4)",
                         time.time(), ch.uid, "create",

@@ -148,7 +148,7 @@ print("[Аудит-2б.2] обязательные PROD-поля и STARS_ENABLE
 
 from bot.config_check import check_config as _cc
 
-_BASE = {"BOT_TOKEN": "123:AA", "DATABASE_URL": "postgresql://u:p@h/db",
+_BASE = {"BOT_TOKEN": "123:AA", "DATABASE_URL": "postgresql://user:password@localhost/mud_test",
          "ADMIN_IDS": "42"}
 _FULL = {**_BASE, "PROD": "1", "SUPPORT_CONTACT": "@support",
          "LEGAL_DOCS_URL": "https://example.com/legal"}

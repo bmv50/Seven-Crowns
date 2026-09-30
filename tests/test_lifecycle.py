@@ -23,7 +23,9 @@ import sys
 import time
 
 from engine.character import Character
+from engine.content import CLASSES
 from engine.db import Database
+from engine import skills
 from engine.lifecycle_errors import (
     ActiveCharacterExists, StaleCharacterWrite, CharacterNotFound, RestoreExpired)
 
@@ -48,13 +50,17 @@ class _Tx:
         return False
 
 
-def _row_from_args(a):
-    """Строка characters из 15 аргументов INSERT/UPDATE-замены (uid..generation)."""
-    return {"uid": int(a[0]), "name": a[1], "cls": a[2], "race": a[3], "room": a[4],
+def _row_from_args(a, skill_offset=None):
+    """Строка characters; смещение умений зависит от INSERT или save UPDATE."""
+    row = {"uid": int(a[0]), "name": a[1], "cls": a[2], "race": a[3], "room": a[4],
             "level": int(a[5]), "xp": int(a[6]), "hp": int(a[7]), "mp": int(a[8]),
             "gold": int(a[9]), "equipment": a[10], "inventory": a[11],
             "quests": a[12], "flags": a[13], "generation": int(a[14]),
             "deleted_at": None}
+    if skill_offset is not None and len(a) >= skill_offset + 2:
+        row["learned"] = a[skill_offset]
+        row["loadout"] = a[skill_offset + 1]
+    return row
 
 
 class FakeConn:
@@ -89,7 +95,7 @@ class FakeConn:
             return "INSERT 0 1"
 
         if "INSERT INTO characters" in sql:                       # новый персонаж
-            self.characters[int(args[0])] = _row_from_args(args)
+            self.characters[int(args[0])] = _row_from_args(args, skill_offset=16)
             return "INSERT 0 1"
 
         # save(): UPDATE строки СВОЕГО поколения активной записи
@@ -98,13 +104,13 @@ class FakeConn:
             row = self.characters.get(uid)
             if row is None or row["deleted_at"] is not None or int(row["generation"]) != gen:
                 return "UPDATE 0"
-            row.update(_row_from_args(args))
+            row.update(_row_from_args(args, skill_offset=15))
             row["deleted_at"] = None
             return "UPDATE 1"
 
         # create_character(): замена поверх удалённого (gen+1, deleted_at=NULL)
         if "generation=$15, deleted_at=NULL" in sql:
-            self.characters[int(args[0])] = _row_from_args(args)
+            self.characters[int(args[0])] = _row_from_args(args, skill_offset=16)
             return "UPDATE 1"
 
         # reset_character(): поднять поколение и мягко удалить
@@ -402,6 +408,110 @@ async def scenario_pool_none_dev():
     check(new_gen == 2, "pool=None: reset → expected+1 без БД")
 
 
+async def scenario_skills_survive_restart_all_classes():
+    """Обучение, выбранный порядок панели и пресет переживают загрузку у 6 классов."""
+    for uid, cls in enumerate(CLASSES, 200):
+        db, conn = build()
+        ch = mkchar(uid=uid, cls=cls, name=f"Герой{uid}")
+        ch.init_skills()
+        await db.create_character(ch)
+        fresh = (await db.load_all())[uid]
+        check(fresh.learned == ch.learned and fresh.loadout == ch.loadout,
+              f"{cls}: базовые умения записаны при создании")
+
+        ch.level = 25
+        ch.gold = 1000000
+        extra = next(s for s in skills.all_class_skills(cls) if not skills.is_basic(s))
+        ok, _ = skills.learn(ch, extra)
+        check(ok, f"{cls}: дополнительное умение изучено")
+        ch.loadout = [extra, ch.class_basics[0]]
+        skills.save_preset(ch, 1)
+        await db.save(ch)
+        loaded = (await db.load_all())[uid]
+        check(loaded.learned == ch.learned, f"{cls}: изученные умения пережили рестарт")
+        check(loaded.loadout == ch.loadout, f"{cls}: выбор и порядок панели пережили рестарт")
+        check(loaded.gold == ch.gold, f"{cls}: стоимость обучения сохранена вместе с умением")
+        gold_before = loaded.gold
+        ok, _ = skills.learn(loaded, extra)
+        check(not ok and loaded.gold == gold_before, f"{cls}: повторное обучение не списывает золото")
+        loaded.loadout = list(loaded.class_basics)
+        check(skills.load_preset(loaded, 1) and loaded.loadout == ch.loadout,
+              f"{cls}: сохранённый пресет работает после загрузки")
+
+
+async def scenario_skills_restore_and_recreate():
+    """Restore сохраняет умения, stale-save не затирает их, новый герой не наследует."""
+    db, conn = build()
+    ch = mkchar(uid=300)
+    ch.init_skills()
+    ch.level, ch.gold = 25, 1000000
+    skills.learn(ch, "whirlwind")
+    ch.loadout = ["whirlwind", "shield_wall"]
+    skills.save_preset(ch, 1)
+    await db.create_character(ch)
+    await db.reset_character(ch.uid, ch.generation)
+    restored = await db.restore_character(ch.uid)
+    check(restored.learned == ch.learned and restored.loadout == ch.loadout,
+          "restore: дополнительные умения и выбранная панель сохранены")
+    check(restored.flags.get("presets") == ch.flags["presets"], "restore: пресеты сохранены")
+    ch.learned, ch.loadout = [], []
+    check(await raises(db.save(ch), StaleCharacterWrite), "stale-save: старый герой не стирает умения")
+    again = (await db.load_all())[restored.uid]
+    check(again.learned == restored.learned and again.loadout == restored.loadout,
+          "stale-save: умения восстановленного героя остались целыми")
+    await db.reset_character(restored.uid, restored.generation)
+    new = mkchar(uid=restored.uid, cls="mage", name="НовыйМаг")
+    new.init_skills()
+    await db.create_character(new)
+    loaded = (await db.load_all())[new.uid]
+    check(loaded.learned == new.learned and loaded.loadout == new.loadout,
+          "recreate: новый класс получает только свои умения и панель")
+    check("whirlwind" not in loaded.learned and not loaded.flags.get("presets"),
+          "recreate: умения и пресеты прежнего героя не наследуются")
+
+
+async def scenario_remort_skill_reset_persists():
+    db, conn = build()
+    ch = mkchar(uid=400)
+    ch.init_skills()
+    ch.level, ch.gold = 25, 1000000
+    skills.learn(ch, "whirlwind")
+    ch.loadout = ["whirlwind"]
+    skills.save_preset(ch, 1)
+    await db.create_character(ch)
+    check(ch.remort(), "remort: выполнен")
+    await db.save(ch)
+    loaded = (await db.load_all())[ch.uid]
+    check(loaded.level == 1 and loaded.learned == list(ch.class_basics),
+          "remort: сброс изученных умений пережил рестарт")
+    check(loaded.loadout == ch.loadout, "remort: базовая панель пережила рестарт")
+    skills.load_preset(loaded, 1)
+    check("whirlwind" not in loaded.loadout, "remort: старый пресет не возвращает сброшенное умение")
+
+
+async def scenario_legacy_and_empty_loadout():
+    """Старые строки получают базовые умения, но не все умения своего уровня."""
+    db, conn = build()
+    ch = mkchar(uid=500)
+    ch.init_skills()
+    await db.create_character(ch)
+    legacy = dict(conn.characters[ch.uid])
+    legacy.pop("learned", None)
+    legacy.pop("loadout", None)
+    loaded = Database._row_to_char(legacy)
+    check(loaded.learned == list(ch.class_basics) and loaded.loadout == list(ch.class_basics),
+          "legacy: строка без новых колонок получает базовые умения")
+    legacy.update(learned="[]", loadout="[]")
+    loaded = Database._row_to_char(legacy)
+    check(loaded.learned == list(ch.class_basics), "legacy: пустые колонки миграции дают только базовые умения")
+    check(loaded.gold == ch.gold, "legacy: загрузка не списывает и не выдаёт золото")
+    ch.loadout = []
+    await db.save(ch)
+    loaded = (await db.load_all())[ch.uid]
+    check(loaded.learned == ch.learned and loaded.loadout == [],
+          "save/load: явно пустая панель не заменяется другим набором")
+
+
 async def run_all():
     for fn in (scenario_create_fresh,
                scenario_create_second_active,
@@ -416,7 +526,11 @@ async def run_all():
                scenario_audit_failure_rolls_back_reset,
                scenario_audit_failure_rolls_back_restore,
                scenario_db_error_no_change,
-               scenario_pool_none_dev):
+               scenario_pool_none_dev,
+               scenario_skills_survive_restart_all_classes,
+               scenario_skills_restore_and_recreate,
+               scenario_remort_skill_reset_persists,
+               scenario_legacy_and_empty_loadout):
         await fn()
 
 

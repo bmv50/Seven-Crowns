@@ -393,9 +393,17 @@ def goal_events(zone=None):
     return out
 
 
-def on_kill(uid: int, mob_id: str, zone=None):
-    """Засчитать убийство в общие цели. -> список строк для игрока."""
+def on_mob_kill(uids, mob_id: str, zone=None):
+    """Одно физическое убийство → +1 общей цели, вклад всем его участникам.
+
+    Вклад — число убийств, в которых участвовал игрок; сумма вкладов в коопе
+    может превышать общий прогресс. Повторяющиеся uid внутри группы исключаем.
+    Возвращает общие строки прогресса для каждого участника.
+    """
     if not ENABLED:
+        return []
+    participants = tuple(dict.fromkeys(uids))
+    if not participants:
         return []
     out = []
     for e in goal_events(zone):
@@ -410,7 +418,8 @@ def on_kill(uid: int, mob_id: str, zone=None):
         # часть вычисляется раньше цели присваивания, и на первом убийстве это
         # KeyError, если событие стартовало не через _start (бог/админ/тесты).
         contrib = e.setdefault("contrib", {})
-        contrib[uid] = contrib.get(uid, 0) + 1
+        for uid in participants:
+            contrib[uid] = contrib.get(uid, 0) + 1
         left = need - e["progress"]
         if left <= 0:
             out.append(f"🎯 *{d.get('name')}* — цель достигнута! Награда всем участникам.")
@@ -424,6 +433,11 @@ def on_kill(uid: int, mob_id: str, zone=None):
         elif e["progress"] % max(1, need // 4) == 0:
             out.append(f"🎯 {d.get('name')}: {e['progress']}/{need}")
     return out
+
+
+def on_kill(uid: int, mob_id: str, zone=None):
+    """Совместимый одиночный зачёт; для коопа вызывайте on_mob_kill один раз."""
+    return on_mob_kill([uid], mob_id, zone)
 
 
 def take_completions():

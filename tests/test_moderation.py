@@ -361,6 +361,7 @@ check("quiet_off отменяет тихие часы даже ночью",
 # ═══════════════════════ 7. КВОТА BROADCAST (чистая часть) ═══════════════════════
 print("\n[7] record_sent: квота broadcast_all соблюдается")
 _bc = new_char()
+notify.set_opt_in(_bc, True)
 _day = utc_ts(12)          # локально 15:00 (+3) — не тихие часы
 _lim = notify.limit(_bc)   # дефолт 2
 check("на старте квота = лимит", notify.quota_left(_bc, _day) == _lim)
@@ -376,6 +377,7 @@ check("world_boss тоже drop при исчерпанной квоте",
       notify.allow(_bc, "world_boss", _day) == "drop")
 # off-quota (сделки) не расходуют лимит
 _bc2 = new_char()
+notify.set_opt_in(_bc2, True)
 for _ in range(5):
     notify.record_sent(_bc2, "auction_sold", _day)
 check("auction_sold (off-quota) не трогает счётчик",
