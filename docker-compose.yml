@@ -36,7 +36,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    # bot портов не слушает (long-polling к Telegram, входящих нет).
+    # Telegram-only deployment keeps no public port. MAX uses an opt-in
+    # docker-compose.max.yml override so an occupied 8080 cannot break it.
 
   backup:
     image: postgres:16

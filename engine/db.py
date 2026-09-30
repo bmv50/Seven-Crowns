@@ -87,6 +87,18 @@ CREATE TABLE IF NOT EXISTS platform_identities (
 );
 CREATE INDEX IF NOT EXISTS idx_platform_identities_uid ON platform_identities(uid);
 CREATE SEQUENCE IF NOT EXISTS max_player_uid_seq AS BIGINT START WITH -1 INCREMENT BY -1;
+-- Durable inbox: ACK after insert; one claim prevents replay of game mutations.
+CREATE TABLE IF NOT EXISTS max_inbox (
+    event_key TEXT PRIMARY KEY,
+    external_user_id TEXT NOT NULL,
+    message_text TEXT,
+    status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'processing', 'done', 'failed')),
+    received_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    finished_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_max_inbox_pending ON max_inbox(received_at)
+    WHERE status='pending';
 -- Журнал аудита необратимых действий игрока (/reset и восстановление персонажа).
 -- Пишется при подтверждённом сбросе: чтобы разобрать спорную «пропажу» персонажа
 -- и иметь след для поддержки на закрытой бете. Без пула (pool=None) — no-op.
@@ -485,6 +497,49 @@ class Database:
                 "WHERE platform=$1 AND external_user_id=$2",
                 platform, external_user_id)
         return int(uid) if uid is not None else None
+
+    async def max_external_user_id(self, uid: int) -> Optional[str]:
+        """Resolve an internal MAX uid for outbound messages, including after restart."""
+        if not self.pool or uid >= 0:
+            return None
+        return await self.pool.fetchval(
+            "SELECT external_user_id FROM platform_identities "
+            "WHERE platform='max' AND uid=$1", uid)
+
+    async def enqueue_max_update(self, event_key: str, external_user_id: str,
+                                 message_text: str) -> bool:
+        """Persist the input before webhook ACK; duplicate deliveries are ignored."""
+        if not self.pool:
+            raise RuntimeError("MAX webhook requires PostgreSQL")
+        row = await self.pool.fetchval(
+            "INSERT INTO max_inbox(event_key, external_user_id, message_text) "
+            "VALUES($1,$2,$3) ON CONFLICT DO NOTHING RETURNING event_key",
+            event_key, external_user_id, message_text)
+        return row is not None
+
+    async def claim_next_max_update(self):
+        """Claim once before mutating state; never auto-replay an uncertain action."""
+        if not self.pool:
+            raise RuntimeError("MAX inbox requires PostgreSQL")
+        async with self.pool.acquire() as con:
+            async with con.transaction():
+                row = await con.fetchrow("""
+                    SELECT event_key, external_user_id, message_text FROM max_inbox
+                    WHERE status='pending' ORDER BY received_at, event_key
+                    LIMIT 1 FOR UPDATE SKIP LOCKED
+                """)
+                if row:
+                    await con.execute("UPDATE max_inbox SET status='processing' WHERE event_key=$1",
+                                      row["event_key"])
+                return dict(row) if row else None
+
+    async def finish_max_update(self, event_key: str, *, failed: bool = False):
+        if not self.pool:
+            raise RuntimeError("MAX inbox requires PostgreSQL")
+        await self.pool.execute(
+            "UPDATE max_inbox SET status=$2, message_text=NULL, finished_at=now() "
+            "WHERE event_key=$1 AND status='processing'",
+            event_key, "failed" if failed else "done")
 
     async def reserve_max_player_id(self, external_user_id) -> int:
         """Идемпотентно выделить новый uid для MAX без привязки к Telegram.

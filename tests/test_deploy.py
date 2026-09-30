@@ -56,7 +56,11 @@ check("bot использует env_file .env",
       ".env" in str(svc.get("bot", {}).get("env_file", "")))
 check("bot имеет restart-политику", bool(svc.get("bot", {}).get("restart")))
 check("порт Postgres НЕ проброшен наружу", "ports" not in svc.get("postgres", {}))
-check("bot не публикует порты", "ports" not in svc.get("bot", {}))
+check("обычный Telegram-деплой не публикует порты", "ports" not in svc.get("bot", {}))
+max_override = yaml.safe_load(_read("docker-compose.max.yml"))
+check("опциональный MAX webhook опубликован только на localhost хоста",
+      all(str(port).startswith("127.0.0.1:")
+          for port in max_override["services"]["bot"]["ports"]))
 check("backup монтирует ./backups", "/backups" in str(svc.get("backup", {}).get("volumes", "")))
 check("backup делает pg_dump в цикле", "pg_dump" in str(svc.get("backup", {})))
 check("backup чистит дампы старше 14 дней",

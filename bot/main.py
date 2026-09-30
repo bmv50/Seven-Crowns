@@ -43,6 +43,8 @@ from aiogram.types import (Message, CallbackQuery, FSInputFile, BufferedInputFil
                            InlineKeyboardButton, InlineKeyboardMarkup, BotCommand)
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.client.session.aiohttp import AiohttpSession
+from aiohttp import web
+from bot.max_transport import MaxClient, MaxInput, MaxWebhook
 
 from engine import content
 from engine.content import validate, CLASSES, SKILLS, ITEMS, WORLD, MOBS, RACES, QUESTS
@@ -270,6 +272,7 @@ else:
 dp = Dispatcher()
 world = World()
 chars: dict[int, Character] = {}
+_max_client: MaxClient | None = None
 # Общий стартовый хаб (сезон 0, Этап 4.2): ВСЕ новые персонажи рождаются здесь,
 # независимо от расы — расовые столицы (races.yaml start_room) больше не
 # раскидывают новичков по разным комнатам без наставника/туториала. Расовая
@@ -484,6 +487,16 @@ dp.callback_query.outer_middleware(_input_middleware)
 
 
 async def send(uid: int, text: str):
+    if uid < 0:
+        if not _max_client or not db or not db.pool:
+            return
+        external_id = await db.max_external_user_id(uid)
+        if external_id:
+            try:
+                await _max_client.send_user(external_id, text)
+            except Exception as e:
+                _elog.log_err(_log, "max_send_failed", e, uid=uid)
+        return
     try:
         await bot.send_message(uid, text, parse_mode="Markdown")
     except Exception as e:
@@ -522,6 +535,8 @@ async def send_ephemeral(uid: int, text: str, ttl: float = EPHEMERAL_TTL):
     """Отправить самоудаляющуюся строку окружения (анонс забредания, шаги
     другого игрока, ambient-реплика NPC). Плейтест владельца: такие строки
     спамили чат — теперь исчезают сами через ttl секунд, не засоряя историю."""
+    if uid < 0:
+        return  # MAX text MVP has no disappearing messages; avoid chat spam.
     try:
         m = await bot.send_message(uid, text, parse_mode="Markdown",
                                    disable_notification=True)
@@ -835,6 +850,9 @@ async def render_combat_cb(cb: CallbackQuery, ch: Character):
 
 async def combat_hit(victim: Character, mob, lines):
     """Колбэк из игрового цикла: моб ударил игрока — обновить его боевое сообщение."""
+    if victim.uid < 0:
+        await send(victim.uid, "\n".join(lines))
+        return
     set_combat_line(victim.uid, "mob", "\n".join(lines))
     cv = combat_view.get(victim.uid)
     if victim.hp <= 0:
@@ -873,6 +891,9 @@ async def drop_combat_photo(uid: int):
 
 async def death_screen(ch: Character):
     """Экран смерти с кнопкой возрождения. Игрок «заморожен» до возрождения."""
+    if ch.uid < 0:
+        await send(ch.uid, "💀 Вы пали. Напишите /respawn, чтобы возродиться.")
+        return
     await drop_combat_photo(ch.uid)
     cv = combat_view.pop(ch.uid, None)
     if cv and cv.get("id"):
@@ -1278,6 +1299,9 @@ async def start_combat_view(cb: CallbackQuery, ch: Character, mob):
 async def combat_reward(ch: Character, text: str):
     """Моб убит: удаляем боевую панель и публикуем итог (удар+награда+комната)
     НОВЫМ сообщением внизу, чтобы ничего не оставалось «под меню»."""
+    if ch.uid < 0:
+        await send(ch.uid, text + "\n\n" + ui.render_room(ch, world, others_in(ch.room)))
+        return
     cv = combat_view.pop(ch.uid, None)
     # строки урона НЕ показываем — только итог боя (убит/награда) и комнату
     parts = [text, ui.render_room(ch, world, others_in(ch.room))]
@@ -2099,6 +2123,182 @@ async def send_tutorial(ch: Character, event: str):
         await save(ch)      # награды/бонус туториала — фиксируем сразу
     for line in lines:
         await send(ch.uid, line)
+
+
+# MAX uses a text command surface over the very same world/characters/GameLoop.
+# No Telegram Message/CallbackQuery objects are manufactured for this transport.
+_max_input_locks: dict[str, asyncio.Lock] = {}
+
+
+async def _max_handle_input(event: MaxInput):
+    if not db or not db.pool:
+        raise RuntimeError("MAX input requires PostgreSQL")
+    lock = _max_input_locks.setdefault(event.external_user_id, asyncio.Lock())
+    async with lock:
+        uid = await db.reserve_max_player_id(event.external_user_id)
+        _presence.touch(uid)
+        text = event.text.strip()
+        parts = text.split()
+        command = cmds.canonical(parts[0]) if parts else ""
+        ch = chars.get(uid)
+        if command in ("start", "help", "помощь"):
+            if ch:
+                await send(uid, "Семь Корон · MAX\nКоманды: осмотр, север/юг/восток/запад, "
+                           "характеристики, инвентарь, умения, задания, удар [враг], "
+                           "cast [умение], flee, /respawn.")
+                await send(uid, ui.render_room(ch, world, others_in(ch.room)))
+            else:
+                races = ", ".join(RACES)
+                classes = ", ".join(CLASSES)
+                await send(uid, "Добро пожаловать в «Семь Корон»!\n"
+                           f"Расы: {races}\nКлассы: {classes}\n"
+                           "Создать героя: /create <раса> <класс> <имя>\n"
+                           "Аккаунт MAX создаётся отдельно от Telegram.")
+            return
+        if not ch:
+            if command != "create" or len(parts) != 4:
+                await send(uid, "Напишите /start и затем /create <раса> <класс> <имя>.")
+                return
+            race, cls = parts[1].lower(), parts[2].lower()
+            name = _ts.clean_name(parts[3])
+            if race not in RACES or cls not in CLASSES or name is None:
+                await send(uid, "Проверьте расу, класс и имя (2–20 букв/цифр). /start покажет варианты.")
+                return
+            new = Character(uid=uid, name=name, cls=cls, race=race)
+            new.init_vitals()
+            new.init_skills()
+            new.room = HUB_ROOM
+            new.flags["home_room"] = RACES[race].get("start_room", HUB_ROOM)
+            new.inventory = list(_starter.starting_consumables(cls))
+            try:
+                await db.create_character(new)
+            except (ActiveCharacterExists, NameTaken):
+                await send(uid, "Герой уже существует или имя занято. Попробуйте другое имя.")
+                return
+            chars[uid] = new
+            analytics.track(uid, "character_created", {"race": race, "cls": cls})
+            await send(uid, f"✨ Герой {name} создан. Вы в общем мире «Семи Корон».\n"
+                       + ui.render_room(new, world, others_in(new.room)))
+            return
+        if ch.flags.get("dead"):
+            if command != "respawn":
+                await send(uid, "💀 Вы пали. Напишите /respawn.")
+                return
+            from engine import karma
+            soft = ch.level < karma.SOFT_DEATH_LEVEL
+            lost = 0 if soft else ch.gold - int(ch.gold * 0.7)
+            ch.gold -= lost
+            ch.hp = ch.max_hp
+            ch.mp = ch.start_resource()
+            ch.effects = []
+            ch.target = None
+            bind = ch.flags.get("bind")
+            ch.room = bind if bind in WORLD else (RACES.get(ch.race, {}).get("respawn_room")
+                                                    or RACES.get(ch.race, {}).get("start_room", "temple"))
+            ch.flags["dead"] = False
+            await save(ch, force=True)
+            await send(uid, f"✨ Возрождение в {WORLD[ch.room]['name']}. Потеряно монет: {lost}.\n"
+                       + ui.render_room(ch, world, others_in(ch.room)))
+            return
+        if command in ui.DIR_ICONS:
+            if command not in WORLD[ch.room]["exits"]:
+                await send(uid, "Туда нельзя пройти.")
+                return
+            moved, _ = await move_core(ch, command)
+            if not moved:
+                await send(uid, "Сначала выйдите из боя (flee).")
+                return
+            rewards = quest.on_enter_room(ch, ch.room) or []
+            weekly_reward = weekly.on_room_visit(ch, ch.room)
+            if weekly_reward:
+                rewards.append(weekly_reward)
+            if rewards:
+                await save(ch)
+                await send(uid, "\n".join(rewards))
+            await send_tutorial(ch, "move")
+            analytics.track_once(ch, "first_move")
+            await send(uid, ui.render_room(ch, world, others_in(ch.room)))
+            return
+        if command == "look":
+            await send(uid, ui.render_room(ch, world, others_in(ch.room)))
+        elif command == "stats":
+            await send(uid, ui.render_stats(ch))
+        elif command == "inv":
+            await send(uid, ui.render_inventory(ch))
+        elif command == "skills":
+            await send(uid, ui.render_skills(ch))
+        elif command == "quests":
+            await send(uid, quest.journal(ch) + "\n" + errands.render(ch)
+                       + "\n" + _seven_crowns_block(ch))
+        elif command in ("attack", "kill", "удар"):
+            target = " ".join(parts[1:]).lower()
+            mob = next((m for m in world.living_in(ch.room)
+                        if not target or target in m.meta["name"].lower()
+                        or target in m.mob_id.lower()), None)
+            if not mob:
+                await send(uid, "🚫 Здесь нет такого врага.")
+                return
+            if not await _combat_action_ready(ch, lambda answer: send(uid, answer)):
+                return
+            ch.target = mob.key
+            if uid not in mob.aggro:
+                mob.aggro.append(uid)
+            lines = combat.player_basic_attack(ch, mob)
+            await send_tutorial(ch, "attack")
+            analytics.track_once(ch, "first_combat")
+            if mob.hp <= 0:
+                killers = [chars[u] for u in mob.aggro if u in chars]
+                await gl.on_mob_death(mob, killers)
+            else:
+                await save(ch)
+                await send(uid, "\n".join(lines) + f"\n❤️ Ваше здоровье: {ch.hp}/{ch.max_hp}")
+        elif command in ("cast", "bash", "get", "use", "wield", "drop"):
+            class _Answer:
+                async def answer(self, value, **_kwargs):
+                    await send(uid, value)
+            await text_action(_Answer(), ch, command, " ".join(parts[1:]).lower())
+        elif command == "flee":
+            mob = _combat_mob(ch)
+            if not mob:
+                await send(uid, "Вы не в бою.")
+                return
+            if not await _combat_action_ready(ch, lambda answer: send(uid, answer)):
+                return
+            if random.random() < 0.5:
+                _leave_combat(ch)
+                await save(ch)
+                await send(uid, "🏃 Вы вырвались из боя!\n" + ui.render_room(ch, world, others_in(ch.room)))
+            else:
+                lines = combat.mob_attack(mob, ch)
+                await save(ch)
+                await send(uid, "🏃 Сбежать не вышло!\n" + "\n".join(lines))
+                if ch.hp <= 0:
+                    await gl.on_player_death(ch)
+        else:
+            await send(uid, "Неизвестная команда. Напишите /help.")
+
+
+async def _max_enqueue_input(event: MaxInput):
+    if not db or not db.pool:
+        raise RuntimeError("MAX webhook requires PostgreSQL")
+    await db.enqueue_max_update(event.event_key, event.external_user_id, event.text)
+
+
+async def _max_inbox_worker():
+    """Drain durable webhook inbox in order; never replay uncertain game actions."""
+    while True:
+        row = await db.claim_next_max_update()
+        if not row:
+            await asyncio.sleep(0.25)
+            continue
+        event = MaxInput(row["external_user_id"], row["event_key"], row["message_text"])
+        try:
+            await _max_handle_input(event)
+        except Exception as e:
+            _elog.log_err(_log, "max_input_failed", e, event_key=event.event_key)
+            await db.finish_max_update(event.event_key, failed=True)
+        else:
+            await db.finish_max_update(event.event_key)
 
 
 def _help_text(ch: Character) -> str:
@@ -5571,7 +5771,7 @@ async def _measure_db_latency_ms():
 
 
 async def main():
-    global db, gl, BOT_USERNAME
+    global db, gl, BOT_USERNAME, _max_client
     # Мягкая проверка версии Python: требование проекта — 3.12+ (см. pyproject.toml).
     # Не падаем — более новые версии (3.13, 3.14...) тоже подходят, это просто
     # предупреждение для тех, кто ещё сидит на устаревшем интерпретаторе.
@@ -5745,9 +5945,28 @@ async def main():
     if db and db.pool:
         print("💾 Персистентность рантайма включена (снимок мира раз в 60с).")
     print("⚔️  СЕМЬ КОРОН v3 запущена. Реал-тайм цикл активен.")
+    max_runner = None
+    if os.environ.get("MAX_ENABLED", "0").strip().lower() in ("1", "true", "yes", "on"):
+        token = os.environ.get("MAX_BOT_TOKEN", "").strip()
+        secret = os.environ.get("MAX_WEBHOOK_SECRET", "").strip()
+        if not db or not db.pool or not token or len(secret) < 5:
+            raise RuntimeError("MAX_ENABLED requires PostgreSQL, MAX_BOT_TOKEN and MAX_WEBHOOK_SECRET")
+        _max_client = MaxClient(token)
+        await _max_client.start()
+        max_runner = web.AppRunner(MaxWebhook(secret, _max_enqueue_input).app())
+        await max_runner.setup()
+        port = int(os.environ.get("MAX_WEBHOOK_PORT", "8080"))
+        await web.TCPSite(max_runner, "0.0.0.0", port).start()
+        _spawn_worker("max_inbox_worker", _max_inbox_worker)
+        print(f"🌐 MAX webhook слушает внутренний порт {port}; общий GameLoop сохранён.")
     try:
         await dp.start_polling(bot)
     finally:
+        if max_runner:
+            await max_runner.cleanup()
+        if _max_client:
+            await _max_client.close()
+            _max_client = None
         # graceful shutdown: финальный снимок мира и флаш всех грязных персонажей,
         # чтобы не потерять прогресс между последним тиком снапшота и остановкой.
         try:

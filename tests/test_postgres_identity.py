@@ -50,7 +50,21 @@ async def run_integration(dsn):
         other = await db.reserve_max_player_id("other")
         assert other < 0 and other != ids[0]
         assert await db.resolve_player_id("max", "same") == ids[0]
+        assert await db.max_external_user_id(ids[0]) == "same"
+        assert await db.max_external_user_id(123) is None
         assert await db.resolve_player_id("telegram", "same") is None
+
+        assert await db.enqueue_max_update("message:same:mid-1", "same", "север")
+        assert not await db.enqueue_max_update("message:same:mid-1", "same", "север")
+        claimed = await db.claim_next_max_update()
+        assert claimed["event_key"] == "message:same:mid-1"
+        assert claimed["message_text"] == "север"
+        assert await db.claim_next_max_update() is None
+        await db.finish_max_update(claimed["event_key"])
+        row = await admin.fetchrow(
+            "SELECT status, message_text FROM max_inbox WHERE event_key=$1",
+            claimed["event_key"])
+        assert row["status"] == "done" and row["message_text"] is None
 
         ch = Character(uid=456, name="НовыйГерой", cls="warrior")
         ch.init_skills()
