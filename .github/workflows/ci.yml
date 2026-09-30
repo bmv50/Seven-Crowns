@@ -73,5 +73,5 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt -c constraints.txt
 
-      - name: PostgreSQL character skills lifecycle
-        run: python run_tests.py postgres_skills
+      - name: PostgreSQL character lifecycle and platform identity
+        run: python run_tests.py postgres_

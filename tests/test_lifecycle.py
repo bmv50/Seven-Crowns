@@ -68,16 +68,19 @@ class FakeConn:
         # characters: uid -> строка-словарь (см. _row_from_args)
         self.characters = characters or {}
         self.audit = []                    # audit_log: список dict-ов
+        self.identities = {}               # (platform, external_id) -> uid
         self.fail_on_execute = None        # подстрока SQL → одноразовый сбой
         self.fail_commit = False
         self._snapshot = None
 
     # — снимок/откат —
     def _snap(self):
-        return (copy.deepcopy(self.characters), copy.deepcopy(self.audit))
+        return (copy.deepcopy(self.characters), copy.deepcopy(self.audit),
+                copy.deepcopy(self.identities))
 
     def _restore(self, snap):
-        self.characters, self.audit = copy.deepcopy(snap[0]), copy.deepcopy(snap[1])
+        self.characters, self.audit, self.identities = (
+            copy.deepcopy(snap[0]), copy.deepcopy(snap[1]), copy.deepcopy(snap[2]))
 
     def transaction(self):
         return _Tx(self)
@@ -96,6 +99,10 @@ class FakeConn:
 
         if "INSERT INTO characters" in sql:                       # новый персонаж
             self.characters[int(args[0])] = _row_from_args(args, skill_offset=16)
+            return "INSERT 0 1"
+
+        if "INSERT INTO platform_identities" in sql:              # Telegram alias
+            self.identities.setdefault(("telegram", str(args[0])), int(args[1]))
             return "INSERT 0 1"
 
         # save(): UPDATE строки СВОЕГО поколения активной записи
@@ -225,6 +232,8 @@ async def scenario_create_fresh():
     check(ch.generation == 1, "create: ch.generation проставлен в 1")
     check(conn.characters[100]["deleted_at"] is None, "create: строка активна (deleted_at NULL)")
     check(conn.characters[100]["generation"] == 1, "create: в БД generation 1")
+    check(conn.identities.get(("telegram", "100")) == 100,
+          "create: Telegram identity создана в той же транзакции")
     check(any(a["action"] == "create" and a["details"]["generation"] == 1
               for a in conn.audit), "create: audit('create') записан")
 

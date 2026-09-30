@@ -73,6 +73,20 @@ CREATE TABLE IF NOT EXISTS characters (
     -- «грязной» БД падал бы весь SCHEMA).
     name_norm  TEXT
 );
+-- Этап 4: внутренний uid героя отделён от идентификатора мессенджера.
+-- Старые положительные uid принадлежат Telegram; новые MAX uid выделяются
+-- из отрицательного диапазона. Привязка двух каналов требует отдельного
+-- подтверждения и не создаётся автоматически по имени или номеру телефона.
+CREATE TABLE IF NOT EXISTS platform_identities (
+    platform         TEXT NOT NULL CHECK (platform IN ('telegram', 'max')),
+    external_user_id TEXT NOT NULL,
+    uid              BIGINT NOT NULL,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (platform, external_user_id),
+    UNIQUE (uid, platform)
+);
+CREATE INDEX IF NOT EXISTS idx_platform_identities_uid ON platform_identities(uid);
+CREATE SEQUENCE IF NOT EXISTS max_player_uid_seq AS BIGINT START WITH -1 INCREMENT BY -1;
 -- Журнал аудита необратимых действий игрока (/reset и восстановление персонажа).
 -- Пишется при подтверждённом сбросе: чтобы разобрать спорную «пропажу» персонажа
 -- и иметь след для поддержки на закрытой бете. Без пула (pool=None) — no-op.
@@ -263,6 +277,15 @@ class Database:
                 "ALTER TABLE characters ADD COLUMN IF NOT EXISTS learned JSONB NOT NULL DEFAULT '[]'")
             await con.execute(
                 "ALTER TABLE characters ADD COLUMN IF NOT EXISTS loadout JSONB NOT NULL DEFAULT '[]'")
+            # Только существующие положительные uid: все они созданы Telegram-
+            # ботом. Идемпотентный backfill не меняет персонажей и не присваивает
+            # Telegram-адрес будущим MAX-героям с отрицательным внутренним uid.
+            await con.execute("""
+                INSERT INTO platform_identities (platform, external_user_id, uid)
+                SELECT 'telegram', c.uid::text, c.uid FROM characters c
+                WHERE c.uid > 0
+                ON CONFLICT DO NOTHING
+            """)
             # Этап 3.2: колонка ref — по ней в economy_ledger видны ВСЕ движения
             # конкретной гильдии (ref=gid). У аукциона (econ_tx) остаётся NULL.
             await con.execute(
@@ -431,6 +454,13 @@ class Database:
                         """, ch.uid, ch.name, ch.cls, ch.race, ch.room, ch.level, ch.xp,
                             ch.hp, ch.mp, ch.gold, equipment, inventory, quests, flags, gen, nname,
                             learned, loadout)
+                    if ch.uid > 0:
+                        # Текущий единственный транспорт создания — Telegram.
+                        # MAX сначала резервирует отрицательный uid отдельно.
+                        await con.execute("""
+                            INSERT INTO platform_identities (platform, external_user_id, uid)
+                            VALUES ('telegram', $1, $2) ON CONFLICT DO NOTHING
+                        """, str(ch.uid), ch.uid)
                     await con.execute(
                         "INSERT INTO audit_log (ts, uid, action, details) VALUES ($1,$2,$3,$4)",
                         time.time(), ch.uid, "create",
@@ -442,6 +472,58 @@ class Database:
                 f"create_character uid={ch.uid}: имя {ch.name!r} занято") from e
         ch.generation = gen
         return gen
+
+    async def resolve_player_id(self, platform: str, external_user_id) -> Optional[int]:
+        """Найти внутренний uid по транспорту; имена игроков не участвуют."""
+        from .identity import identity_key
+        platform, external_user_id = identity_key(platform, external_user_id)
+        if not self.pool:
+            return None
+        async with self.pool.acquire() as con:
+            uid = await con.fetchval(
+                "SELECT uid FROM platform_identities "
+                "WHERE platform=$1 AND external_user_id=$2",
+                platform, external_user_id)
+        return int(uid) if uid is not None else None
+
+    async def reserve_max_player_id(self, external_user_id) -> int:
+        """Идемпотентно выделить новый uid для MAX без привязки к Telegram.
+
+        Резервирование само по себе не создаёт героя и не объединяет аккаунты.
+        Повторное событие MAX возвращает тот же uid; коллизии с легаси-строками
+        отрицательного диапазона пропускаются.
+        """
+        from .identity import identity_key
+        _, external_user_id = identity_key("max", external_user_id)
+        if not self.pool:
+            raise RuntimeError("MAX identity requires PostgreSQL")
+        async with self.pool.acquire() as con:
+            async with con.transaction():
+                existing = await con.fetchval(
+                    "SELECT uid FROM platform_identities "
+                    "WHERE platform='max' AND external_user_id=$1",
+                    external_user_id)
+                if existing is not None:
+                    return int(existing)
+                for _ in range(32):
+                    uid = int(await con.fetchval("SELECT nextval('max_player_uid_seq')"))
+                    if await con.fetchval("SELECT 1 FROM characters WHERE uid=$1", uid):
+                        continue
+                    row = await con.fetchrow("""
+                        INSERT INTO platform_identities (platform, external_user_id, uid)
+                        VALUES ('max', $1, $2)
+                        ON CONFLICT DO NOTHING RETURNING uid
+                    """, external_user_id, uid)
+                    if row:
+                        return int(row["uid"])
+                    # Конкурентный повтор с тем же MAX ID выиграл вставку.
+                    existing = await con.fetchval(
+                        "SELECT uid FROM platform_identities "
+                        "WHERE platform='max' AND external_user_id=$1",
+                        external_user_id)
+                    if existing is not None:
+                        return int(existing)
+        raise RuntimeError("Could not reserve MAX player ID")
 
     async def reset_character(self, uid: int, expected_generation: int,
                               details: dict = None) -> int:
