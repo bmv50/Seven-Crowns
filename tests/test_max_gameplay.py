@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, Mock
 
 from bot import commands as cmds
 from bot.max_transport import MaxInput
-from engine import content, starter, textsafe
+from engine import content, game_actions, npc, quest, starter, textsafe, money
 from engine.character import Character, START_ROOM
 from engine.interaction import Presence
 from engine.lifecycle_errors import ActiveCharacterExists, NameTaken
@@ -17,9 +17,11 @@ from engine.lifecycle_errors import ActiveCharacterExists, NameTaken
 def load_handler(env):
     path = Path(__file__).resolve().parents[1] / "bot" / "main.py"
     tree = ast.parse(path.read_text(encoding="utf-8"))
-    node = next(n for n in tree.body if isinstance(n, ast.AsyncFunctionDef)
-                and n.name == "_max_handle_input")
-    exec(compile(ast.Module(body=[node], type_ignores=[]), str(path), "exec"), env)
+    names = {"_max_handle_input", "_max_npc_commands", "_max_resolve_npc"}
+    nodes = [n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+             and n.name in names]
+    assert len(nodes) == len(names)
+    exec(compile(ast.Module(body=nodes, type_ignores=[]), str(path), "exec"), env)
     return env["_max_handle_input"]
 
 
@@ -33,6 +35,11 @@ async def test_create_and_move():
     database = SimpleNamespace(pool=object(), reserve_max_player_id=AsyncMock(return_value=-11),
                                create_character=AsyncMock())
     analytics = SimpleNamespace(track=Mock(), track_once=Mock())
+    chosen_vendor = {}
+    ui = SimpleNamespace(render_room=lambda *_: "ROOM", render_stats=lambda *_: "STATS",
+                         DIR_ICONS={"север": "↑", "юг": "↓"}, active_vendor=chosen_vendor,
+                         current_vendor=lambda ch: chosen_vendor.get(ch.uid)
+                         or (game_actions.vendors_here(ch) or [None])[0])
     env = {
         "asyncio": asyncio, "MaxInput": MaxInput, "db": database,
         "_max_input_locks": {}, "_presence": Presence(), "cmds": cmds,
@@ -42,10 +49,16 @@ async def test_create_and_move():
         "Character": Character, "_ts": textsafe, "_starter": starter,
         "HUB_ROOM": START_ROOM, "NameTaken": NameTaken,
         "ActiveCharacterExists": ActiveCharacterExists,
-        "analytics": analytics, "ui": SimpleNamespace(render_room=lambda *_: "ROOM",
-             render_stats=lambda *_: "STATS", DIR_ICONS={"север": "↑"}),
+        "analytics": analytics, "ui": ui, "game_actions": game_actions,
+        "_mod": SimpleNamespace(is_banned=lambda _uid: False,
+                                is_muted=lambda _uid: False,
+                                chat_allowed=lambda _uid: True),
+        "quest": quest, "QUESTS": content.QUESTS, "ITEMS": content.ITEMS,
+        "npclib": npc, "money": money, "_max_choice_pending": {},
+        "talk_core": AsyncMock(return_value=("NPC_DIALOG", None, [])),
+        "complete_quest_core": AsyncMock(return_value=(True, "QUEST_DONE")),
         "others_in": lambda *_: [],
-        "move_core": move, "quest": SimpleNamespace(on_enter_room=lambda *_: []),
+        "move_core": move,
         "weekly": SimpleNamespace(on_room_visit=lambda *_: None),
         "send_tutorial": AsyncMock(), "save": AsyncMock(),
     }
@@ -56,8 +69,38 @@ async def test_create_and_move():
     ch = env["chars"][-11]
     assert ch.room == START_ROOM and ch.name == "Тестер"
     database.create_character.assert_awaited_once()
+    await handler(MaxInput("42", "message:42:talk", "/talk наставник"))
+    assert "NPC_DIALOG" in messages[-1][1] and "/accept" in messages[-1][1]
+    await handler(MaxInput("42", "message:42:accept", "/accept посвящение_новичка"))
+    assert ch.quests["посвящение_новичка"] == "active"
     await handler(MaxInput("42", "message:42:2", "север"))
     assert ch.room == content.WORLD[START_ROOM]["exits"]["север"]
+    await handler(MaxInput("42", "message:42:remote", "/accept sample_reach_well"))
+    assert "sample_reach_well" not in ch.quests
+    ch.gold = 5000
+    await handler(MaxInput("42", "message:42:shop", "/shop лавочник_туманного_брода"))
+    assert "/buy малое_зелье" in messages[-1][1]
+    await handler(MaxInput("42", "message:42:buy", "/buy малое_зелье"))
+    assert "Куплено" in messages[-1][1]
+    assert "малое_зелье" in ch.inventory
+    gold = ch.gold
+    env["_mod"].is_banned = lambda _uid: True
+    await handler(MaxInput("42", "message:42:banned", "/buy малое_зелье"))
+    assert ch.gold == gold and "Доступ ограничен" in messages[-1][1]
+    env["_mod"].is_banned = lambda _uid: False
+    await handler(MaxInput("42", "message:42:turnin", "/turnin sample_reach_well"))
+    assert messages[-1] == (-11, "QUEST_DONE")
+    await handler(MaxInput("42", "message:42:badshop", "/shop кузнец"))
+    assert "нет" in messages[-1][1].lower()
+    await handler(MaxInput("42", "message:42:return", "юг"))
+    await handler(MaxInput("42", "message:42:temple", "юг"))
+    await handler(MaxInput("42", "message:42:faith", "/accept sample_choose_faith"))
+    assert ch.quests["sample_choose_faith"] == "active"
+    await handler(MaxInput("42", "message:42:choice", "/choose sample_choose_faith light"))
+    assert "sample_faith" not in ch.flags
+    assert "quest_choices" not in ch.flags
+    await handler(MaxInput("42", "message:42:confirm", "/confirm"))
+    assert ch.flags["quest_choices"]["sample_choose_faith"] == "light"
     await handler(MaxInput("42", "message:42:3", "/stats"))
     assert messages[-1] == (-11, "STATS")
     assert env["_presence"].active(-11)

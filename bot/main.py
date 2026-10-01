@@ -47,6 +47,7 @@ from aiohttp import web
 from bot.max_transport import MaxClient, MaxInput, MaxWebhook
 
 from engine import content
+from engine import game_actions
 from engine.content import validate, CLASSES, SKILLS, ITEMS, WORLD, MOBS, RACES, QUESTS
 from engine.character import Character, START_ROOM
 from engine.world import World, ground_items_for, take_ground_item
@@ -2128,6 +2129,30 @@ async def send_tutorial(ch: Character, event: str):
 # MAX uses a text command surface over the very same world/characters/GameLoop.
 # No Telegram Message/CallbackQuery objects are manufactured for this transport.
 _max_input_locks: dict[str, asyncio.Lock] = {}
+_max_choice_pending: dict[int, tuple[str, str]] = {}
+
+
+def _max_npc_commands(ch: Character, npc_id: str) -> str:
+    lines = []
+    for qid in quest.available_quests(ch, npc_id):
+        lines.append(f"📜 /accept {qid} — {QUESTS[qid]['name']}")
+    for qid in quest.turn_in_quests(ch, npc_id):
+        lines.append(f"✅ /turnin {qid} — {QUESTS[qid]['name']}")
+    for qid, options in quest.pending_choices(ch, npc_id):
+        for option in options:
+            lines.append(f"🔀 /choose {qid} {option['id']} — {option.get('label', option['id'])}")
+    if npc_id in game_actions.vendors_here(ch):
+        lines.append(f"🛒 /shop {npc_id} — товары")
+    lines.append("💬 /say <текст> — продолжить разговор")
+    return "\n".join(lines)
+
+
+def _max_resolve_npc(ch: Character, query: str) -> str | None:
+    query = query.strip().lower()
+    for npc_id in WORLD[ch.room].get("npc", []):
+        if query in (npc_id.lower(), npclib.display_name(npc_id).lower()):
+            return npc_id
+    return None
 
 
 async def _max_handle_input(event: MaxInput):
@@ -2137,6 +2162,9 @@ async def _max_handle_input(event: MaxInput):
     async with lock:
         uid = await db.reserve_max_player_id(event.external_user_id)
         _presence.touch(uid)
+        if _mod.is_banned(uid):
+            await send(uid, "⛔ Доступ ограничен. По вопросам поддержки обратитесь к администрации.")
+            return
         text = event.text.strip()
         parts = text.split()
         command = cmds.canonical(parts[0]) if parts else ""
@@ -2145,7 +2173,9 @@ async def _max_handle_input(event: MaxInput):
             if ch:
                 await send(uid, "Семь Корон · MAX\nКоманды: осмотр, север/юг/восток/запад, "
                            "характеристики, инвентарь, умения, задания, удар [враг], "
-                           "cast [умение], flee, /respawn.")
+                           "cast [умение], flee, /npcs, /talk <NPC>, /say <текст>, "
+                           "/accept <код>, /turnin <код>, /choose <код> <вариант>, "
+                           "/confirm, /shop [торговец], /buy <предмет>, /respawn.")
                 await send(uid, ui.render_room(ch, world, others_in(ch.room)))
             else:
                 races = ", ".join(RACES)
@@ -2208,6 +2238,7 @@ async def _max_handle_input(event: MaxInput):
             if not moved:
                 await send(uid, "Сначала выйдите из боя (flee).")
                 return
+            _max_choice_pending.pop(uid, None)
             rewards = quest.on_enter_room(ch, ch.room) or []
             weekly_reward = weekly.on_room_visit(ch, ch.room)
             if weekly_reward:
@@ -2230,6 +2261,97 @@ async def _max_handle_input(event: MaxInput):
         elif command == "quests":
             await send(uid, quest.journal(ch) + "\n" + errands.render(ch)
                        + "\n" + _seven_crowns_block(ch))
+        elif command in ("npcs", "нпс"):
+            here = WORLD[ch.room].get("npc", [])
+            await send(uid, "Здесь: " + ("; ".join(
+                f"{npclib.display_name(n)} (/talk {n})" for n in here) if here else "никого"))
+        elif command in ("talk", "поговорить"):
+            if _mod.is_muted(uid) or not _mod.chat_allowed(uid):
+                await send(uid, "🔇 Разговор временно недоступен. Попробуйте позже.")
+                return
+            npc_id = _max_resolve_npc(ch, " ".join(parts[1:]))
+            if npc_id is None:
+                await send(uid, "Такого персонажа рядом нет. Список: /npcs.")
+                return
+            dialog, _act, progress = await talk_core(ch, npc_id)
+            await send(uid, dialog + "\n\n" + _max_npc_commands(ch, npc_id))
+            if progress:
+                await send(uid, "\n".join(progress))
+        elif command in ("say", "сказать"):
+            if _mod.is_muted(uid) or not _mod.chat_allowed(uid):
+                await send(uid, "🔇 Разговор временно недоступен. Попробуйте позже.")
+                return
+            npc_id = talking_to.get(uid)
+            if not npc_id or npc_id not in WORLD[ch.room].get("npc", []) or len(parts) < 2:
+                await send(uid, "Сначала поговорите с персонажем: /talk <NPC>.")
+                return
+            dialog, _act, progress = await talk_core(ch, npc_id, " ".join(parts[1:]))
+            await send(uid, dialog + "\n\n" + _max_npc_commands(ch, npc_id))
+            if progress:
+                await send(uid, "\n".join(progress))
+        elif command in ("accept", "взять"):
+            qid = parts[1] if len(parts) == 2 else ""
+            ok, msg = game_actions.quest_accept_here(ch, qid)
+            if ok:
+                analytics.track_once(ch, "first_quest_accept", {"quest": qid})
+                await save(ch, force=True)
+            await send(uid, msg)
+        elif command in ("turnin", "сдать"):
+            qid = parts[1] if len(parts) == 2 else ""
+            _ok, msg = await complete_quest_core(ch, qid)
+            await send(uid, msg)
+        elif command in ("choose", "выбрать"):
+            if len(parts) != 3:
+                await send(uid, "Формат: /choose <код задания> <вариант>.")
+                return
+            qid, option_id = parts[1:]
+            entry = QUESTS.get(qid)
+            giver = entry.get("giver") if entry else None
+            option = quest.choose_option(qid, option_id) if entry else None
+            if (giver not in WORLD[ch.room].get("npc", []) or not option
+                    or not any(qid == pending for pending, _ in quest.pending_choices(ch, giver))):
+                await send(uid, "Этот выбор сейчас недоступен.")
+                return
+            _max_choice_pending[uid] = (qid, option_id)
+            await send(uid, f"🔀 {option.get('label', option_id)}\n"
+                       f"{option.get('text', '').strip()}\n"
+                       "⚠️ Выбор изменит путь героя. Напишите /confirm для подтверждения.")
+        elif command == "confirm":
+            pending = _max_choice_pending.pop(uid, None)
+            if not pending:
+                await send(uid, "Нет выбора для подтверждения.")
+                return
+            ok, msg = game_actions.quest_choose_here(ch, *pending)
+            if ok:
+                await save(ch, force=True)
+            await send(uid, msg)
+        elif command in ("shop", "лавка", "магазин"):
+            vendor_query = " ".join(parts[1:])
+            vendor_id = (_max_resolve_npc(ch, vendor_query) if vendor_query
+                         else (game_actions.vendors_here(ch) or [None])[0])
+            if vendor_query and vendor_id is None:
+                await send(uid, "Такого торговца рядом нет. Список: /npcs.")
+                return
+            vendor, stock = game_actions.shop_stock_here(ch, vendor_id)
+            if vendor is None:
+                await send(uid, "Торговца рядом нет. Список персонажей: /npcs.")
+                return
+            ui.active_vendor[uid] = vendor
+            lines = [f"🏪 {npclib.display_name(vendor)} · 💰 {money.fmt(ch.gold)}"]
+            for key in stock:
+                if key in ITEMS:
+                    lines.append(f"/buy {key} — {ITEMS[key]['name']} · "
+                                 f"💰{money.fmt(game_actions.shop_price(ch, key, vendor))}")
+            await send(uid, "\n".join(lines))
+        elif command in ("buy", "купить"):
+            vendor, stock = game_actions.shop_stock_here(ch, ui.current_vendor(ch))
+            query = " ".join(parts[1:]).lower()
+            key = next((item for item in stock if query in
+                        (item.lower(), ITEMS.get(item, {}).get("name", "").lower())), "")
+            ok, msg = game_actions.shop_buy_here(ch, key, vendor)
+            if ok:
+                await save(ch, force=True)
+            await send(uid, msg)
         elif command in ("attack", "kill", "удар"):
             target = " ".join(parts[1:]).lower()
             mob = next((m for m in world.living_in(ch.room)
@@ -2622,20 +2744,14 @@ def _resolve_shop(name: str, ch: Character = None):
 
 
 async def do_buy(target, ch: Character, key: str, cb=None):
-    it = ITEMS[key]
-    req = it.get("class_req")
-    if req and ch.cls not in req:
-        if cb: await cb.answer("Не для вашего класса", show_alert=True)
+    ok, msg = game_actions.shop_buy_here(ch, key, ui.current_vendor(ch))
+    if not ok:
+        if cb:
+            await cb.answer(msg, show_alert=True)
+        else:
+            await target.answer(msg)
         return
-    price = _buy_price(ch, key)
-    if ch.gold < price:
-        if cb: await cb.answer(f"Нужно {money.fmt(price)}", show_alert=True)
-        else: await target.answer(f"💰 Не хватает: нужно {money.fmt(price)}, есть {money.fmt(ch.gold)}.")
-        return
-    ch.gold -= price
-    ch.inventory.append(key)
     await save(ch, force=True)      # покупка в лавке — фиксируем сразу
-    msg = f"✅ Куплено: {it['name']} за 💰{money.fmt(price)}. (Осталось {money.fmt(ch.gold)})"
     if cb:
         await safe_edit(cb, msg, ui.kb_shop(ch))
     else:
@@ -2686,23 +2802,12 @@ async def send_item_card(cb: CallbackQuery, ch: Character, ctx: str, key: str):
 
 
 async def card_buy(cb: CallbackQuery, ch: Character, key: str):
-    from engine import karma
-    if karma.vendor_refuses(ch):
-        await cb.answer("🚫 Торговец отказывается иметь дело с изгоем!", show_alert=True); return
-    it = ITEMS[key]
-    req = it.get("class_req")
-    if req and ch.cls not in req:
-        await cb.answer("Не для вашего класса", show_alert=True); return
-    price = _buy_price(ch, key)
-    if ch.gold < price:
-        await cb.answer(f"Нужно {money.fmt(price)}, есть {money.fmt(ch.gold)}", show_alert=True); return
-    ch.gold -= price
-    ch.inventory.append(key)
+    ok, msg = game_actions.shop_buy_here(ch, key, ui.current_vendor(ch))
+    if not ok:
+        await cb.answer(msg[:190], show_alert=True); return
     await save(ch, force=True)      # покупка (карточка) — фиксируем сразу
     await cb.answer()
-    await cb.message.answer(
-        f"🛍 Куплено: *{it['name']}* за 💰{money.fmt(price)}. "
-        f"Осталось: 💰{money.fmt(ch.gold)}.", parse_mode="Markdown")
+    await cb.message.answer(msg)
     await safe_edit_caption(cb, ui.item_caption(key, "shop", ch), ui.kb_item_card(key, "shop", ch))
 
 
@@ -3342,23 +3447,8 @@ async def on_cb(cb: CallbackQuery):
             await cb.answer()
         except Exception:
             pass
-        talking_to[uid] = arg
-        try:
-            ai_line, act = await npc_ai.say_action(ch, arg)
-        except Exception as e:
-            # ИИ-реплика никогда не должна ронять диалог: откат на шаблон
-            _elog.log_err(_log, "npc_talk_failed", e, uid=uid, npc=arg)
-            ai_line, act = None, None
-        _stash_errand(ch, arg, act)
-        _qtalk = quest.on_talk(ch, arg)           # talk-цели квестов
-        # недельная цель event_talk: разговор с NPC во время мирового события (Этап 6.1)
-        if _events.ENABLED and _events.active():
-            _wtalk = weekly.on_event_talk(ch)
-            if _wtalk:
-                _qtalk = (_qtalk or []) + [_wtalk]
-        if _qtalk:
-            await save(ch)
-        await safe_edit(cb, npc_dialog(ch, arg, line=ai_line), ui.kb_npc(ch, arg, highlight=act))
+        _dialog, act, _qtalk = await talk_core(ch, arg)
+        await safe_edit(cb, _dialog, ui.kb_npc(ch, arg, highlight=act))
         if _qtalk:
             # callback уже отвечен выше — квест-прогресс шлём обычным сообщением
             await send(uid, "\n".join(_qtalk))
@@ -3403,12 +3493,14 @@ async def on_cb(cb: CallbackQuery):
         _jt += "\n" + _seven_crowns_block(ch)
         await safe_edit(cb, _jt, ui.kb_journal(ch))
     elif action == "qaccept":
-        ok, msg = quest.accept(ch, arg)
+        ok, msg = game_actions.quest_accept_here(ch, arg)
         if ok:
             analytics.track_once(ch, "first_quest_accept", {"quest": arg})   # Этап 7.1
-        await save(ch)
-        npc = QUESTS[arg]["giver"]
-        await safe_edit(cb, msg, ui.kb_npc(ch, npc))
+            await save(ch)
+            npc = QUESTS[arg]["giver"]
+            await safe_edit(cb, msg, ui.kb_npc(ch, npc))
+        else:
+            await cb.answer(msg[:190], show_alert=True)
     elif action == "choice":
         # первый клик по опции choose-квеста → шаг подтверждения (двухшаговость)
         _cq, _, _co = arg.partition(":")
@@ -3425,12 +3517,13 @@ async def on_cb(cb: CallbackQuery):
     elif action == "choicec":
         # подтверждение выбора → фиксация в движке
         _cq, _, _co = arg.partition(":")
-        ok, msg = quest.on_choose(ch, _cq, _co)
-        await save(ch)
-        _cnpc = QUESTS[_cq]["turn_in"]
+        ok, msg = game_actions.quest_choose_here(ch, _cq, _co)
         if not ok:
             await cb.answer(msg.replace("*", "")[:190], show_alert=True)
-        await safe_edit(cb, msg, ui.kb_npc(ch, _cnpc))
+        else:
+            await save(ch)
+            _cnpc = QUESTS[_cq]["turn_in"]
+            await safe_edit(cb, msg, ui.kb_npc(ch, _cnpc))
     elif action == "achv":
         # arg — куда вернуть по «Назад». Экран открывается из двух мест: карточки
         # героя и лавки титулов, и жёсткий возврат в «Герой» уводил игрока не
@@ -3531,30 +3624,11 @@ async def on_cb(cb: CallbackQuery):
                         InlineKeyboardMarkup(inline_keyboard=[[
                             InlineKeyboardButton(text="⬅️ Назад", callback_data="look")]]))
     elif action == "qdone":
-        ok, msg = quest.complete(ch, arg)
-        await save(ch)
+        ok, msg = await complete_quest_core(ch, arg)
+        if not ok:
+            await cb.answer(msg[:190], show_alert=True)
+            return
         npc = QUESTS[arg]["turn_in"]
-        # левелап от награды
-        lv = []
-        await gl._check_levelup(ch, lv)
-        if lv:
-            msg += "\n" + "\n".join(lv)
-        for aline in achievements.check(ch):
-            msg += "\n" + aline
-        if ok:
-            _fac = (npclib.get(QUESTS[arg].get("giver")) or {}).get("faction")
-            if _fac:
-                _amt = 100 + QUESTS[arg].get("reward", {}).get("xp", 0)
-                _wrep = reputation.gain(ch, _fac, _amt)   # -> строка недельника faction_rep или None
-                _fn = content.FACTIONS.get(_fac, {}).get("name", _fac)
-                msg += f"\n🤝 Репутация с «{_fn}»: +{_amt}"
-                if _wrep:
-                    msg += "\n" + _wrep
-            analytics.track_once(ch, "first_quest_complete", {"quest": arg})   # Этап 7.1
-            # первая сдача квеста — финальный шаг обучения (строки в этот же ответ)
-            for _tl in tutorial.on_event(ch, "quest"):
-                msg += "\n" + _tl
-        await save(ch, force=True)      # сдача квеста (награда xp/gold/предмет) — фиксируем сразу
         await safe_edit(cb, msg, ui.kb_npc(ch, npc))
     elif action == "holy_water":
         if "святая_вода" not in ch.inventory:
@@ -4435,6 +4509,55 @@ def _stash_errand(ch: Character, npc_id: str, act):
                         choice={"idx": act.get("idx"), "text": act.get("text")})
     if off:
         ch.flags["errand_pending"] = off
+
+
+async def talk_core(ch: Character, npc_id: str, player_text: str = None):
+    """Shared NPC conversation and quest-talk progress for Telegram and MAX."""
+    if npc_id not in WORLD[ch.room].get("npc", []):
+        return "Этот персонаж сейчас не рядом.", None, []
+    talking_to[ch.uid] = npc_id
+    try:
+        ai_line, act = await asyncio.wait_for(
+            npc_ai.say_action(ch, npc_id, player_text=player_text), timeout=20)
+    except Exception as e:
+        _elog.log_err(_log, "npc_talk_failed", e, uid=ch.uid, npc=npc_id)
+        ai_line, act = None, None
+    _stash_errand(ch, npc_id, act)
+    progress = quest.on_talk(ch, npc_id) or []
+    if _events.ENABLED and _events.active():
+        weekly_progress = weekly.on_event_talk(ch)
+        if weekly_progress:
+            progress.append(weekly_progress)
+    if progress:
+        await save(ch)
+    return npc_dialog(ch, npc_id, line=ai_line), act, progress
+
+
+async def complete_quest_core(ch: Character, qid: str) -> tuple[bool, str]:
+    """Shared quest completion, including rewards around quest.complete()."""
+    ok, msg = game_actions.quest_complete_here(ch, qid)
+    if not ok:
+        return False, msg
+    await save(ch)  # retain the quest reward if a later notification step fails
+    levels = []
+    await gl._check_levelup(ch, levels)
+    if levels:
+        msg += "\n" + "\n".join(levels)
+    for line in achievements.check(ch):
+        msg += "\n" + line
+    faction = (npclib.get(QUESTS[qid].get("giver")) or {}).get("faction")
+    if faction:
+        amount = 100 + QUESTS[qid].get("reward", {}).get("xp", 0)
+        weekly_rep = reputation.gain(ch, faction, amount)
+        faction_name = content.FACTIONS.get(faction, {}).get("name", faction)
+        msg += f"\n🤝 Репутация с «{faction_name}»: +{amount}"
+        if weekly_rep:
+            msg += "\n" + weekly_rep
+    analytics.track_once(ch, "first_quest_complete", {"quest": qid})
+    for line in tutorial.on_event(ch, "quest"):
+        msg += "\n" + line
+    await save(ch, force=True)
+    return True, msg
 
 
 def npc_dialog(ch: Character, npc: str, line: str = None) -> str:
