@@ -11,6 +11,9 @@ from engine.character import Character, START_ROOM
 
 
 def load_core(env):
+    # Python 3.12 evaluates annotations while exec() compiles extracted nodes;
+    # Python 3.14 defers them, so provide the same symbol as bot.main imports.
+    env.setdefault("Character", Character)
     path = Path(__file__).resolve().parents[1] / "bot" / "main.py"
     tree = ast.parse(path.read_text(encoding="utf-8"))
     wanted = {"talk_core", "complete_quest_core"}
