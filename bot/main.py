@@ -2143,6 +2143,15 @@ def _max_npc_commands(ch: Character, npc_id: str) -> str:
             lines.append(f"🔀 /choose {qid} {option['id']} — {option.get('label', option['id'])}")
     if npc_id in game_actions.vendors_here(ch):
         lines.append(f"🛒 /shop {npc_id} — товары")
+        lines.append("💰 /sell — продать добычу")
+    pending = ch.flags.get("errand_pending")
+    active = ch.flags.get("errand")
+    if pending and pending.get("npc") == npc_id:
+        lines.append("✉️ /erraccept — принять предложенное поручение")
+    elif active and active.get("npc") == npc_id and errands.can_turn_in(ch, npc_id):
+        lines.append("✅ /errturnin — сдать поручение")
+    elif game_actions.errand_can_offer_here(ch, npc_id):
+        lines.append(f"✉️ /errand {npc_id} — новое поручение")
     lines.append("💬 /say <текст> — продолжить разговор")
     return "\n".join(lines)
 
@@ -2175,7 +2184,8 @@ async def _max_handle_input(event: MaxInput):
                            "характеристики, инвентарь, умения, задания, удар [враг], "
                            "cast [умение], flee, /npcs, /talk <NPC>, /say <текст>, "
                            "/accept <код>, /turnin <код>, /choose <код> <вариант>, "
-                           "/confirm, /shop [торговец], /buy <предмет>, /respawn.")
+                           "/confirm, /errand, /erraccept, /errturnin, /errabandon, "
+                           "/shop [торговец], /buy <предмет>, /sell, /repair, /respawn.")
                 await send(uid, ui.render_room(ch, world, others_in(ch.room)))
             else:
                 races = ", ".join(RACES)
@@ -2351,6 +2361,75 @@ async def _max_handle_input(event: MaxInput):
             ok, msg = game_actions.shop_buy_here(ch, key, vendor)
             if ok:
                 await save(ch, force=True)
+            await send(uid, msg)
+        elif command in ("sell", "продать"):
+            vendor = ui.current_vendor(ch)
+            if len(parts) == 1:
+                available = game_actions.shop_sellable_here(ch, vendor)
+                if not available:
+                    await send(uid, "У этого торговца сейчас нечего продать.")
+                else:
+                    await send(uid, "💰 Скупка:\n" + "\n".join(
+                        f"/sell {key} — {ITEMS[key]['name']} · {money.fmt(price)}"
+                        for key, price in available))
+                return
+            query = " ".join(parts[1:]).lower()
+            available = game_actions.shop_sellable_here(ch, vendor)
+            key = next((item for item, _price in available if query in
+                        (item.lower(), ITEMS[item]["name"].lower())), "")
+            ok, msg = game_actions.shop_sell_here(ch, key, vendor)
+            if ok:
+                await save(ch, force=True)
+            await send(uid, msg)
+        elif command in ("repair", "починить"):
+            if len(parts) == 1:
+                if "кузнец" not in WORLD[ch.room].get("npc", []):
+                    await send(uid, "Ремонт доступен только у кузнеца.")
+                else:
+                    cost = ch.repair_cost()
+                    await send(uid, (f"🔧 Ремонт стоит {money.fmt(cost)}. "
+                                     "Напишите /repair confirm для подтверждения."
+                                     if cost > 0 else "Снаряжение в полном порядке."))
+                return
+            if parts[1].lower() != "confirm":
+                await send(uid, "Для ремонта напишите /repair confirm.")
+                return
+            ok, msg = game_actions.repair_here(ch)
+            if ok:
+                await save(ch, force=True)
+            await send(uid, msg)
+        elif command in ("errand", "поручение"):
+            query = " ".join(parts[1:])
+            npc_id = (_max_resolve_npc(ch, query) if query else talking_to.get(uid))
+            if not npc_id:
+                await send(uid, "Сначала поговорите с NPC: /npcs, затем /talk <NPC>.")
+                return
+            offer = ch.flags.get("errand_pending")
+            if not offer or offer.get("npc") != npc_id:
+                offer = game_actions.errand_offer_here(ch, npc_id)
+            if not offer:
+                await send(uid, "Сейчас поручений нет или дневной лимит исчерпан.")
+                return
+            await send(uid, f"✉️ {offer['text']}\n"
+                       + errands._goal_line({"type": offer["type"],
+                                             "mob": offer.get("mob"), "item": offer.get("item"),
+                                             "progress": 0, "count": offer["count"]})
+                       + f"\n🎁 {offer['reward'].get('xp', 0)} опыта, "
+                         f"💰{money.fmt(offer['reward'].get('gold', 0))}\n"
+                         "Напишите /erraccept, чтобы принять.")
+        elif command == "erraccept":
+            offer = ch.flags.get("errand_pending") or {}
+            ok, msg = game_actions.errand_accept_here(ch, offer.get("npc", ""))
+            if ok:
+                await save(ch, force=True)
+            await send(uid, msg)
+        elif command == "errturnin":
+            active = ch.flags.get("errand") or {}
+            _ok, msg = await complete_errand_core(ch, active.get("npc", ""))
+            await send(uid, msg)
+        elif command == "errabandon":
+            msg = errands.abandon(ch)
+            await save(ch, force=True)
             await send(uid, msg)
         elif command in ("attack", "kill", "удар"):
             target = " ".join(parts[1:]).lower()
@@ -2867,24 +2946,11 @@ async def card_equip(cb: CallbackQuery, ch: Character, key: str):
 
 
 async def do_sell(cb: CallbackQuery, ch: Character, key: str):
-    if not _vendor_here(ch):
-        await cb.answer("Продажа только у торговца", show_alert=True); return
-    _allowed = ui.vendor_sell_types(ch)
-    if _allowed and ITEMS.get(key, {}).get("type") not in _allowed:
-        await cb.answer("Этот торговец такое не скупает — поищите нужную лавку", show_alert=True); return
-    from engine import content
-    price = content.sell_price(key)
-    # нельзя продать надетое или то, чего нет
-    equipped = set(v for v in ch.equipment.values() if v)
-    have = ch.inventory.count(key)
-    avail = have - (1 if key in equipped else 0)
-    if price <= 0 or avail <= 0:
-        await cb.answer("Это не продаётся", show_alert=True); return
-    ch.inventory.remove(key)
-    ch.gold += price
+    ok, msg = game_actions.shop_sell_here(ch, key, ui.current_vendor(ch))
+    if not ok:
+        await cb.answer(msg[:190], show_alert=True); return
     await save(ch, force=True)      # продажа торговцу — фиксируем сразу
-    await safe_edit(cb, f"💰 Продано: {ITEMS[key]['name']} за {money.fmt(price)}. "
-                    f"(Всего: {money.fmt(ch.gold)})", ui.kb_sell(ch))
+    await safe_edit(cb, msg, ui.kb_sell(ch))
 
 
 async def card_salvage(cb: CallbackQuery, ch: Character, key: str):
@@ -3453,11 +3519,10 @@ async def on_cb(cb: CallbackQuery):
             # callback уже отвечен выше — квест-прогресс шлём обычным сообщением
             await send(uid, "\n".join(_qtalk))
     elif action == "erroffer":
-        off = errands.offer(ch, arg)            # fallback без ИИ: случайный кандидат
+        off = game_actions.errand_offer_here(ch, arg)
         if not off:
             await cb.answer("Сейчас поручений нет.", show_alert=True)
         else:
-            ch.flags["errand_pending"] = off
             _txt = (f"{npclib.emoji(arg)} _«{off['text']}»_\n\n"
                     + errands._goal_line({"type": off["type"],
                                           "mob": off.get("mob"), "item": off.get("item"),
@@ -3466,22 +3531,18 @@ async def on_cb(cb: CallbackQuery):
                     f"💰{money.fmt(off['reward'].get('gold', 0))}")
             await safe_edit(cb, _txt, ui.kb_errand_offer(ch, arg))
     elif action == "erraccept":
-        _msg = errands.accept(ch, ch.flags.get("errand_pending"))
-        await save(ch)
-        await safe_edit(cb, _msg, ui.kb_npc(ch, arg))
-    elif action == "errturnin":
-        _msg = errands.turn_in(ch, arg)
-        if _msg is None:
-            await cb.answer("Условия поручения ещё не выполнены.", show_alert=True)
-        else:
-            _lv = []
-            await gl._check_levelup(ch, _lv)
-            if _lv:
-                _msg += "\n" + "\n".join(_lv)
-            for _aline in achievements.check(ch):
-                _msg += "\n" + _aline
-            await save(ch, force=True)      # награда за поручение — фиксируем сразу
+        _ok, _msg = game_actions.errand_accept_here(ch, arg)
+        if _ok:
+            await save(ch, force=True)
             await safe_edit(cb, _msg, ui.kb_npc(ch, arg))
+        else:
+            await cb.answer(_msg[:190], show_alert=True)
+    elif action == "errturnin":
+        _ok, _msg = await complete_errand_core(ch, arg)
+        if _ok:
+            await safe_edit(cb, _msg, ui.kb_npc(ch, arg))
+        else:
+            await cb.answer(_msg[:190], show_alert=True)
     elif action == "errabandon":
         _msg = errands.abandon(ch)
         await save(ch)
@@ -3946,15 +4007,13 @@ async def on_cb(cb: CallbackQuery):
                     _kb([[InlineKeyboardButton(text=f"🔧 Починить (💰{money.fmt(cost)})", callback_data="repair")],
                          [InlineKeyboardButton(text="⬅️ Назад", callback_data="shop")]]))
     elif action == "repair":
-        cost = ch.repair_cost()
-        if ch.gold < cost:
-            await cb.answer("Не хватает монет", show_alert=True)
-        else:
-            ch.gold -= cost
-            ch.repair_all()
-            await save(ch)
-            await cb.answer("🔧 Снаряжение починено!")
+        ok, msg = game_actions.repair_here(ch)
+        if ok:
+            await save(ch, force=True)
+            await cb.answer(msg[:190])
             await safe_edit(cb, "🔧 Снаряжение полностью починено.", ui.kb_shop(ch))
+        else:
+            await cb.answer(msg[:190], show_alert=True)
     elif action == "enchmenu":
         await show_ench(cb, ch)
     elif action == "ench":
@@ -4555,6 +4614,22 @@ async def complete_quest_core(ch: Character, qid: str) -> tuple[bool, str]:
             msg += "\n" + weekly_rep
     analytics.track_once(ch, "first_quest_complete", {"quest": qid})
     for line in tutorial.on_event(ch, "quest"):
+        msg += "\n" + line
+    await save(ch, force=True)
+    return True, msg
+
+
+async def complete_errand_core(ch: Character, npc_id: str) -> tuple[bool, str]:
+    """Shared errand turn-in and durable reward pipeline."""
+    ok, msg = game_actions.errand_turn_in_here(ch, npc_id)
+    if not ok:
+        return False, msg
+    await save(ch)
+    levels = []
+    await gl._check_levelup(ch, levels)
+    if levels:
+        msg += "\n" + "\n".join(levels)
+    for line in achievements.check(ch):
         msg += "\n" + line
     await save(ch, force=True)
     return True, msg

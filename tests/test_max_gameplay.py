@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, Mock
 
 from bot import commands as cmds
 from bot.max_transport import MaxInput
-from engine import content, game_actions, npc, quest, starter, textsafe, money
+from engine import content, errands, game_actions, npc, quest, starter, textsafe, money
 from engine.character import Character, START_ROOM
 from engine.interaction import Presence
 from engine.lifecycle_errors import ActiveCharacterExists, NameTaken
@@ -53,10 +53,11 @@ async def test_create_and_move():
         "_mod": SimpleNamespace(is_banned=lambda _uid: False,
                                 is_muted=lambda _uid: False,
                                 chat_allowed=lambda _uid: True),
-        "quest": quest, "QUESTS": content.QUESTS, "ITEMS": content.ITEMS,
+        "quest": quest, "errands": errands, "QUESTS": content.QUESTS, "ITEMS": content.ITEMS,
         "npclib": npc, "money": money, "_max_choice_pending": {},
         "talk_core": AsyncMock(return_value=("NPC_DIALOG", None, [])),
         "complete_quest_core": AsyncMock(return_value=(True, "QUEST_DONE")),
+        "complete_errand_core": AsyncMock(return_value=(True, "ERRAND_DONE")),
         "others_in": lambda *_: [],
         "move_core": move,
         "weekly": SimpleNamespace(on_room_visit=lambda *_: None),
@@ -83,6 +84,12 @@ async def test_create_and_move():
     await handler(MaxInput("42", "message:42:buy", "/buy малое_зелье"))
     assert "Куплено" in messages[-1][1]
     assert "малое_зелье" in ch.inventory
+    await handler(MaxInput("42", "message:42:sell-list", "/sell"))
+    assert "/sell малое_зелье" in messages[-1][1]
+    potions_before = ch.inventory.count("малое_зелье")
+    await handler(MaxInput("42", "message:42:sell", "/sell малое_зелье"))
+    assert "Продано" in messages[-1][1]
+    assert ch.inventory.count("малое_зелье") == potions_before - 1
     gold = ch.gold
     env["_mod"].is_banned = lambda _uid: True
     await handler(MaxInput("42", "message:42:banned", "/buy малое_зелье"))
@@ -93,6 +100,22 @@ async def test_create_and_move():
     await handler(MaxInput("42", "message:42:badshop", "/shop кузнец"))
     assert "нет" in messages[-1][1].lower()
     await handler(MaxInput("42", "message:42:return", "юг"))
+    await handler(MaxInput("42", "message:42:errand", "/errand наставник"))
+    assert "Напишите /erraccept" in messages[-1][1]
+    await handler(MaxInput("42", "message:42:erraccept", "/erraccept"))
+    assert errands.has_active(ch)
+    await handler(MaxInput("42", "message:42:errturnin", "/errturnin"))
+    assert messages[-1] == (-11, "ERRAND_DONE")
+    ch.room = "mine_entrance"
+    ch.equipment["weapon"] = "железный_меч"
+    ch.set_durab("weapon", 50)
+    await handler(MaxInput("42", "message:42:repair-preview", "/repair"))
+    assert "/repair confirm" in messages[-1][1]
+    before_repair = ch.repair_cost()
+    await handler(MaxInput("42", "message:42:repair-confirm", "/repair confirm"))
+    assert "починено" in messages[-1][1] and ch.repair_cost() == 0
+    assert ch.gold >= 0 and before_repair > 0
+    ch.room = START_ROOM
     await handler(MaxInput("42", "message:42:temple", "юг"))
     await handler(MaxInput("42", "message:42:faith", "/accept sample_choose_faith"))
     assert ch.quests["sample_choose_faith"] == "active"
