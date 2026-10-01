@@ -5,7 +5,7 @@ Both chat transports must apply the same proximity and stock checks before
 they mutate a character. Persistence and notifications remain with the caller.
 """
 
-from . import content, errands, karma, money, npc, quest, reputation
+from . import content, errands, karma, money, npc, quest, reputation, skills
 
 
 def _npcs_here(ch) -> list[str]:
@@ -138,6 +138,17 @@ def repair_here(ch) -> tuple[bool, str]:
     ch.gold -= cost
     ch.repair_all()
     return True, f"🔧 Снаряжение починено за {money.fmt(cost)}."
+
+
+def trainer_here(ch) -> str | None:
+    return next((key for key in _npcs_here(ch)
+                 if (npc.get(key) or {}).get("role") == "trainer"), None)
+
+
+def learn_skill_here(ch, skill_id: str) -> tuple[bool, str]:
+    if trainer_here(ch) is None:
+        return False, "Учиться можно только у учителя."
+    return skills.learn(ch, skill_id)
 
 
 def errand_can_offer_here(ch, npc_id: str) -> bool:

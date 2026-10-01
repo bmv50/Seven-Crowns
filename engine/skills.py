@@ -121,8 +121,9 @@ def preset_exists(ch, slot) -> bool:
 
 
 def load_preset(ch, slot) -> bool:
-    p = (ch.flags.get("presets") or {}).get(str(slot))
-    if not p:
+    presets = ch.flags.get("presets") or {}
+    if str(slot) not in presets:
         return False
+    p = presets[str(slot)]
     ch.loadout = [s for s in p if s in ch.learned][:ch.LOADOUT_MAX]
     return True

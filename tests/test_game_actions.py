@@ -1,6 +1,6 @@
 """Both transports use the same room-scoped quest and vendor operations."""
 
-from engine import errands, game_actions
+from engine import errands, game_actions, skills
 from engine.character import Character, START_ROOM
 
 
@@ -119,10 +119,36 @@ def test_errand_offer_accept_and_turn_in_require_npc_nearby():
     assert not game_actions.errand_turn_in_here(ch, npc_id)[0]
 
 
+def test_training_requires_teacher_and_rechecks_payment():
+    ch = hero()
+    skill_id = "whirlwind"
+    ch.level = skills.learn_level(skill_id)
+    cost = skills.learn_cost(skill_id)
+    ch.gold = cost - 1
+    assert not game_actions.learn_skill_here(ch, skill_id)[0]
+    assert skill_id not in ch.learned and ch.gold == cost - 1
+    ch.room = "trainers_hall"
+    assert game_actions.trainer_here(ch) == "наставник_боя"
+    assert not game_actions.learn_skill_here(ch, skill_id)[0]
+    assert skill_id not in ch.learned and ch.gold == cost - 1
+    ch.room = START_ROOM
+    ch.gold = cost
+    assert not game_actions.learn_skill_here(ch, skill_id)[0]
+    assert skill_id not in ch.learned and ch.gold == cost
+    ch.room = "trainers_hall"
+    assert game_actions.learn_skill_here(ch, skill_id)[0]
+    assert skill_id in ch.learned and ch.gold == 0
+    assert not game_actions.learn_skill_here(ch, skill_id)[0]
+    assert ch.gold == 0
+    ch.room = START_ROOM
+    assert game_actions.trainer_here(ch) is None
+
+
 if __name__ == "__main__":
     test_quest_proximity_and_rewards()
     test_vendor_stock_and_payment()
     test_sell_requires_vendor_and_excludes_equipped_last_copy()
     test_repair_checks_smith_again_at_confirmation()
     test_errand_offer_accept_and_turn_in_require_npc_nearby()
+    test_training_requires_teacher_and_rechecks_payment()
     print("OK: shared quest and shop guards, no remote or repeat rewards")

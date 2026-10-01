@@ -2144,6 +2144,8 @@ def _max_npc_commands(ch: Character, npc_id: str) -> str:
     if npc_id in game_actions.vendors_here(ch):
         lines.append(f"🛒 /shop {npc_id} — товары")
         lines.append("💰 /sell — продать добычу")
+    if npc_id == game_actions.trainer_here(ch):
+        lines.append("🎓 /train — изучить новые умения")
     pending = ch.flags.get("errand_pending")
     active = ch.flags.get("errand")
     if pending and pending.get("npc") == npc_id:
@@ -2185,7 +2187,9 @@ async def _max_handle_input(event: MaxInput):
                            "cast [умение], flee, /npcs, /talk <NPC>, /say <текст>, "
                            "/accept <код>, /turnin <код>, /choose <код> <вариант>, "
                            "/confirm, /errand, /erraccept, /errturnin, /errabandon, "
-                           "/shop [торговец], /buy <предмет>, /sell, /repair, /respawn.")
+                           "/shop [торговец], /buy <предмет>, /sell, /repair, "
+                           "/train, /learn <умение>, /loadout <умение>, "
+                           "/preset save|load <1–3>, /respawn.")
                 await send(uid, ui.render_room(ch, world, others_in(ch.room)))
             else:
                 races = ", ".join(RACES)
@@ -2267,7 +2271,60 @@ async def _max_handle_input(event: MaxInput):
         elif command == "inv":
             await send(uid, ui.render_inventory(ch))
         elif command == "skills":
-            await send(uid, ui.render_skills(ch))
+            learned = ", ".join(ch.learned) or "нет"
+            await send(uid, ui.render_skills(ch) + f"\n\nКоды изученных: {learned}"
+                       "\n/loadout <код> — добавить или убрать из панели."
+                       "\n/preset save <1–3> или /preset load <1–3>.")
+        elif command in ("train", "учиться"):
+            if game_actions.trainer_here(ch) is None:
+                await send(uid, "Учитель есть только в городах. Список персонажей: /npcs.")
+                return
+            available = skillmod.learnable_now(ch)
+            lines = [f"🎓 Учитель · 💰 {money.fmt(ch.gold)}"]
+            if available:
+                lines.extend(f"/learn {sid} — {SKILLS[sid]['name']} · "
+                             f"💰{money.fmt(skillmod.learn_cost(sid))}"
+                             for sid in available)
+            else:
+                lines.append("Сейчас нечего изучать — возвращайтесь на новых уровнях.")
+            locked = skillmod.locked(ch)
+            if locked:
+                lines.append("Позже: " + ", ".join(
+                    f"{SKILLS[sid]['name']} (ур. {skillmod.learn_level(sid)})"
+                    for sid in locked[:6]))
+            await send(uid, "\n".join(lines))
+        elif command in ("learn", "изучить"):
+            skill_id = parts[1].lower() if len(parts) == 2 else ""
+            if not skill_id:
+                await send(uid, "Формат: /learn <код умения>. Список: /train у учителя.")
+                return
+            ok, msg = game_actions.learn_skill_here(ch, skill_id)
+            if ok:
+                await save(ch, force=True)
+            await send(uid, msg.replace("*", ""))
+        elif command == "loadout":
+            skill_id = parts[1].lower() if len(parts) == 2 else ""
+            if not skill_id:
+                await send(uid, "Формат: /loadout <код умения>. Коды: /skills.")
+                return
+            ok, msg = skillmod.toggle_loadout(ch, skill_id)
+            if ok:
+                await save(ch, force=True)
+            await send(uid, msg)
+        elif command == "preset":
+            if len(parts) != 3 or parts[1].lower() not in ("save", "load") or parts[2] not in ("1", "2", "3"):
+                await send(uid, "Формат: /preset save <1–3> или /preset load <1–3>.")
+                return
+            slot = parts[2]
+            if parts[1].lower() == "save":
+                skillmod.save_preset(ch, slot)
+                await save(ch, force=True)
+                await send(uid, f"💾 Набор сохранён в слот {slot}.")
+            elif skillmod.load_preset(ch, slot):
+                await save(ch, force=True)
+                await send(uid, f"📥 Набор {slot} загружен.")
+            else:
+                await send(uid, "Слот пуст.")
         elif command == "quests":
             await send(uid, quest.journal(ch) + "\n" + errands.render(ch)
                        + "\n" + _seven_crowns_block(ch))
@@ -3913,19 +3970,19 @@ async def on_cb(cb: CallbackQuery):
             await save(ch)
         await safe_edit(cb, ui.render_settings(ch), ui.kb_settings(ch))
     elif action == "train":
-        tr = _trainer_here(ch)
+        tr = game_actions.trainer_here(ch)
         if tr:
             await safe_edit(cb, ui.render_trainer(ch), ui.kb_trainer(ch))
         else:
             await cb.answer("Учитель есть только в городах", show_alert=True)
     elif action == "learn":
-        if not _trainer_here(ch):
-            await cb.answer("Учиться можно только у учителя", show_alert=True)
-        else:
-            ok, msg = skillmod.learn(ch, arg)
-            await save(ch)
-            await cb.answer(msg.replace("*", ""), show_alert=not ok)
+        ok, msg = game_actions.learn_skill_here(ch, arg)
+        if ok:
+            await save(ch, force=True)
+            await cb.answer(msg.replace("*", ""))
             await safe_edit(cb, ui.render_trainer(ch), ui.kb_trainer(ch))
+        else:
+            await cb.answer(msg.replace("*", "")[:190], show_alert=True)
     elif action == "shop":
         if arg and arg in ui.vendors_here(ch):
             ui.active_vendor[ch.uid] = arg
@@ -4680,13 +4737,6 @@ def _buy_price(ch: Character, key: str) -> int:
         fac = (npclib.get(v) or {}).get("faction")
         base = int(base * (1 - reputation.discount(ch, fac)))
     return max(1, base)
-
-
-def _trainer_here(ch: Character):
-    for n in WORLD[ch.room].get("npc", []):
-        if (npclib.get(n) or {}).get("role") == "trainer":
-            return n
-    return None
 
 
 def kb_map(ch: Character) -> InlineKeyboardMarkup:

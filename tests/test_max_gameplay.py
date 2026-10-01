@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, Mock
 
 from bot import commands as cmds
 from bot.max_transport import MaxInput
-from engine import content, errands, game_actions, npc, quest, starter, textsafe, money
+from engine import content, errands, game_actions, npc, quest, skills, starter, textsafe, money
 from engine.character import Character, START_ROOM
 from engine.interaction import Presence
 from engine.lifecycle_errors import ActiveCharacterExists, NameTaken
@@ -37,6 +37,7 @@ async def test_create_and_move():
     analytics = SimpleNamespace(track=Mock(), track_once=Mock())
     chosen_vendor = {}
     ui = SimpleNamespace(render_room=lambda *_: "ROOM", render_stats=lambda *_: "STATS",
+                         render_skills=lambda *_: "SKILLS",
                          DIR_ICONS={"север": "↑", "юг": "↓"}, active_vendor=chosen_vendor,
                          current_vendor=lambda ch: chosen_vendor.get(ch.uid)
                          or (game_actions.vendors_here(ch) or [None])[0])
@@ -53,7 +54,8 @@ async def test_create_and_move():
         "_mod": SimpleNamespace(is_banned=lambda _uid: False,
                                 is_muted=lambda _uid: False,
                                 chat_allowed=lambda _uid: True),
-        "quest": quest, "errands": errands, "QUESTS": content.QUESTS, "ITEMS": content.ITEMS,
+        "quest": quest, "errands": errands, "skillmod": skills,
+        "QUESTS": content.QUESTS, "ITEMS": content.ITEMS, "SKILLS": content.SKILLS,
         "npclib": npc, "money": money, "_max_choice_pending": {},
         "talk_core": AsyncMock(return_value=("NPC_DIALOG", None, [])),
         "complete_quest_core": AsyncMock(return_value=(True, "QUEST_DONE")),
@@ -115,6 +117,34 @@ async def test_create_and_move():
     await handler(MaxInput("42", "message:42:repair-confirm", "/repair confirm"))
     assert "починено" in messages[-1][1] and ch.repair_cost() == 0
     assert ch.gold >= 0 and before_repair > 0
+    ch.level = skills.learn_level("whirlwind")
+    ch.gold = skills.learn_cost("whirlwind")
+    await handler(MaxInput("42", "message:42:remote-learn", "/learn whirlwind"))
+    assert "whirlwind" not in ch.learned and ch.gold == skills.learn_cost("whirlwind")
+    ch.room = "trainers_hall"
+    await handler(MaxInput("42", "message:42:train", "/train"))
+    assert "/learn whirlwind" in messages[-1][1]
+    await handler(MaxInput("42", "message:42:learn", "/learn whirlwind"))
+    assert "Изучено" in messages[-1][1] and "whirlwind" in ch.learned and ch.gold == 0
+    await handler(MaxInput("42", "message:42:learn-again", "/learn whirlwind"))
+    assert ch.gold == 0 and ch.learned.count("whirlwind") == 1
+    await handler(MaxInput("42", "message:42:skills", "/skills"))
+    assert "/loadout" in messages[-1][1] and "whirlwind" in messages[-1][1]
+    await handler(MaxInput("42", "message:42:loadout", "/loadout whirlwind"))
+    assert "whirlwind" not in ch.loadout
+    await handler(MaxInput("42", "message:42:preset-save", "/preset save 1"))
+    assert ch.flags["presets"]["1"] == ch.loadout
+    await handler(MaxInput("42", "message:42:loadout-again", "/loadout whirlwind"))
+    assert "whirlwind" in ch.loadout
+    await handler(MaxInput("42", "message:42:preset-load", "/preset load 1"))
+    assert "whirlwind" not in ch.loadout
+    ch.loadout.clear()
+    await handler(MaxInput("42", "message:42:preset-empty", "/preset save 2"))
+    ch.loadout.append("whirlwind")
+    await handler(MaxInput("42", "message:42:preset-empty-load", "/preset load 2"))
+    assert ch.loadout == [] and "загружен" in messages[-1][1]
+    await handler(MaxInput("42", "message:42:invalid-preset", "/preset save 99"))
+    assert "Формат" in messages[-1][1] and "99" not in ch.flags["presets"]
     ch.room = START_ROOM
     await handler(MaxInput("42", "message:42:temple", "юг"))
     await handler(MaxInput("42", "message:42:faith", "/accept sample_choose_faith"))
