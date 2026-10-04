@@ -56,3 +56,10 @@ backups/
 # Go-референс TeleMud: лицензия неизвестна — не публикуем в открытый репозиторий.
 # Если захочешь включить его в репо, убери строку ниже, проверив происхождение.
 TeleMud/
+
+# Private MAX legal drafts: owner did not authorize public publication.
+docs/legal/README.md
+docs/legal/MAX_TERMS.md
+docs/legal/MAX_PRIVACY.md
+docs/legal/MAX_RULES.md
+docs/legal/MAX_PAYMENTS.md

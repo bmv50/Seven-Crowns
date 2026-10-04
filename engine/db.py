@@ -249,6 +249,12 @@ CREATE TABLE IF NOT EXISTS max_choice_intents (
     expires_at TIMESTAMPTZ NOT NULL DEFAULT now() + interval '5 minutes'
 );
 CREATE INDEX IF NOT EXISTS idx_max_choice_uid ON max_choice_intents(uid, status);
+CREATE TABLE IF NOT EXISTS max_terms_acceptance (
+    uid BIGINT PRIMARY KEY CHECK (uid < 0),
+    version TEXT NOT NULL,
+    accepted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    revoked_at TIMESTAMPTZ
+);
 -- ───────── Этап 3.2: гильдии и гильд-банк ─────────
 -- guilds/guild_members — источник истины по гильдиям (вместо guilds.json, чья
 -- запись глотала ошибки). Банк (bank_gold/bank_items) меняется транзакционно в

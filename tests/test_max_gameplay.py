@@ -23,6 +23,7 @@ def load_handler(env):
     env.setdefault('_max_shop_command', AsyncMock(return_value=False))
     env.setdefault('_max_service_command', AsyncMock(return_value=False))
     env.setdefault('_max_choice_command', AsyncMock(return_value=False))
+    env.setdefault('_max_legal_command', AsyncMock(return_value=False))
     if '_max_context_reply' not in env:
         async def context_reply(ch, text, npc_id=None):
             await env['send'](ch.uid, text)

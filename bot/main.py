@@ -53,6 +53,7 @@ from engine import max_navigation as _max_navigation
 from engine.shop_purchase import ShopPurchaseStore
 from engine.service_purchase import ServicePurchaseStore
 from engine.max_choice import ChoiceStore
+from engine import max_terms
 
 from engine import content
 from engine import game_actions
@@ -654,6 +655,48 @@ async def _max_choice_command(ch: Character, command: str, parts):
         _elog.log_err(_log, 'max_choice_failed', exc, uid=ch.uid)
         await _max_reply(ch.uid, 'Не удалось подтвердить выбор. Повторите ту же кнопку позже; не выбирайте новый вариант.')
     return True
+
+
+async def _max_legal_command(uid: int, command: str, parts):
+    # Withdrawal of push permission must remain available without terms acceptance.
+    if command == 'notify' and len(parts) == 2 and parts[1].lower() == 'off':
+        return False
+    config = max_terms.configuration()
+    store = max_terms.ConsentStore(db)
+    if command in ('termsdecline', 'decline'):
+        await store.revoke(uid)
+        await _max_reply(uid, 'Условия не приняты. Игровой прогресс сохранён, но игра и чаты недоступны. '
+                         'Документы и повторное принятие: /terms.')
+        return True
+    if command in ('termsagree', 'agree'):
+        if not config or len(parts) != 2 or parts[1] != config['token']:
+            await _max_reply(uid, 'Версия условий изменилась или документы ещё не опубликованы. Откройте /terms.')
+            return True
+        await store.accept(uid, config['token'])
+        await _max_reply(uid, '✅ Принятие условий сохранено. Для входа в игру напишите /start. '
+                         'Это не включает уведомления и не является согласием на рекламу.')
+        return True
+    if command in ('terms', 'privacy', 'rules', 'support'):
+        if config:
+            await _max_reply(uid, f"📄 Условия, правила и политика обработки данных (версия {config['version']}):\n"
+                             f"{config['url']}\nПоддержка: {config['contact']}\n"
+                             'Перед игрой прочитайте документы. Принятие — только явной кнопкой; отказ не удаляет героя.',
+                             max_keyboard=_max_navigation.terms_keyboard(config['token']))
+        else:
+            await _max_reply(uid, 'Документы и контакт поддержки ещё не настроены. Запуск игры MAX ожидает их публикации.')
+        return True
+    if not config:
+        await _max_reply(uid, '«Семь Корон» · MAX пока готовится к запуску. '
+                         'Владелец должен опубликовать условия, политику данных и контакт поддержки. /terms')
+        return True
+    if not await store.accepted(uid, config['token']):
+        await _max_reply(uid, f"Добро пожаловать в «Семь Корон»!\nПеред игрой прочитайте документы:\n"
+                         f"{config['url']}\nВерсия: {config['version']}\nПоддержка: {config['contact']}\n"
+                         'Условия запрещают незаконный контент и определяют правила игры. '
+                         'Нажмите «Принимаю условия», только если согласны. Уведомления подключаются отдельно.',
+                         max_keyboard=_max_navigation.terms_keyboard(config['token']))
+        return True
+    return False
 
 
 async def _delete_after(uid: int, message_id: int, ttl: float):
@@ -2440,12 +2483,12 @@ async def _max_handle_input(event: MaxInput):
     async with lock:
         uid = await db.reserve_max_player_id(event.external_user_id)
         _presence.touch(uid)
-        if _mod.is_banned(uid):
-            await send(uid, "⛔ Доступ ограничен. По вопросам поддержки обратитесь к администрации.")
-            return
         text = _max_navigation.command(event.text.strip())
         parts = text.split()
         command = cmds.canonical(parts[0]) if parts else ""
+        if _mod.is_banned(uid) and command not in ('terms', 'privacy', 'rules', 'support', 'termsdecline', 'decline'):
+            await send(uid, "⛔ Доступ ограничен. Контакт поддержки и порядок обращения: /support.")
+            return
         ch = chars.get(uid)
         # Resolve an uncertain trade before any new input can consume/equip a
         # sold item still present in the cache. Failure leaves input unapplied.
@@ -2454,13 +2497,15 @@ async def _max_handle_input(event: MaxInput):
                                or getattr(db, '_choice_uncertain', {}).get(uid) is not None):
             async with _econ_lock(uid):
                 await db.save(ch)
+        if await _max_legal_command(uid, command, parts):
+            return
         if command in ("start", "help", "помощь"):
             if ch:
                 await send(uid, "Семь Корон · MAX\nКоманды: осмотр, север/юг/восток/запад, "
                            "характеристики, инвентарь, умения, задания, удар [враг], "
                            "cast [умение], flee, /npcs, /talk <NPC>, /say <текст>, "
                            "/accept <код>, /turnin <код>, /choose <код> <вариант>, "
-                           "/confirm, /errand, /erraccept, /errturnin, /errabandon, "
+                           "/confirm <токен>, /errand, /erraccept, /errturnin, /errabandon, "
                            "/shop [торговец], /buy <предмет>, /sell, /repair, "
                            "/train, /learn <умение>, /loadout <умение>, "
 "/preset save|load <1–3>, /group, /party <текст>, /guild, /auction, /map, /settings, /notify, /respawn.")

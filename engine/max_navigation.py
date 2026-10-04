@@ -2,13 +2,13 @@
 from . import content, game_actions, npc, quest, skills, errands
 import re
 
-_PURCHASE = re.compile(r'(✅ Купить|❌ Отмена|✅ Продать|❌ Отмена продажи|✅ Починить|❌ Отмена ремонта|✅ Изучить|❌ Отмена обучения|✅ Подтвердить путь|❌ Отмена выбора|✅ Принять поручение) \[([0-9a-f]{32})\]\Z')
+_PURCHASE = re.compile(r'(✅ Купить|❌ Отмена|✅ Продать|❌ Отмена продажи|✅ Починить|❌ Отмена ремонта|✅ Изучить|❌ Отмена обучения|✅ Подтвердить путь|❌ Отмена выбора|✅ Принять поручение|✅ Принимаю условия) \[([0-9a-f]{32})\]\Z')
 _CONFIRM_COMMANDS = {'✅ Купить': 'buyconfirm', '❌ Отмена': 'buycancel',
                      '✅ Продать': 'sellconfirm', '❌ Отмена продажи': 'sellcancel',
                      '✅ Починить': 'repairconfirm', '❌ Отмена ремонта': 'repaircancel',
                      '✅ Изучить': 'learnconfirm', '❌ Отмена обучения': 'learncancel',
                      '✅ Подтвердить путь': 'choiceconfirm', '❌ Отмена выбора': 'choicecancel',
-                     '✅ Принять поручение': 'erracceptoffer'}
+                     '✅ Принять поручение': 'erracceptoffer', '✅ Принимаю условия': 'termsagree'}
 
 COMMANDS = {
     '🔍 Осмотр': '/look', '👤 Герой': '/stats', '🎒 Сумка': '/inv',
@@ -18,6 +18,7 @@ COMMANDS = {
     '✨ Возродиться': '/respawn',
     '💬 Персонажи': '/npcs', '🎓 Обучение': '/train', '💰 Скупка': '/sell',
     '🔧 Ремонт': '/repair',
+    '📄 Условия': '/terms', '❌ Не принимаю условия': '/termsdecline',
     '↑ Север': 'север', '↓ Юг': 'юг', '→ Восток': 'восток',
     '← Запад': 'запад', '⇧ Вверх': 'вверх', '⇩ Вниз': 'вниз',
 }
@@ -102,6 +103,13 @@ def errand_keyboard(token):
         raise ValueError('Invalid errand offer token')
     return [[{'type': 'message', 'text': f'✅ Принять поручение [{token}]'}],
             [{'type': 'message', 'text': '💬 Персонажи'}, {'type': 'message', 'text': '🔍 Осмотр'}]]
+
+
+def terms_keyboard(token):
+    if not isinstance(token, str) or not re.fullmatch(r'[0-9a-f]{32}', token):
+        raise ValueError('Invalid terms version token')
+    return [[{'type': 'message', 'text': f'✅ Принимаю условия [{token}]'}],
+            [{'type': 'message', 'text': '❌ Не принимаю условия'}]]
 
 
 def train_keyboard(ch, rooms):
