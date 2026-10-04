@@ -19,6 +19,10 @@ def load_handler(env):
     from engine import max_navigation
     env.setdefault('_max_reply', env['send'])
     env.setdefault('_max_navigation', max_navigation)
+    if '_max_context_reply' not in env:
+        async def context_reply(ch, text, npc_id=None):
+            await env['send'](ch.uid, text)
+        env['_max_context_reply'] = context_reply
     path = Path(__file__).resolve().parents[1] / "bot" / "main.py"
     tree = ast.parse(path.read_text(encoding="utf-8"))
     names = {"_max_handle_input", "_max_npc_commands", "_max_resolve_npc",

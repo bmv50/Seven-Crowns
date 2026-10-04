@@ -7,7 +7,9 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from engine.db import Database
-from engine.max_navigation import keyboard
+from engine import content
+from engine.character import Character
+from engine.max_navigation import keyboard, context_keyboard
 from engine.max_outbox import MaxOutboxStore, MaxOutboxWorker
 
 
@@ -77,6 +79,12 @@ async def run(dsn):
         claimed = await store.claim()
         await store.finish(claimed, 'failed', 'permanent')
         assert await db.pool.fetchval('SELECT keyboard FROM max_outbox WHERE id=$1', claimed['id']) is None
+        ch = Character(uid=uid, name='Меню', race='human', cls='warrior')
+        ch.init_vitals()
+        context = context_keyboard(ch, content.WORLD)
+        await store.enqueue(uid, '42', 'NPC menu', keyboard=context)
+        assert await worker.process_one()
+        assert client.send_chunk.await_args.kwargs['keyboard'] == context
     finally:
         await db.close()
         await admin.execute(f'DROP SCHEMA "{schema}" CASCADE')

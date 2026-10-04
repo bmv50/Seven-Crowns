@@ -536,6 +536,10 @@ async def _max_reply(uid: int, text: str):
     await send(uid, text, max_keyboard=_max_navigation.keyboard(chars.get(uid), WORLD))
 
 
+async def _max_context_reply(ch: Character, text: str, npc_id=None):
+    await send(ch.uid, text, max_keyboard=_max_navigation.context_keyboard(ch, WORLD, npc_id))
+
+
 async def _delete_after(uid: int, message_id: int, ttl: float):
     """Подождать ttl секунд и тихо удалить сообщение (ошибки — молча, в игноре)."""
     await asyncio.sleep(ttl)
@@ -2538,7 +2542,7 @@ async def _max_handle_input(event: MaxInput):
             await send(uid, msg)
         elif command in ("npcs", "нпс"):
             here = WORLD[ch.room].get("npc", [])
-            await send(uid, "Здесь: " + ("; ".join(
+            await _max_context_reply(ch, "Здесь: " + ("; ".join(
                 f"{npclib.display_name(n)} (/talk {n})" for n in here) if here else "никого"))
         elif command in ("talk", "поговорить"):
             if _mod.is_muted(uid) or not _mod.chat_allowed(uid):
@@ -2549,9 +2553,9 @@ async def _max_handle_input(event: MaxInput):
                 await send(uid, "Такого персонажа рядом нет. Список: /npcs.")
                 return
             dialog, _act, progress = await talk_core(ch, npc_id)
-            await send(uid, dialog + "\n\n" + _max_npc_commands(ch, npc_id))
             if progress:
                 await send(uid, "\n".join(progress))
+            await _max_context_reply(ch, dialog + "\n\n" + _max_npc_commands(ch, npc_id), npc_id)
         elif command in ("say", "сказать"):
             if _mod.is_muted(uid) or not _mod.chat_allowed(uid):
                 await send(uid, "🔇 Разговор временно недоступен. Попробуйте позже.")
@@ -2561,20 +2565,22 @@ async def _max_handle_input(event: MaxInput):
                 await send(uid, "Сначала поговорите с персонажем: /talk <NPC>.")
                 return
             dialog, _act, progress = await talk_core(ch, npc_id, " ".join(parts[1:]))
-            await send(uid, dialog + "\n\n" + _max_npc_commands(ch, npc_id))
             if progress:
                 await send(uid, "\n".join(progress))
+            await _max_context_reply(ch, dialog + "\n\n" + _max_npc_commands(ch, npc_id), npc_id)
         elif command in ("accept", "взять"):
             qid = parts[1] if len(parts) == 2 else ""
             ok, msg = game_actions.quest_accept_here(ch, qid)
             if ok:
                 analytics.track_once(ch, "first_quest_accept", {"quest": qid})
                 await save(ch, force=True)
-            await send(uid, msg)
+            entry = QUESTS.get(qid, {})
+            await _max_context_reply(ch, msg, entry.get('giver'))
         elif command in ("turnin", "сдать"):
             qid = parts[1] if len(parts) == 2 else ""
             _ok, msg = await complete_quest_core(ch, qid)
-            await send(uid, msg)
+            entry = QUESTS.get(qid, {})
+            await _max_context_reply(ch, msg, entry.get('turn_in'))
         elif command in ("choose", "выбрать"):
             if len(parts) != 3:
                 await send(uid, "Формат: /choose <код задания> <вариант>.")
@@ -2617,7 +2623,7 @@ async def _max_handle_input(event: MaxInput):
                 if key in ITEMS:
                     lines.append(f"/buy {key} — {ITEMS[key]['name']} · "
                                  f"💰{money.fmt(game_actions.shop_price(ch, key, vendor))}")
-            await send(uid, "\n".join(lines))
+            await _max_context_reply(ch, "\n".join(lines), vendor)
         elif command in ("buy", "купить"):
             vendor, stock = game_actions.shop_stock_here(ch, ui.current_vendor(ch))
             query = " ".join(parts[1:]).lower()
