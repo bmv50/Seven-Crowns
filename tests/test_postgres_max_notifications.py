@@ -109,10 +109,11 @@ async def run(dsn):
         # Quiet-hour deferral survives restart and doesn't consume attempts/quota.
         await db.set_player_setting(ch, 'quiet', 'on')
         await db.set_player_setting(ch, 'tz', '0')
-        now[0] = int(time.time()) // 86400 * 86400 - 7200  # simulated 22:00 UTC
+        now[0] = int(time.time()) // 86400 * 86400 - 3600  # simulated 23:00 UTC (quiet starts at 23)
         assert await enqueue('daily_reset')
         await make_worker().process_one()
         deferred = await db.pool.fetchrow("SELECT * FROM max_outbox WHERE status='pending'")
+        assert deferred is not None, 'Quiet-hour notification was not deferred at 23:00'
         assert deferred['last_error'] == 'quiet_hours' and deferred['attempts'] == 0
         assert 'notify_quota' not in await flags()
         # A deferred push must not block answers to commands in this dialog.
@@ -124,7 +125,7 @@ async def run(dsn):
         await connect()
         store = MaxOutboxStore(db.pool)
         assert await db.pool.fetchval("SELECT attempts FROM max_outbox WHERE id=$1", deferred['id']) == 0
-        now[0] += 12 * 3600  # simulated 10:00
+        now[0] += 12 * 3600  # simulated 11:00
         await db.pool.execute('UPDATE max_outbox SET next_attempt_at=now() WHERE id=$1', deferred['id'])
         await make_worker().process_one()
         assert (await flags())['notify_quota']['count'] == 1
