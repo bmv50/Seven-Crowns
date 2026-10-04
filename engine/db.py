@@ -219,6 +219,22 @@ CREATE TABLE IF NOT EXISTS max_shop_intents (
 CREATE INDEX IF NOT EXISTS idx_max_shop_uid ON max_shop_intents(uid, status);
 ALTER TABLE max_shop_intents ADD COLUMN IF NOT EXISTS operation TEXT NOT NULL DEFAULT 'buy'
     CHECK (operation IN ('buy','sell'));
+CREATE TABLE IF NOT EXISTS max_service_intents (
+    token TEXT PRIMARY KEY,
+    uid BIGINT NOT NULL,
+    generation BIGINT NOT NULL,
+    room TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    operation TEXT NOT NULL CHECK (operation IN ('repair','learn')),
+    subject TEXT NOT NULL,
+    price BIGINT NOT NULL CHECK (price >= 0),
+    snapshot JSONB,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','done','cancelled')),
+    receipt TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at TIMESTAMPTZ NOT NULL DEFAULT now() + interval '5 minutes'
+);
+CREATE INDEX IF NOT EXISTS idx_max_service_uid ON max_service_intents(uid, status);
 -- ───────── Этап 3.2: гильдии и гильд-банк ─────────
 -- guilds/guild_members — источник истины по гильдиям (вместо guilds.json, чья
 -- запись глотала ошибки). Банк (bank_gold/bank_items) меняется транзакционно в
@@ -478,6 +494,8 @@ class Database:
         # overwrite its durable balance. Recovery failure blocks this save.
         from .shop_purchase import recover
         await recover(self, ch)
+        from .service_purchase import recover as recover_service
+        await recover_service(self, ch)
         async with self.pool.acquire() as con:
             status = await con.execute("""
                 UPDATE characters SET

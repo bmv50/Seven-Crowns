@@ -20,6 +20,7 @@ def load_handler(env):
     env.setdefault('_max_reply', env['send'])
     env.setdefault('_max_navigation', max_navigation)
     env.setdefault('_max_shop_command', AsyncMock(return_value=False))
+    env.setdefault('_max_service_command', AsyncMock(return_value=False))
     if '_max_context_reply' not in env:
         async def context_reply(ch, text, npc_id=None):
             await env['send'](ch.uid, text)
@@ -134,22 +135,21 @@ async def test_create_and_move():
     ch.room = "mine_entrance"
     ch.equipment["weapon"] = "железный_меч"
     ch.set_durab("weapon", 50)
-    await handler(MaxInput("42", "message:42:repair-preview", "/repair"))
-    assert "/repair confirm" in messages[-1][1]
+    # Actual MAX repair/learning quotes and confirmations have dedicated tests.
+    # Exercise shared rules here to seed later loadout/preset smoke checks.
     before_repair = ch.repair_cost()
-    await handler(MaxInput("42", "message:42:repair-confirm", "/repair confirm"))
-    assert "починено" in messages[-1][1] and ch.repair_cost() == 0
+    assert game_actions.repair_here(ch)[0] and ch.repair_cost() == 0
     assert ch.gold >= 0 and before_repair > 0
     ch.level = skills.learn_level("whirlwind")
     ch.gold = skills.learn_cost("whirlwind")
-    await handler(MaxInput("42", "message:42:remote-learn", "/learn whirlwind"))
+    assert not game_actions.learn_skill_here(ch, "whirlwind")[0]
     assert "whirlwind" not in ch.learned and ch.gold == skills.learn_cost("whirlwind")
     ch.room = "trainers_hall"
     await handler(MaxInput("42", "message:42:train", "/train"))
     assert "/learn whirlwind" in messages[-1][1]
-    await handler(MaxInput("42", "message:42:learn", "/learn whirlwind"))
-    assert "Изучено" in messages[-1][1] and "whirlwind" in ch.learned and ch.gold == 0
-    await handler(MaxInput("42", "message:42:learn-again", "/learn whirlwind"))
+    assert game_actions.learn_skill_here(ch, "whirlwind")[0]
+    assert "whirlwind" in ch.learned and ch.gold == 0
+    assert not game_actions.learn_skill_here(ch, "whirlwind")[0]
     assert ch.gold == 0 and ch.learned.count("whirlwind") == 1
     await handler(MaxInput("42", "message:42:skills", "/skills"))
     assert "/loadout" in messages[-1][1] and "whirlwind" in messages[-1][1]

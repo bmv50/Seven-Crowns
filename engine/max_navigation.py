@@ -1,10 +1,12 @@
 """Allowlisted message buttons: labels map to existing MAX commands only."""
-from . import content, game_actions, npc, quest
+from . import content, game_actions, npc, quest, skills
 import re
 
-_PURCHASE = re.compile(r'(✅ Купить|❌ Отмена|✅ Продать|❌ Отмена продажи) \[([0-9a-f]{32})\]\Z')
+_PURCHASE = re.compile(r'(✅ Купить|❌ Отмена|✅ Продать|❌ Отмена продажи|✅ Починить|❌ Отмена ремонта|✅ Изучить|❌ Отмена обучения) \[([0-9a-f]{32})\]\Z')
 _CONFIRM_COMMANDS = {'✅ Купить': 'buyconfirm', '❌ Отмена': 'buycancel',
-                     '✅ Продать': 'sellconfirm', '❌ Отмена продажи': 'sellcancel'}
+                     '✅ Продать': 'sellconfirm', '❌ Отмена продажи': 'sellcancel',
+                     '✅ Починить': 'repairconfirm', '❌ Отмена ремонта': 'repaircancel',
+                     '✅ Изучить': 'learnconfirm', '❌ Отмена обучения': 'learncancel'}
 
 COMMANDS = {
     '🔍 Осмотр': '/look', '👤 Герой': '/stats', '🎒 Сумка': '/inv',
@@ -13,6 +15,7 @@ COMMANDS = {
     '👥 Группа': '/group', '🏰 Гильдия': '/guild', '⚖️ Аукцион': '/auction',
     '✨ Возродиться': '/respawn',
     '💬 Персонажи': '/npcs', '🎓 Обучение': '/train', '💰 Скупка': '/sell',
+    '🔧 Ремонт': '/repair',
     '↑ Север': 'север', '↓ Юг': 'юг', '→ Восток': 'восток',
     '← Запад': 'запад', '⇧ Вверх': 'вверх', '⇩ Вниз': 'вниз',
 }
@@ -39,6 +42,8 @@ for _key, _entry in content.QUESTS.items():
 for _key, _entry in content.ITEMS.items():
     _register('🛍 ', _entry.get('name', _key), 'buyoffer', _key)
     _register('💰 Продать: ', _entry.get('name', _key), 'selloffer', _key)
+for _key, _entry in content.SKILLS.items():
+    _register('🎓 Изучить: ', _entry.get('name', _key), 'learnoffer', _key)
 _LABELS = {action: label for label, action in COMMANDS.items()}
 
 
@@ -64,6 +69,24 @@ def sell_keyboard(ch, rooms, vendor):
         return keyboard(ch, rooms)
     labels = [_LABELS[f'/selloffer {key}'] for key, _ in game_actions.shop_sellable_here(ch, vendor)
               if f'/selloffer {key}' in _LABELS][:12]
+    return [[{'type': 'message', 'text': label}] for label in labels] + [
+        [{'type': 'message', 'text': '💬 Персонажи'}, {'type': 'message', 'text': '🔍 Осмотр'}]]
+
+
+def service_keyboard(token, operation):
+    labels = {'repair': ('✅ Починить', '❌ Отмена ремонта'),
+              'learn': ('✅ Изучить', '❌ Отмена обучения')}
+    if operation not in labels or not isinstance(token, str) or not re.fullmatch(r'[0-9a-f]{32}', token):
+        raise ValueError('Invalid service confirmation')
+    return [[{'type': 'message', 'text': f'{label} [{token}]'}] for label in labels[operation]] + [
+        [{'type': 'message', 'text': '🔍 Осмотр'}]]
+
+
+def train_keyboard(ch, rooms):
+    if ch.flags.get('dead') or ch.hp <= 0 or game_actions.trainer_here(ch) is None:
+        return keyboard(ch, rooms)
+    labels = [_LABELS[f'/learnoffer {sid}'] for sid in skills.learnable_now(ch)
+              if f'/learnoffer {sid}' in _LABELS][:12]
     return [[{'type': 'message', 'text': label}] for label in labels] + [
         [{'type': 'message', 'text': '💬 Персонажи'}, {'type': 'message', 'text': '🔍 Осмотр'}]]
 
@@ -115,6 +138,8 @@ def context_keyboard(ch, rooms, npc_id=None):
             actions += [f'/shop {npc_id}', '/sell']
         if npc_id == game_actions.trainer_here(ch):
             actions.append('/train')
+        if npc_id == 'кузнец':
+            actions.append('/repair')
     # Keep the mobile menu bounded; /talk still lists all actions as text commands.
     labels = [_LABELS[action] for action in dict.fromkeys(actions) if action in _LABELS][:12]
     rows = [[{'type': 'message', 'text': label}] for label in labels]

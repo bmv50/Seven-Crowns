@@ -51,6 +51,7 @@ from engine.max_notifications import MaxNotificationSender
 from engine import max_combat as _max_combat
 from engine import max_navigation as _max_navigation
 from engine.shop_purchase import ShopPurchaseStore
+from engine.service_purchase import ServicePurchaseStore
 
 from engine import content
 from engine import game_actions
@@ -583,6 +584,42 @@ async def _max_shop_command(ch: Character, command: str, parts):
     except Exception as exc:
         _elog.log_err(_log, 'max_shop_failed', exc, uid=ch.uid)
         await _max_reply(ch.uid, 'Не удалось подтвердить результат торговли. Повторите то же подтверждение позже; не выбирайте новый товар.')
+    return True
+
+
+async def _max_service_command(ch: Character, command: str, parts):
+    if command not in ('repair', 'починить', 'repairconfirm', 'repaircancel',
+                       'learn', 'изучить', 'learnoffer', 'learnconfirm', 'learncancel'):
+        return False
+    if command not in ('repaircancel', 'learncancel') and _in_combat(ch):
+        await _max_reply(ch.uid, 'Сначала выйдите из боя (flee).')
+        return True
+    operation = 'repair' if command in ('repair', 'починить', 'repairconfirm', 'repaircancel') else 'learn'
+    try:
+        store = ServicePurchaseStore(db)
+        if command in ('repairconfirm', 'repaircancel', 'learnconfirm', 'learncancel'):
+            token = parts[1] if len(parts) == 2 else ''
+            async with _econ_lock(ch.uid):
+                _, text = await store.confirm(ch, token, operation, cancel=command.endswith('cancel'))
+            await _max_reply(ch.uid, text.replace('*', ''))
+        else:
+            subject = parts[1].lower() if operation == 'learn' and len(parts) == 2 else ''
+            if operation == 'learn' and not subject:
+                await _max_reply(ch.uid, 'Выберите умение у учителя: /train.')
+                return True
+            # Legacy /repair confirm now requests a fresh quote, never a debit.
+            async with _econ_lock(ch.uid):
+                ok, text, token = await store.quote(ch, operation, subject)
+            if ok:
+                await send(ch.uid, text.replace('*', ''), max_keyboard=_max_navigation.service_keyboard(token, operation))
+            else:
+                await _max_reply(ch.uid, text.replace('*', ''))
+    except StaleCharacterWrite:
+        _evict_stale(ch.uid)
+        await _max_reply(ch.uid, 'Герой изменился. Откройте игру заново.')
+    except Exception as exc:
+        _elog.log_err(_log, 'max_service_failed', exc, uid=ch.uid)
+        await _max_reply(ch.uid, 'Не удалось подтвердить результат услуги. Повторите то же подтверждение позже; не выбирайте новую услугу.')
     return True
 
 
@@ -2380,7 +2417,8 @@ async def _max_handle_input(event: MaxInput):
         ch = chars.get(uid)
         # Resolve an uncertain trade before any new input can consume/equip a
         # sold item still present in the cache. Failure leaves input unapplied.
-        if ch is not None and getattr(db, '_shop_uncertain', {}).get(uid) is not None:
+        if ch is not None and (getattr(db, '_shop_uncertain', {}).get(uid) is not None
+                               or getattr(db, '_service_uncertain', {}).get(uid) is not None):
             async with _econ_lock(uid):
                 await db.save(ch)
         if command in ("start", "help", "помощь"):
@@ -2455,6 +2493,8 @@ async def _max_handle_input(event: MaxInput):
             return
         if await _max_shop_command(ch, command, parts):
             return
+        if await _max_service_command(ch, command, parts):
+            return
         if command in ui.DIR_ICONS:
             if command not in WORLD[ch.room]["exits"]:
                 await send(uid, "Туда нельзя пройти.")
@@ -2503,16 +2543,7 @@ async def _max_handle_input(event: MaxInput):
                 lines.append("Позже: " + ", ".join(
                     f"{SKILLS[sid]['name']} (ур. {skillmod.learn_level(sid)})"
                     for sid in locked[:6]))
-            await send(uid, "\n".join(lines))
-        elif command in ("learn", "изучить"):
-            skill_id = parts[1].lower() if len(parts) == 2 else ""
-            if not skill_id:
-                await send(uid, "Формат: /learn <код умения>. Список: /train у учителя.")
-                return
-            ok, msg = game_actions.learn_skill_here(ch, skill_id)
-            if ok:
-                await save(ch, force=True)
-            await send(uid, msg.replace("*", ""))
+            await send(ch.uid, "\n".join(lines), max_keyboard=_max_navigation.train_keyboard(ch, WORLD))
         elif command == "loadout":
             skill_id = parts[1].lower() if len(parts) == 2 else ""
             if not skill_id:
@@ -2677,23 +2708,6 @@ async def _max_handle_input(event: MaxInput):
                     lines.append(f"/buy {key} — {ITEMS[key]['name']} · "
                                  f"💰{money.fmt(game_actions.shop_price(ch, key, vendor))}")
             await send(ch.uid, "\n".join(lines), max_keyboard=_max_navigation.shop_keyboard(ch, WORLD, vendor))
-        elif command in ("repair", "починить"):
-            if len(parts) == 1:
-                if "кузнец" not in WORLD[ch.room].get("npc", []):
-                    await send(uid, "Ремонт доступен только у кузнеца.")
-                else:
-                    cost = ch.repair_cost()
-                    await send(uid, (f"🔧 Ремонт стоит {money.fmt(cost)}. "
-                                     "Напишите /repair confirm для подтверждения."
-                                     if cost > 0 else "Снаряжение в полном порядке."))
-                return
-            if parts[1].lower() != "confirm":
-                await send(uid, "Для ремонта напишите /repair confirm.")
-                return
-            ok, msg = game_actions.repair_here(ch)
-            if ok:
-                await save(ch, force=True)
-            await send(uid, msg)
         elif command in ("errand", "поручение"):
             query = " ".join(parts[1:])
             npc_id = (_max_resolve_npc(ch, query) if query else talking_to.get(uid))

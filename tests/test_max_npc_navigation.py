@@ -34,7 +34,7 @@ async def run():
     for label in nav.COMMANDS:
         assert 1 <= len(label) <= 128 and '\n' not in label
     assert len(nav.COMMANDS) == len(set(nav.COMMANDS.values()))
-    assert not any(action.startswith(('/buy ', '/choose ', '/confirm', '/learn ', '/repair'))
+    assert not any(action.startswith(('/buy ', '/choose ', '/confirm', '/learn ', '/repairconfirm'))
                    for action in nav.COMMANDS.values())
     for key in here:
         menu = nav.context_keyboard(ch, content.WORLD, key)
