@@ -5030,7 +5030,7 @@ async def complete_quest_core(ch: Character, qid: str) -> tuple[bool, str]:
     ok, msg = game_actions.quest_complete_here(ch, qid)
     if not ok:
         return False, msg
-    await save(ch)  # retain the quest reward if a later notification step fails
+    await save(ch, force=True)  # commit base reward before later callbacks can fail
     levels = []
     await gl._check_levelup(ch, levels)
     if levels:
@@ -5057,7 +5057,7 @@ async def complete_errand_core(ch: Character, npc_id: str) -> tuple[bool, str]:
     ok, msg = game_actions.errand_turn_in_here(ch, npc_id)
     if not ok:
         return False, msg
-    await save(ch)
+    await save(ch, force=True)  # do not leave consumed items/reward only in dirty cache
     levels = []
     await gl._check_levelup(ch, levels)
     if levels:
