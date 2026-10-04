@@ -4,10 +4,11 @@ import os
 from urllib.parse import urlsplit
 
 
-def configuration():
-    url = os.getenv('LEGAL_DOCS_URL', '').strip()
-    version = os.getenv('MAX_LEGAL_VERSION', '').strip()
-    contact = os.getenv('SUPPORT_CONTACT', '').strip()
+def configuration(env=None):
+    env = os.environ if env is None else env
+    url = env.get('LEGAL_DOCS_URL', '').strip()
+    version = env.get('MAX_LEGAL_VERSION', '').strip()
+    contact = env.get('SUPPORT_CONTACT', '').strip()
     try:
         parsed = urlsplit(url)
     except ValueError:

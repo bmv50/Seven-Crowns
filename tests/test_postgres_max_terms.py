@@ -41,6 +41,17 @@ async def run(dsn):
         assert await store.accepted(uid, 'v2') and not await store.accepted(uid, 'v1')
         # No character snapshot or notification flag is created by accepting.
         assert await db.pool.fetchval('SELECT count(*) FROM characters WHERE uid=$1', uid) == 0
+        from scripts.max_preflight import check_database
+        connect_factory = asyncpg.connect
+        async def scoped_connect(*args, **kwargs):
+            kwargs['server_settings'] = {'search_path': schema}
+            return await connect_factory(*args, **kwargs)
+        with patch.object(asyncpg, 'connect', side_effect=scoped_connect):
+            report = await check_database(dsn)
+        assert report['connected'] and report['schema_ready']
+        assert report['inbox_counts'] == report['outbox_counts'] == {}
+        assert report['stalled_outbox'] == 0
+        assert await db.pool.fetchval('SELECT count(*) FROM characters') == 0
         try:
             await store.accept(42, 'v1')
         except ValueError:
