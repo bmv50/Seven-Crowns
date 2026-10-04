@@ -2,11 +2,12 @@
 from . import content, game_actions, npc, quest, skills
 import re
 
-_PURCHASE = re.compile(r'(✅ Купить|❌ Отмена|✅ Продать|❌ Отмена продажи|✅ Починить|❌ Отмена ремонта|✅ Изучить|❌ Отмена обучения) \[([0-9a-f]{32})\]\Z')
+_PURCHASE = re.compile(r'(✅ Купить|❌ Отмена|✅ Продать|❌ Отмена продажи|✅ Починить|❌ Отмена ремонта|✅ Изучить|❌ Отмена обучения|✅ Подтвердить путь|❌ Отмена выбора) \[([0-9a-f]{32})\]\Z')
 _CONFIRM_COMMANDS = {'✅ Купить': 'buyconfirm', '❌ Отмена': 'buycancel',
                      '✅ Продать': 'sellconfirm', '❌ Отмена продажи': 'sellcancel',
                      '✅ Починить': 'repairconfirm', '❌ Отмена ремонта': 'repaircancel',
-                     '✅ Изучить': 'learnconfirm', '❌ Отмена обучения': 'learncancel'}
+                     '✅ Изучить': 'learnconfirm', '❌ Отмена обучения': 'learncancel',
+                     '✅ Подтвердить путь': 'choiceconfirm', '❌ Отмена выбора': 'choicecancel'}
 
 COMMANDS = {
     '🔍 Осмотр': '/look', '👤 Герой': '/stats', '🎒 Сумка': '/inv',
@@ -22,14 +23,14 @@ COMMANDS = {
 _DIRECTIONS = {value: label for label, value in COMMANDS.items() if not value.startswith('/')}
 
 
-def _register(prefix, title, action, key):
+def _register(prefix, title, action, key, argument=None):
     # Stable content ID prevents ambiguous names and stale buttons retargeting an NPC.
     suffix = f' [{key}]'
     if not isinstance(key, str) or len(suffix) + len(prefix) >= 128 or any(c.isspace() for c in key):
         return
     title = ' '.join(str(title).split())
     label = prefix + title[:128-len(prefix)-len(suffix)] + suffix
-    COMMANDS[label] = f'/{action} {key}'
+    COMMANDS[label] = f'/{action} {argument if argument is not None else key}'
 
 
 for _key, _entry in content.NPCS.items():
@@ -39,6 +40,9 @@ for _key, _entry in content.NPCS.items():
 for _key, _entry in content.QUESTS.items():
     _register('📜 Взять: ', _entry.get('name', _key), 'accept', _key)
     _register('✅ Сдать: ', _entry.get('name', _key), 'turnin', _key)
+    for _option in quest.choose_options(_key):
+        _register('🔀 ', _option.get('label', _option['id']), 'choose', f"{_key}:{_option['id']}",
+                  f"{_key} {_option['id']}")
 for _key, _entry in content.ITEMS.items():
     _register('🛍 ', _entry.get('name', _key), 'buyoffer', _key)
     _register('💰 Продать: ', _entry.get('name', _key), 'selloffer', _key)
@@ -80,6 +84,14 @@ def service_keyboard(token, operation):
         raise ValueError('Invalid service confirmation')
     return [[{'type': 'message', 'text': f'{label} [{token}]'}] for label in labels[operation]] + [
         [{'type': 'message', 'text': '🔍 Осмотр'}]]
+
+
+def choice_keyboard(token):
+    if not isinstance(token, str) or not re.fullmatch(r'[0-9a-f]{32}', token):
+        raise ValueError('Invalid story choice token')
+    return [[{'type': 'message', 'text': f'{label} [{token}]'}]
+            for label in ('✅ Подтвердить путь', '❌ Отмена выбора')] + [
+                [{'type': 'message', 'text': '🔍 Осмотр'}]]
 
 
 def train_keyboard(ch, rooms):
@@ -133,6 +145,8 @@ def context_keyboard(ch, rooms, npc_id=None):
         actions = [f'/talk {key}' for key in here]
     elif npc_id in here:
         actions = [f'/turnin {key}' for key in quest.turn_in_quests(ch, npc_id)]
+        actions += [f'/choose {qid} {option["id"]}' for qid, options in quest.pending_choices(ch, npc_id)
+                    for option in options]
         actions += [f'/accept {key}' for key in quest.available_quests(ch, npc_id)]
         if npc_id in game_actions.vendors_here(ch):
             actions += [f'/shop {npc_id}', '/sell']

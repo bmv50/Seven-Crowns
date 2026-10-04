@@ -110,6 +110,7 @@ async def run():
     env.update(_max_reply=env['send'], _max_navigation=max_navigation)
     env['_max_shop_command'] = AsyncMock(return_value=False)
     env['_max_service_command'] = AsyncMock(return_value=False)
+    env['_max_choice_command'] = AsyncMock(return_value=False)
     exec(compile(ast.Module(body=[handler], type_ignores=[]), 'MAX handler', 'exec'), env)
     await env['_max_handle_input'](MaxInput('42', 'attack:1', '/attack rat'))
     assert order == [('progress', True, ['последний удар']), ('reward',)]

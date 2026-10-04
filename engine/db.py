@@ -235,6 +235,20 @@ CREATE TABLE IF NOT EXISTS max_service_intents (
     expires_at TIMESTAMPTZ NOT NULL DEFAULT now() + interval '5 minutes'
 );
 CREATE INDEX IF NOT EXISTS idx_max_service_uid ON max_service_intents(uid, status);
+CREATE TABLE IF NOT EXISTS max_choice_intents (
+    token TEXT PRIMARY KEY,
+    uid BIGINT NOT NULL,
+    generation BIGINT NOT NULL,
+    room TEXT NOT NULL,
+    qid TEXT NOT NULL,
+    option_id TEXT NOT NULL,
+    option_snapshot JSONB NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','done','cancelled')),
+    receipt TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at TIMESTAMPTZ NOT NULL DEFAULT now() + interval '5 minutes'
+);
+CREATE INDEX IF NOT EXISTS idx_max_choice_uid ON max_choice_intents(uid, status);
 -- ───────── Этап 3.2: гильдии и гильд-банк ─────────
 -- guilds/guild_members — источник истины по гильдиям (вместо guilds.json, чья
 -- запись глотала ошибки). Банк (bank_gold/bank_items) меняется транзакционно в
@@ -496,6 +510,8 @@ class Database:
         await recover(self, ch)
         from .service_purchase import recover as recover_service
         await recover_service(self, ch)
+        from .max_choice import recover as recover_choice
+        await recover_choice(self, ch)
         async with self.pool.acquire() as con:
             status = await con.execute("""
                 UPDATE characters SET

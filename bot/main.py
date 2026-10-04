@@ -52,6 +52,7 @@ from engine import max_combat as _max_combat
 from engine import max_navigation as _max_navigation
 from engine.shop_purchase import ShopPurchaseStore
 from engine.service_purchase import ServicePurchaseStore
+from engine.max_choice import ChoiceStore
 
 from engine import content
 from engine import game_actions
@@ -620,6 +621,38 @@ async def _max_service_command(ch: Character, command: str, parts):
     except Exception as exc:
         _elog.log_err(_log, 'max_service_failed', exc, uid=ch.uid)
         await _max_reply(ch.uid, 'Не удалось подтвердить результат услуги. Повторите то же подтверждение позже; не выбирайте новую услугу.')
+    return True
+
+
+async def _max_choice_command(ch: Character, command: str, parts):
+    if command not in ('choose', 'выбрать', 'confirm', 'choiceconfirm', 'choicecancel'):
+        return False
+    if command != 'choicecancel' and _in_combat(ch):
+        await _max_reply(ch.uid, 'Сначала выйдите из боя (flee).')
+        return True
+    try:
+        store = ChoiceStore(db)
+        if command in ('choose', 'выбрать'):
+            if len(parts) != 3:
+                await _max_reply(ch.uid, 'Выберите вариант в разговоре с NPC или /choose <задание> <вариант>.')
+                return True
+            async with _econ_lock(ch.uid):
+                ok, text, token = await store.quote(ch, *parts[1:])
+            if ok:
+                await send(ch.uid, text, max_keyboard=_max_navigation.choice_keyboard(token))
+            else:
+                await _max_reply(ch.uid, text)
+        else:
+            token = parts[1] if len(parts) == 2 else ''
+            async with _econ_lock(ch.uid):
+                _, text = await store.confirm(ch, token, cancel=command == 'choicecancel')
+            await _max_reply(ch.uid, text)
+    except StaleCharacterWrite:
+        _evict_stale(ch.uid)
+        await _max_reply(ch.uid, 'Герой изменился. Откройте игру заново.')
+    except Exception as exc:
+        _elog.log_err(_log, 'max_choice_failed', exc, uid=ch.uid)
+        await _max_reply(ch.uid, 'Не удалось подтвердить выбор. Повторите ту же кнопку позже; не выбирайте новый вариант.')
     return True
 
 
@@ -2293,7 +2326,6 @@ async def send_tutorial(ch: Character, event: str):
 # MAX uses a text command surface over the very same world/characters/GameLoop.
 # No Telegram Message/CallbackQuery objects are manufactured for this transport.
 _max_input_locks: dict[str, asyncio.Lock] = {}
-_max_choice_pending: dict[int, tuple[str, str]] = {}
 
 
 def _max_npc_commands(ch: Character, npc_id: str) -> str:
@@ -2418,7 +2450,8 @@ async def _max_handle_input(event: MaxInput):
         # Resolve an uncertain trade before any new input can consume/equip a
         # sold item still present in the cache. Failure leaves input unapplied.
         if ch is not None and (getattr(db, '_shop_uncertain', {}).get(uid) is not None
-                               or getattr(db, '_service_uncertain', {}).get(uid) is not None):
+                               or getattr(db, '_service_uncertain', {}).get(uid) is not None
+                               or getattr(db, '_choice_uncertain', {}).get(uid) is not None):
             async with _econ_lock(uid):
                 await db.save(ch)
         if command in ("start", "help", "помощь"):
@@ -2495,6 +2528,8 @@ async def _max_handle_input(event: MaxInput):
             return
         if await _max_service_command(ch, command, parts):
             return
+        if await _max_choice_command(ch, command, parts):
+            return
         if command in ui.DIR_ICONS:
             if command not in WORLD[ch.room]["exits"]:
                 await send(uid, "Туда нельзя пройти.")
@@ -2503,7 +2538,6 @@ async def _max_handle_input(event: MaxInput):
             if not moved:
                 await send(uid, "Сначала выйдите из боя (flee).")
                 return
-            _max_choice_pending.pop(uid, None)
             rewards = quest.on_enter_room(ch, ch.room) or []
             weekly_reward = weekly.on_room_visit(ch, ch.room)
             if weekly_reward:
@@ -2665,31 +2699,6 @@ async def _max_handle_input(event: MaxInput):
             _ok, msg = await complete_quest_core(ch, qid)
             entry = QUESTS.get(qid, {})
             await _max_context_reply(ch, msg, entry.get('turn_in'))
-        elif command in ("choose", "выбрать"):
-            if len(parts) != 3:
-                await send(uid, "Формат: /choose <код задания> <вариант>.")
-                return
-            qid, option_id = parts[1:]
-            entry = QUESTS.get(qid)
-            giver = entry.get("giver") if entry else None
-            option = quest.choose_option(qid, option_id) if entry else None
-            if (giver not in WORLD[ch.room].get("npc", []) or not option
-                    or not any(qid == pending for pending, _ in quest.pending_choices(ch, giver))):
-                await send(uid, "Этот выбор сейчас недоступен.")
-                return
-            _max_choice_pending[uid] = (qid, option_id)
-            await send(uid, f"🔀 {option.get('label', option_id)}\n"
-                       f"{option.get('text', '').strip()}\n"
-                       "⚠️ Выбор изменит путь героя. Напишите /confirm для подтверждения.")
-        elif command == "confirm":
-            pending = _max_choice_pending.pop(uid, None)
-            if not pending:
-                await send(uid, "Нет выбора для подтверждения.")
-                return
-            ok, msg = game_actions.quest_choose_here(ch, *pending)
-            if ok:
-                await save(ch, force=True)
-            await send(uid, msg)
         elif command in ("shop", "лавка", "магазин"):
             vendor_query = " ".join(parts[1:])
             vendor_id = (_max_resolve_npc(ch, vendor_query) if vendor_query

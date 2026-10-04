@@ -21,6 +21,7 @@ def load_handler(env):
     env.setdefault('_max_navigation', max_navigation)
     env.setdefault('_max_shop_command', AsyncMock(return_value=False))
     env.setdefault('_max_service_command', AsyncMock(return_value=False))
+    env.setdefault('_max_choice_command', AsyncMock(return_value=False))
     if '_max_context_reply' not in env:
         async def context_reply(ch, text, npc_id=None):
             await env['send'](ch.uid, text)
@@ -172,10 +173,10 @@ async def test_create_and_move():
     await handler(MaxInput("42", "message:42:temple", "юг"))
     await handler(MaxInput("42", "message:42:faith", "/accept sample_choose_faith"))
     assert ch.quests["sample_choose_faith"] == "active"
-    await handler(MaxInput("42", "message:42:choice", "/choose sample_choose_faith light"))
     assert "sample_faith" not in ch.flags
     assert "quest_choices" not in ch.flags
-    await handler(MaxInput("42", "message:42:confirm", "/confirm"))
+    # MAX durable choices are tested separately; seed the shared quest result.
+    assert game_actions.quest_choose_here(ch, "sample_choose_faith", "light")[0]
     assert ch.flags["quest_choices"]["sample_choose_faith"] == "light"
     await handler(MaxInput("42", "message:42:3", "/stats"))
     assert messages[-1] == (-11, "STATS")
