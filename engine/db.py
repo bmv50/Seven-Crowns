@@ -192,6 +192,10 @@ CREATE TABLE IF NOT EXISTS guild_members (
     joined DOUBLE PRECISION
 );
 CREATE INDEX IF NOT EXISTS idx_guild_members_gid ON guild_members(gid);
+CREATE TABLE IF NOT EXISTS guild_invites (
+    uid BIGINT PRIMARY KEY,
+    gid TEXT NOT NULL
+);
 -- ───────── Этап 7.1: аналитика воронки + deep-link атрибуция ─────────
 -- analytics_events — сырой лог событий воронки (engine/analytics.py: track()
 -- копит в памяти, flush_to_db() пишет батчем тем же тактом, что и персонажей —
@@ -608,6 +612,8 @@ class Database:
                     uid, new_gen)
                 from . import party_store
                 await party_store.remove_player(con, uid)
+                from . import guild_store
+                await guild_store.remove_player(con, uid)
                 await con.execute(
                     "INSERT INTO audit_log (ts, uid, action, details) VALUES ($1,$2,$3,$4)",
                     time.time(), uid, "reset", json.dumps(details or {}))

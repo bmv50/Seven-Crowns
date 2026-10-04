@@ -56,6 +56,7 @@ async def test_create_and_move():
         "HUB_ROOM": START_ROOM, "NameTaken": NameTaken,
         "ActiveCharacterExists": ActiveCharacterExists,
         "analytics": analytics, "ui": ui, "game_actions": game_actions,
+        "_max_guild_command": AsyncMock(return_value=False),
         "_uigate": uigate, "party_mgr": PartyManager(),
         "players_in_room": lambda actor: [other for other in characters.values()
                             if other.uid != actor.uid and other.room == actor.room],

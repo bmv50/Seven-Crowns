@@ -357,7 +357,9 @@ async def create_guild(cf, gid, name, leader_uid, cost, op_id):
                     result = (True, "Гильдия основана.", leader["gold"])
         except Exception as exc:
             if _is_duplicate(exc):
-                return True, "Гильдия уже основана.", None
+                if await _op_done(conn, op_id):
+                    return True, "Гильдия уже основана.", None
+                return False, "Вы уже в гильдии или идентификатор занят.", None
             return False, "⚙️ Банк гильдии временно недоступен.", None
         return result
 

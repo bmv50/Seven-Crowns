@@ -87,6 +87,10 @@ class FakeConn:
 
     # — исполнение SQL (сопоставление по подстрокам) —
     async def execute(self, sql, *args):
+        if "pg_advisory_xact_lock" in sql:
+            return "SELECT 1"
+        if "INSERT INTO kv_state" in sql and args[0] == 'guild_next_id':
+            return "INSERT 0 1"
         if self.fail_on_execute and self.fail_on_execute in sql:
             self.fail_on_execute = None
             raise RuntimeError("injected failure")
@@ -159,6 +163,8 @@ class FakeConn:
         raise AssertionError("FakeConn.fetchrow: неизвестный SQL:\n" + sql)
 
     async def fetch(self, sql, *args):
+        if "FROM guilds" in sql or "FROM guild_members" in sql or "FROM guild_invites" in sql:
+            return []  # Guild cleanup is exercised against real PostgreSQL separately.
         if "WHERE deleted_at IS NULL" in sql:                     # load_all
             return [dict(r) for r in self.characters.values()
                     if r["deleted_at"] is None]

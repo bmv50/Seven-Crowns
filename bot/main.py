@@ -294,6 +294,7 @@ from engine.auction import AuctionManager
 from engine import auction as auctionlib
 from engine import econ_tx                    # Этап 3.1: транзакционное ядро аукциона (БД)
 from engine import guild_tx                   # Этап 3.2: транзакционное ядро гильд-банка (БД)
+from engine import guild_store
 auction_mgr = AuctionManager(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "auction.json"))
 # PROD=1 — публичный (бета) режим: аукцион работает ТОЛЬКО через БД; без пула
 # торговля отключается, а на старте (main) отсутствие БД — фатально. PROD=0 —
@@ -317,6 +318,7 @@ _TERR_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file
 _territory.load(_TERR_PATH)
 from engine import chronicle as _chronicle
 guild_naming: dict[int, bool] = {}   # uid ждёт ввода названия гильдии
+_guild_state_lock = asyncio.Lock()
 bug_waiting: dict[int, float] = {}   # uid нажал «Сообщить о баге» — ждём описание
 
 # Хвост последних действий игрока — самое ценное в отчёте о баге. Плейтест на
@@ -1894,43 +1896,9 @@ async def on_text(message: Message):
                 "(буквы/цифры), без невидимых спецсимволов и не начиная с @ или /.")
             return
         guild_naming.pop(uid, None)
-        if guild_mgr.guild_of(ch.uid):
-            await message.answer("Вы уже состоите в гильдии.")
-        elif ch.gold < guildlib.CREATE_COST:
-            await message.answer("Не хватает монет на основание гильдии.")
-        elif db and db.pool:
-            # БД-путь: списание cost и создание гильдии — одной транзакцией
-            # (guild_tx.create_guild). gid резервируем из guild_mgr._next ДО await
-            # (профилактика гонки в процессе); op_id = f"gcreate:{gid}".
-            import time as _time
-            gid = str(guild_mgr._next)
-            guild_mgr._next += 1
-            async with _econ_lock(ch.uid):
-                ok, gmsg, char_gold = await guild_tx.create_guild(
-                    db.pool.acquire, gid, name, ch.uid, guildlib.CREATE_COST, f"gcreate:{gid}")
-                if ok and char_gold is not None:
-                    ch.gold = char_gold
-                    # зеркалим гильдию в guild_mgr (источник отображения) с тем же gid
-                    guild_mgr.guilds[gid] = {
-                        "name": name[:24], "leader": ch.uid, "members": [ch.uid],
-                        "ranks": {str(ch.uid): "leader"}, "bank_gold": 0, "bank_items": [],
-                        "founded": int(_time.time()),
-                    }
-                    guild_mgr.member_of[ch.uid] = gid
-                    await save(ch, force=True)
-            if ok:
-                await message.answer(f"🏰 Гильдия «{_ts.esc_md(name)}» основана! Вы её лидер. "
-                                     "Откройте 👥 Группа → 🏰 Гильдия.", parse_mode="Markdown")
-            else:
-                await message.answer("⚙️ Банк гильдии временно недоступен." if PROD else gmsg)
-        elif PROD:
-            await message.answer("⚙️ Банк гильдии временно недоступен.")
-        else:
-            ch.gold -= guildlib.CREATE_COST
-            guild_mgr.create(ch.uid, name)
-            await save(ch, force=True)      # основание гильдии (списано золото) — фиксируем сразу
-            await message.answer(f"🏰 Гильдия «{_ts.esc_md(name)}» основана! Вы её лидер. "
-                                 "Откройте 👥 Группа → 🏰 Гильдия.", parse_mode="Markdown")
+        ok, msg = await guild_action_core(ch, "create", name=name,
+                                         op_id=f"tg:gcreate:{uid}:{message.message_id}")
+        await message.answer(msg)
         return
     low = text.lower()
     parts = low.split()
@@ -1989,17 +1957,10 @@ async def on_text(message: Message):
             await message.answer(f"💬 Вы: {_said}")
         return
     if cmd in ("г", "гильдия", "guild"):
-        if not guild_mgr.guild_of(ch.uid):
-            await message.answer("Вы не в гильдии.")
-        else:
-            _gsaid = _ts.esc_md(_ts.clean_chat(arg))
-            if _gsaid and await _chat_blocked(message, ch):
-                return
-            if _gsaid:
-                for u in guild_mgr.members(ch.uid):
-                    if u != uid:
-                        await send(u, f"🏰 *{_ts.esc_md(ch.name)}:* {_gsaid}")
-                await message.answer(f"🏰 Вы (гильдии): {_gsaid}")
+        if arg and await _chat_blocked(message, ch):
+            return
+        _ok, reply = await guild_chat_core(ch, arg)
+        await message.answer(reply)
         return
     if cmd in ("п", "пати", "party"):
         if arg and await _chat_blocked(message, ch):
@@ -2188,7 +2149,7 @@ async def _max_handle_input(event: MaxInput):
                            "/confirm, /errand, /erraccept, /errturnin, /errabandon, "
                            "/shop [торговец], /buy <предмет>, /sell, /repair, "
                            "/train, /learn <умение>, /loadout <умение>, "
-                           "/preset save|load <1–3>, /group, /party <текст>, /respawn.")
+"/preset save|load <1–3>, /group, /party <текст>, /guild, /respawn.")
                 await send(uid, ui.render_room(ch, world, others_in(ch.room)))
             else:
                 races = ", ".join(RACES)
@@ -2242,6 +2203,8 @@ async def _max_handle_input(event: MaxInput):
             await save(ch, force=True)
             await send(uid, f"✨ Возрождение в {WORLD[ch.room]['name']}. Потеряно монет: {lost}.\n"
                        + ui.render_room(ch, world, others_in(ch.room)))
+            return
+        if await _max_guild_command(ch, command, parts, event):
             return
         if command in ui.DIR_ICONS:
             if command not in WORLD[ch.room]["exits"]:
@@ -5327,6 +5290,173 @@ async def duel_yield(cb: CallbackQuery, ch: Character):
 
 
 # ───────── ГИЛЬДИИ ─────────
+def _guild_apply_snapshot(state):
+    guild_mgr.guilds, guild_mgr.member_of, guild_mgr.invites, guild_mgr._next = state
+
+
+async def guild_action_core(ch: Character, op: str, target_uid=None, name=None, op_id=None):
+    if not _uigate.unlocked("guild", ch.level):
+        return False, _uigate.hint("guild")
+    if op == "create":
+        name = _ts.clean_name(name or "")
+        if name is None:
+            return False, "Название: 2–20 букв или цифр."
+    if op == "invite":
+        target = chars.get(target_uid)
+        if not target or target_uid == ch.uid or target.room != ch.room or target.flags.get("dead"):
+            return False, "Приглашать можно только другого живого игрока в вашей комнате."
+        if not _uigate.unlocked("guild", target.level):
+            return False, "Гильдии доступны адресату с 10-го уровня."
+    async with _guild_state_lock:
+        if not (db and db.pool):
+            return False, "Гильдия временно недоступна: требуется PostgreSQL."
+        try:
+            async with _econ_lock(ch.uid):
+                if op == "create":
+                    await save(ch, force=True)
+                result, state = await guild_store.action(
+                    db.pool.acquire, ch.uid, op, target=target_uid, name=name,
+                    op_id=op_id or f"gcreate:{ch.uid}:{_time_mod.time_ns()}")
+                _guild_apply_snapshot(state)
+                if result[0] and len(result) > 2 and result[2] is not None:
+                    ch.gold = result[2]
+            return result[0], result[1]
+        except Exception as exc:
+            _elog.log_err(_log, "guild_action_failed", exc, uid=ch.uid, op=op)
+            return False, "Не удалось сохранить действие гильдии. Попробуйте позже."
+
+
+async def guild_bank_core(ch: Character, op: str, value, op_id: str):
+    if not _uigate.unlocked("guild", ch.level):
+        return False, _uigate.hint("guild")
+    if op not in ("deposit_gold", "withdraw_gold", "deposit_item", "withdraw_item"):
+        return False, "Неизвестная операция банка."
+    if op.endswith("_gold"):
+        if not isinstance(value, int) or value <= 0:
+            return False, "Сумма должна быть положительным целым числом в бронзе."
+    elif value not in ITEMS or ITEMS[value].get("type") == "quest":
+        return False, "Этот предмет нельзя передавать в банк."
+    async with _guild_state_lock:
+        if not (db and db.pool):
+            return False, "Банк гильдии временно недоступен."
+        try:
+            async with _econ_lock(ch.uid):
+                _guild_apply_snapshot(await guild_store.load(db.pool.acquire))
+                gid = guild_mgr.gid_of(ch.uid)
+                if not gid:
+                    return False, "Вы не в гильдии."
+                await save(ch, force=True)
+                ok, msg, player_value, bank_value = await getattr(guild_tx, op)(
+                    db.pool.acquire, ch.uid, gid, value, op_id)
+                if ok and player_value is not None:
+                    if op.endswith("_gold"):
+                        ch.gold = player_value
+                        guild_mgr.guilds[gid]["bank_gold"] = bank_value
+                    else:
+                        ch.inventory = list(player_value)
+                        guild_mgr.guilds[gid]["bank_items"] = list(bank_value)
+                return ok, msg
+        except Exception as exc:
+            _elog.log_err(_log, "guild_bank_failed", exc, uid=ch.uid, op=op)
+            return False, "Не удалось выполнить операцию банка. Попробуйте позже."
+
+
+async def guild_chat_core(ch: Character, text: str):
+    if not _uigate.unlocked("guild", ch.level):
+        return False, _uigate.hint("guild")
+    if db and db.pool:
+        async with _guild_state_lock:
+            _guild_apply_snapshot(await guild_store.load(db.pool.acquire))
+    g = guild_mgr.guild_of(ch.uid)
+    if not g:
+        return False, "Вы не в гильдии."
+    clean = _ts.clean_chat(text)
+    if not clean:
+        return False, "Напишите сообщение после /gchat."
+    for uid in list(g["members"]):
+        if uid != ch.uid:
+            await send(uid, f"🏰 *{_ts.esc_md(ch.name)}:* {_ts.esc_md(clean)}")
+    return True, f"🏰 Вы (гильдии): {_ts.esc_md(clean)}"
+
+
+async def _max_guild_command(ch: Character, command: str, parts, event: MaxInput):
+    commands = {"guild", "гильдия", "gcreate", "ginvite", "gaccept", "gdecline",
+                "gleave", "gchat", "г", "gbank", "gdeposit", "gwithdraw",
+                "gdeposititem", "gwithdrawitem", "gkick", "gpromote", "gdemote"}
+    if command not in commands:
+        return False
+    if not _uigate.unlocked("guild", ch.level):
+        await send(ch.uid, _uigate.hint("guild"))
+        return True
+    if command in ("guild", "гильдия", "gbank"):
+        try:
+            async with _guild_state_lock:
+                _guild_apply_snapshot(await guild_store.load(db.pool.acquire))
+        except Exception as exc:
+            _elog.log_err(_log, "guild_view_failed", exc, uid=ch.uid)
+            await send(ch.uid, "Гильдия временно недоступна. Попробуйте позже.")
+            return True
+        lines = [render_guild(ch)]
+        g = guild_mgr.guild_of(ch.uid)
+        if g:
+            lines.extend(f"ID {uid}: {chars[uid].name if uid in chars else 'игрок'}"
+                         for uid in g["members"])
+            lines.extend(f"/ginvite {other.uid} — {other.name}"
+                         for other in players_in_room(ch) if not guild_mgr.guild_of(other.uid))
+            for key in dict.fromkeys(g.get("bank_items", [])):
+                lines.append(f"{key}: {ITEMS.get(key, {}).get('name', key)} ×{g['bank_items'].count(key)}")
+            lines.append("/gchat <текст> · /gleave · /ginvite <ID>\n"
+                         "/gpromote <ID> · /gdemote <ID> · /gkick <ID>\n"
+                         "/gdeposit <бронза> · /gwithdraw <бронза>\n"
+                         "/gdeposititem <код> · /gwithdrawitem <код>")
+        else:
+            lines.append("/gcreate <название> · /gaccept · /gdecline")
+        await send(ch.uid, "\n".join(lines))
+        return True
+    if command in ("gchat", "г"):
+        if _mod.is_muted(ch.uid) or not _mod.chat_allowed(ch.uid):
+            await send(ch.uid, "🔇 Чат временно недоступен.")
+        else:
+            _, msg = await guild_chat_core(ch, " ".join(parts[1:]))
+            await send(ch.uid, msg)
+        return True
+    if command in ("gdeposit", "gwithdraw", "gdeposititem", "gwithdrawitem"):
+        if len(parts) != 2 or (command in ("gdeposit", "gwithdraw") and not parts[1].isdigit()):
+            await send(ch.uid, f"Формат: /{command} <{'бронза' if command in ('gdeposit', 'gwithdraw') else 'код предмета'}>.")
+            return True
+        ops = {"gdeposit": "deposit_gold", "gwithdraw": "withdraw_gold",
+               "gdeposititem": "deposit_item", "gwithdrawitem": "withdraw_item"}
+        value = int(parts[1]) if command in ("gdeposit", "gwithdraw") else parts[1]
+        _, msg = await guild_bank_core(ch, ops[command], value, f"max:guild:{ch.uid}:{event.event_key}")
+        await send(ch.uid, msg)
+        return True
+    target = None
+    if command in ("ginvite", "gkick", "gpromote", "gdemote"):
+        try:
+            if len(parts) != 2:
+                raise ValueError()
+            target = int(parts[1])
+        except ValueError:
+            await send(ch.uid, f"Формат: /{command} <ID>. Список: /guild.")
+            return True
+    if command in ("gaccept", "gdecline", "gleave") and len(parts) != 1:
+        await send(ch.uid, f"Формат: /{command}.")
+        return True
+    op = command[1:]
+    ok, msg = await guild_action_core(ch, op, target,
+                                     name=" ".join(parts[1:]) if op == "create" else None,
+                                     op_id=f"max:guild:{ch.uid}:{event.event_key}")
+    if ok and target is not None:
+        if op == "invite":
+            await send(target, f"🏰 {_ts.esc_md(ch.name)} приглашает вас в гильдию. /gaccept или /gdecline.")
+        elif op in ("kick", "promote", "demote"):
+            await send(target, f"🏰 Ваше членство или ранг изменены игроком {_ts.esc_md(ch.name)}.")
+    if ok and op == "accept":
+        analytics.track(ch.uid, "guild_join", {"gid": guild_mgr.gid_of(ch.uid)})
+    await send(ch.uid, msg)
+    return True
+
+
 def render_guild(ch: Character) -> str:
     g = guild_mgr.guild_of(ch.uid)
     if not g:
@@ -5337,7 +5467,7 @@ def render_guild(ch: Character) -> str:
         L.append(f"\nОснование гильдии стоит 💰{money.fmt(guildlib.CREATE_COST)}.")
         return "\n".join(L)
     L = [f"🏰 *{g['name']}*", ""]
-    order = {"leader": 0, "officer": 1, "member": 2}
+    order = {rank: index for index, rank in enumerate(guildlib.RANK_ORDER)}
     for uid in sorted(g["members"], key=lambda u: order.get(g["ranks"].get(str(u), "member"), 9)):
         c = chars.get(uid)
         nm = c.name if c else f"id{uid}"
@@ -5375,6 +5505,14 @@ def kb_guild(ch: Character) -> InlineKeyboardMarkup:
 
 
 async def show_guild(cb: CallbackQuery, ch: Character):
+    if db and db.pool:
+        try:
+            async with _guild_state_lock:
+                _guild_apply_snapshot(await guild_store.load(db.pool.acquire))
+        except Exception as exc:
+            _elog.log_err(_log, "guild_view_failed", exc, uid=ch.uid)
+            await cb.answer("Гильдия временно недоступна.", show_alert=True)
+            return
     await safe_edit(cb, render_guild(ch), kb_guild(ch))
 
 
@@ -5403,66 +5541,41 @@ async def guild_invite_menu(cb: CallbackQuery, ch: Character):
 
 
 async def do_guild_invite(cb: CallbackQuery, ch: Character, target_uid: int):
-    target = chars.get(target_uid)
-    if not target:
-        await cb.answer("Игрок не найден", show_alert=True); return
-    if not guild_mgr.invite(ch.uid, target_uid):
-        await cb.answer("Не удалось пригласить", show_alert=True); return
-    g = guild_mgr.guild_of(ch.uid)
-    await bot.send_message(target_uid, f"📨 *{_ts.esc_md(ch.name)}* зовёт вас в гильдию «{_ts.esc_md(g['name'])}».",
-                           parse_mode="Markdown",
-                           reply_markup=_kb([[InlineKeyboardButton(text="✅ Принять", callback_data="gaccept"),
-                                              InlineKeyboardButton(text="❌ Отклонить", callback_data="gdecline")]]))
-    await cb.answer("Приглашение отправлено")
+    ok, msg = await guild_action_core(ch, "invite", target_uid)
+    if ok:
+        await send(target_uid, f"🏰 {_ts.esc_md(ch.name)} зовёт вас в гильдию. "
+                   "MAX: /gaccept или /gdecline. Telegram: откройте меню гильдии.")
+    await cb.answer(msg, show_alert=not ok)
 
 
 async def guild_accept(cb: CallbackQuery, ch: Character):
-    g = guild_mgr.accept(ch.uid)
-    if not g:
-        await cb.answer("Приглашение истекло", show_alert=True); return
-    analytics.track(ch.uid, "guild_join", {"gid": guild_mgr.gid_of(ch.uid)})   # Этап 7.1
-    if db and db.pool:
-        # Персистентность состава (Этап 3.3): guild_mgr.accept уже подтвердил
-        # вступление в памяти — здесь только зеркалим в guild_members, чтобы
-        # guild_tx-банк узнал о новом члене сразу, без рестарта/миграции.
-        _gid = guild_mgr.gid_of(ch.uid)
-        try:
-            await guild_tx.add_member(db.pool.acquire, ch.uid, _gid, "member")
-        except Exception as e:
-            _elog.log_err(_log, "guild_roster_sync_failed", e, uid=ch.uid, gid=_gid, op="accept")
-    for uid in g["members"]:
-        await send(uid, f"🏰 *{_ts.esc_md(ch.name)}* вступает в гильдию «{_ts.esc_md(g['name'])}».")
+    ok, msg = await guild_action_core(ch, "accept")
+    if not ok:
+        await cb.answer(msg, show_alert=True)
+        return
+    analytics.track(ch.uid, "guild_join", {"gid": guild_mgr.gid_of(ch.uid)})
+    for uid in guild_mgr.members(ch.uid):
+        await send(uid, f"🏰 {_ts.esc_md(ch.name)} вступает в гильдию.")
     await show_guild(cb, ch)
 
 
 async def guild_decline(cb: CallbackQuery, ch: Character):
-    guild_mgr.decline(ch.uid)
+    ok, msg = await guild_action_core(ch, "decline")
+    if not ok:
+        await cb.answer(msg, show_alert=True)
+        return
     await show_guild(cb, ch)
 
 
 async def guild_leave(cb: CallbackQuery, ch: Character):
-    g = guild_mgr.guild_of(ch.uid)
-    gid = guild_mgr.gid_of(ch.uid)     # захватить ДО leave — leave чистит member_of
-    mates = [u for u in (g["members"] if g else []) if u != ch.uid]
-    name = g["name"] if g else ""
-    guild_mgr.leave(ch.uid)
-    if gid and db and db.pool:
-        # Персистентность состава (Этап 3.3): зеркалим выход в guild_members.
-        try:
-            await guild_tx.remove_member(db.pool.acquire, ch.uid, gid)
-        except Exception as e:
-            _elog.log_err(_log, "guild_roster_sync_failed", e, uid=ch.uid, gid=gid, op="leave")
-    for u in mates:
-        await send(u, f"🏰 *{_ts.esc_md(ch.name)}* покидает гильдию «{_ts.esc_md(name)}».")
-    await cb.answer("Вы вышли из гильдии")
+    mates = [uid for uid in guild_mgr.members(ch.uid) if uid != ch.uid]
+    ok, msg = await guild_action_core(ch, "leave")
+    if not ok:
+        await cb.answer(msg, show_alert=True)
+        return
+    for uid in mates:
+        await send(uid, f"🏰 {_ts.esc_md(ch.name)} покидает гильдию.")
     await show_guild(cb, ch)
-
-
-def _gold_menu(title, action):
-    amounts = [(1000, "10с"), (10000, "1з"), (100000, "10з")]
-    rows = [[InlineKeyboardButton(text=lbl, callback_data=f"{action}:{amt}") for amt, lbl in amounts]]
-    rows.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="guild")])
-    return title, _kb(rows)
 
 
 async def guild_dep_menu(cb: CallbackQuery, ch: Character):
@@ -5477,93 +5590,17 @@ async def guild_wd_menu(cb: CallbackQuery, ch: Character):
 
 
 async def guild_deposit(cb: CallbackQuery, ch: Character, amount: int):
-    gid = guild_mgr.gid_of(ch.uid)
-    if not gid:
-        await cb.answer("Вы не в гильдии", show_alert=True); return
-    if db and db.pool:
-        # Догоняющая синхронизация (Этап 3.3): игрок мог вступить/быть повышен
-        # ДО этого фикса — guild_mgr уже подтверждает членство, а guild_members
-        # о нём мог ещё не знать (иначе _member_rank внутри guild_tx откажет
-        # «Вы не состоите в этой гильдии»). Не денежная операция — лок не нужен.
-        _rank = guild_mgr.rank(ch.uid)
-        if _rank:
-            try:
-                await guild_tx.ensure_member(db.pool.acquire, ch.uid, gid, _rank)
-            except Exception as e:
-                _elog.log_err(_log, "guild_roster_sync_failed", e,
-                             uid=ch.uid, gid=gid, op="ensure_member_dep")
-        # БД-путь: списание у игрока и пополнение казны — одной транзакцией
-        # (guild_tx.deposit_gold). op_id с таймстампом-секундой: двойной клик в ту
-        # же секунду дедуплицируется идемпотентностью ledger (осознанно).
-        import time as _time
-        op_id = f"gdep:{ch.uid}:{int(_time.time())}"
-        async with _econ_lock(ch.uid):
-            ok, msg, char_gold, bank_gold = await guild_tx.deposit_gold(
-                db.pool.acquire, ch.uid, gid, amount, op_id)
-            if ok and char_gold is not None:
-                # обновляем память ДО отпускания лока: ch и guild_mgr (источник
-                # отображения) из возвращённых транзакцией значений
-                ch.gold = char_gold
-                g = guild_mgr.guilds.get(gid)
-                if g is not None:
-                    g["bank_gold"] = bank_gold
-                await save(ch, force=True)
-        if not ok:
-            await cb.answer(msg, show_alert=True); return
-        await cb.answer(f"Внесено 💰{money.fmt(amount)}")
+    ok, msg = await guild_bank_core(ch, "deposit_gold", amount, f"tg:guild:{ch.uid}:{cb.id}")
+    await cb.answer(msg[:180], show_alert=not ok)
+    if ok:
         await guild_dep_menu(cb, ch)
-        return
-    if PROD:
-        await cb.answer("⚙️ Банк гильдии временно недоступен", show_alert=True); return
-    if ch.gold < amount:
-        await cb.answer("Недостаточно монет", show_alert=True); return
-    ch.gold -= amount
-    guild_mgr.deposit_gold(ch.uid, amount)
-    await save(ch)
-    await cb.answer(f"Внесено 💰{money.fmt(amount)}")
-    await guild_dep_menu(cb, ch)
 
 
 async def guild_withdraw(cb: CallbackQuery, ch: Character, amount: int):
-    gid = guild_mgr.gid_of(ch.uid)
-    if not gid:
-        await cb.answer("Вы не в гильдии", show_alert=True); return
-    if db and db.pool:
-        # Догоняющая синхронизация (Этап 3.3): см. guild_deposit — тот же приём
-        # перед проверкой guild_members.rank внутри guild_tx.withdraw_gold.
-        _rank = guild_mgr.rank(ch.uid)
-        if _rank:
-            try:
-                await guild_tx.ensure_member(db.pool.acquire, ch.uid, gid, _rank)
-            except Exception as e:
-                _elog.log_err(_log, "guild_roster_sync_failed", e,
-                             uid=ch.uid, gid=gid, op="ensure_member_wd")
-        # БД-путь: снятие из казны на игрока — одной транзакцией; право withdraw
-        # проверяется по guild_members.rank внутри guild_tx.withdraw_gold.
-        import time as _time
-        op_id = f"gwd:{ch.uid}:{int(_time.time())}"
-        async with _econ_lock(ch.uid):
-            ok, msg, char_gold, bank_gold = await guild_tx.withdraw_gold(
-                db.pool.acquire, ch.uid, gid, amount, op_id)
-            if ok and char_gold is not None:
-                ch.gold = char_gold
-                g = guild_mgr.guilds.get(gid)
-                if g is not None:
-                    g["bank_gold"] = bank_gold
-                await save(ch, force=True)
-        if not ok:
-            await cb.answer(msg, show_alert=True); return
-        await cb.answer(f"Снято 💰{money.fmt(amount)}")
+    ok, msg = await guild_bank_core(ch, "withdraw_gold", amount, f"tg:guild:{ch.uid}:{cb.id}")
+    await cb.answer(msg[:180], show_alert=not ok)
+    if ok:
         await guild_wd_menu(cb, ch)
-        return
-    if PROD:
-        await cb.answer("⚙️ Банк гильдии временно недоступен", show_alert=True); return
-    if not guild_mgr.withdraw_gold(ch.uid, amount):
-        await cb.answer("Нельзя снять (права/казна)", show_alert=True); return
-    ch.gold += amount
-    await save(ch)
-    await cb.answer(f"Снято 💰{money.fmt(amount)}")
-    await guild_wd_menu(cb, ch)
 
 
 async def guild_bank_items(cb: CallbackQuery, ch: Character):
@@ -5599,173 +5636,30 @@ async def guild_dep_item_menu(cb: CallbackQuery, ch: Character):
 
 
 async def guild_deposit_item(cb: CallbackQuery, ch: Character, key: str):
-    gid = guild_mgr.gid_of(ch.uid)
-    if not gid:
-        await cb.answer("Вы не в гильдии", show_alert=True); return
-    if db and db.pool:
-        # Догоняющая синхронизация (Этап 3.3): см. guild_deposit.
-        _rank = guild_mgr.rank(ch.uid)
-        if _rank:
-            try:
-                await guild_tx.ensure_member(db.pool.acquire, ch.uid, gid, _rank)
-            except Exception as e:
-                _elog.log_err(_log, "guild_roster_sync_failed", e,
-                             uid=ch.uid, gid=gid, op="ensure_member_depitem")
-        # БД-путь: перемещение предмета сумка→склад — одной транзакцией.
-        import time as _time
-        op_id = f"gitem_d:{ch.uid}:{key}:{int(_time.time())}"
-        async with _econ_lock(ch.uid):
-            ok, msg, inv, bank_items = await guild_tx.deposit_item(
-                db.pool.acquire, ch.uid, gid, key, op_id)
-            if ok and inv is not None:
-                ch.inventory = list(inv)
-                g = guild_mgr.guilds.get(gid)
-                if g is not None:
-                    g["bank_items"] = list(bank_items)
-                await save(ch, force=True)
-        if not ok:
-            await cb.answer(msg, show_alert=True); return
-        await cb.answer(f"Сдано: {ITEMS[key]['name']}")
+    ok, msg = await guild_bank_core(ch, "deposit_item", key, f"tg:guild:{ch.uid}:{cb.id}")
+    await cb.answer(msg[:180], show_alert=not ok)
+    if ok:
         await guild_bank_items(cb, ch)
-        return
-    if PROD:
-        await cb.answer("⚙️ Банк гильдии временно недоступен", show_alert=True); return
-    if key not in ch.inventory:
-        await cb.answer("Нет предмета", show_alert=True); return
-    ch.inventory.remove(key)
-    guild_mgr.deposit_item(ch.uid, key)
-    await save(ch)
-    await cb.answer(f"Сдано: {ITEMS[key]['name']}")
-    await guild_bank_items(cb, ch)
 
 
 async def guild_withdraw_item(cb: CallbackQuery, ch: Character, key: str):
-    gid = guild_mgr.gid_of(ch.uid)
-    if not gid:
-        await cb.answer("Вы не в гильдии", show_alert=True); return
-    if db and db.pool:
-        # Догоняющая синхронизация (Этап 3.3): см. guild_deposit.
-        _rank = guild_mgr.rank(ch.uid)
-        if _rank:
-            try:
-                await guild_tx.ensure_member(db.pool.acquire, ch.uid, gid, _rank)
-            except Exception as e:
-                _elog.log_err(_log, "guild_roster_sync_failed", e,
-                             uid=ch.uid, gid=gid, op="ensure_member_wditem")
-        # БД-путь: перемещение предмета склад→сумка — одной транзакцией; право
-        # withdraw проверяется по guild_members.rank внутри guild_tx.withdraw_item.
-        import time as _time
-        op_id = f"gitem_w:{ch.uid}:{key}:{int(_time.time())}"
-        async with _econ_lock(ch.uid):
-            ok, msg, inv, bank_items = await guild_tx.withdraw_item(
-                db.pool.acquire, ch.uid, gid, key, op_id)
-            if ok and inv is not None:
-                ch.inventory = list(inv)
-                g = guild_mgr.guilds.get(gid)
-                if g is not None:
-                    g["bank_items"] = list(bank_items)
-                await save(ch, force=True)
-        if not ok:
-            await cb.answer(msg, show_alert=True); return
-        await cb.answer(f"Забрано: {ITEMS[key]['name']}")
+    ok, msg = await guild_bank_core(ch, "withdraw_item", key, f"tg:guild:{ch.uid}:{cb.id}")
+    await cb.answer(msg[:180], show_alert=not ok)
+    if ok:
         await guild_bank_items(cb, ch)
-        return
-    if PROD:
-        await cb.answer("⚙️ Банк гильдии временно недоступен", show_alert=True); return
-    if not guild_mgr.withdraw_item(ch.uid, key):
-        await cb.answer("Нельзя забрать (права/нет на складе)", show_alert=True); return
-    ch.inventory.append(key)
-    await save(ch)
-    await cb.answer(f"Забрано: {ITEMS[key]['name']}")
-    await guild_bank_items(cb, ch)
 
 
 async def _guild_roster_action(cb: CallbackQuery, ch: Character, arg: str, op: str):
-    """Общий обработчик gkick/gpromote/gdemote (Аудит-2а.2, дефект kick()
-    проверял can_withdraw вместо can_admin — офицер мог кикать).
-
-    Server-side guard: право проверяется ЗАНОВО чистыми методами GuildManager
-    (can_kick/can_promote/can_demote) — не полагаемся на то, что кнопка была
-    показана только can_admin в guild_manage(), колбэк может прийти и мимо
-    актуального меню. Невалидный/устаревший arg (не число, цель уже вышла из
-    гильдии, ранги успели измениться) идёт по тому же пути отказа — вежливый
-    cb.answer, без краша.
-
-    Порядок в БД-режиме (исправление дефекта аудита — раньше guild_mgr
-    мутировался ДО БД, а ошибка БД лишь логировалась через except: pass-стиль
-    в guild_roster_sync_failed): проверка права → guild_tx-транзакция →
-    ТОЛЬКО после её успеха применяем изменение к guild_mgr. Ошибка БД —
-    память не трогаем, игроку возвращается честный отказ."""
     try:
-        _gtarget = int(arg)
-    except (TypeError, ValueError):
-        await cb.answer("Действие устарело", show_alert=True)
+        target = int(arg)
+    except (ValueError, TypeError):
+        await cb.answer("Некорректный ID.", show_alert=True)
         return
-
-    if op == "kick":
-        allowed = guild_mgr.can_kick(ch.uid, _gtarget)
-    elif op == "promote":
-        allowed = guild_mgr.can_promote(ch.uid, _gtarget)
-    else:
-        allowed = guild_mgr.can_demote(ch.uid, _gtarget)
-    if not allowed:
-        await cb.answer("Нельзя", show_alert=True)
+    ok, msg = await guild_action_core(ch, op, target)
+    await cb.answer(msg, show_alert=not ok)
+    if ok:
+        await send(target, f"🏰 Ваше членство или ранг изменены игроком {_ts.esc_md(ch.name)}.")
         await guild_manage(cb, ch)
-        return
-
-    _gid = guild_mgr.gid_of(_gtarget)   # захватить ДО применения — kick чистит member_of
-    _new_rank = None
-    if op == "promote":
-        _new_rank = guild_mgr.preview_promote(_gtarget)
-    elif op == "demote":
-        _new_rank = guild_mgr.preview_demote(_gtarget)
-        if _new_rank == guild_mgr.rank(_gtarget):
-            # цель уже на полу иерархии (member) — нет реального изменения,
-            # DB-транзакция не нужна (как раньше в demote(): тихий успех).
-            await cb.answer("Понижен")
-            await guild_manage(cb, ch)
-            return
-
-    if db and db.pool:
-        try:
-            if op == "kick":
-                _db_ok, _db_msg = await guild_tx.remove_member(db.pool.acquire, _gtarget, _gid)
-            else:
-                _db_ok, _db_msg = await guild_tx.set_rank(db.pool.acquire, _gtarget, _gid, _new_rank)
-        except Exception as e:
-            _db_ok, _db_msg = False, "⚙️ Не удалось сохранить, попробуйте ещё раз."
-            _elog.log_err(_log, "guild_roster_sync_failed", e, uid=_gtarget, gid=_gid, op=op)
-        if not _db_ok:
-            _elog.log_err(_log, "guild_roster_db_failed",
-                          uid=_gtarget, gid=_gid, op=op, by=ch.uid, msg=_db_msg)
-            await cb.answer(_db_msg or "⚙️ Не удалось сохранить, попробуйте ещё раз.", show_alert=True)
-            await guild_manage(cb, ch)
-            return
-
-    # БД (если есть) уже подтвердила изменение — применяем к памяти. Прямая
-    # запись без повторной проверки прав: право уже подтверждено выше, а БД
-    # (источник истины в БД-режиме) уже закоммичена — пере-проверка сейчас
-    # рисковала бы рассинхронить БД и память при гонке, а не защитить их.
-    if op == "kick":
-        applied = guild_mgr.leave(_gtarget) is not None
-    else:
-        applied = guild_mgr._force_rank(_gtarget, _new_rank)
-
-    if not applied:
-        await cb.answer("Действие устарело, попробуйте ещё раз", show_alert=True)
-        await guild_manage(cb, ch)
-        return
-
-    if op == "kick":
-        await send(_gtarget, "🏰 Вас исключили из гильдии.")
-        await cb.answer("Исключён")
-    elif op == "promote":
-        _nr = guildlib.RANKS.get(_new_rank, "")
-        await send(_gtarget, f"🏰 Ваш ранг в гильдии повышен: {_nr}.")
-        await cb.answer("Повышен")
-    else:
-        await cb.answer("Понижен")
-    await guild_manage(cb, ch)
 
 
 async def guild_manage(cb: CallbackQuery, ch: Character):
@@ -6295,6 +6189,7 @@ async def main():
             # упал, db_mode остаётся False — файл продолжает работать как
             # настоящий fallback, а не как молчаливый устаревающий дубль.
             guild_mgr.db_mode = True
+            _guild_apply_snapshot(await guild_store.load(db.pool.acquire))
         except Exception as e:
             _elog.log_err(_log, "guild_db_init_failed", e)
 
