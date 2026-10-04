@@ -5,6 +5,7 @@
 Мобы/респавн — это рантайм-состояние мира, в БД не пишем (живёт в памяти).
 """
 import json
+import asyncio
 import os
 import time
 from typing import Dict, List, Optional
@@ -264,6 +265,7 @@ CREATE INDEX IF NOT EXISTS idx_llm_log_ctx ON llm_log(context, created);
 
 class Database:
     def __init__(self, dsn: str = None):
+        self._character_write_locks = {}
         self.dsn = dsn or os.environ.get("DATABASE_URL", "postgresql://localhost/mud")
         self.pool: Optional[asyncpg.Pool] = None
 
@@ -397,6 +399,27 @@ class Database:
         return out
 
     async def save(self, ch: Character):
+        async with self._character_write_locks.setdefault(ch.uid, asyncio.Lock()):
+            await self._save_character(ch)
+
+    async def set_player_setting(self, ch: Character, key: str, value: str):
+        from . import player_settings
+        patch = player_settings.patch_for(key, value)
+        async with self._character_write_locks.setdefault(ch.uid, asyncio.Lock()):
+            async with self.pool.acquire() as con:
+                async with con.transaction():
+                    row = await con.fetchrow(
+                        "SELECT flags, generation, deleted_at FROM characters WHERE uid=$1 FOR UPDATE", ch.uid)
+                    if row is None or row['deleted_at'] is not None or int(row['generation']) != ch.generation:
+                        raise StaleCharacterWrite('Настройки устаревшего героя нельзя менять.')
+                    flags = json.loads(row['flags']) if isinstance(row['flags'], str) else dict(row['flags'])
+                    player_settings.apply(flags, patch)
+                    await con.execute("UPDATE characters SET flags=$2, updated_at=now() WHERE uid=$1",
+                                      ch.uid, json.dumps(flags))
+            # Publish after COMMIT, before queued saves serialize the live flags.
+            player_settings.apply(ch.flags, patch)
+
+    async def _save_character(self, ch: Character):
         """Сохранить прогресс персонажа. Аудит-2а.1: ТОЛЬКО UPDATE активной строки
         СВОЕГО поколения — строк больше НЕ создаёт (это делает create_character).
         0 затронутых строк → StaleCharacterWrite: объект в памяти устарел

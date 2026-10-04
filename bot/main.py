@@ -2229,6 +2229,74 @@ def _max_resolve_npc(ch: Character, query: str) -> str | None:
     return None
 
 
+async def player_setting_core(ch: Character, key: str, value: str):
+    from engine import player_settings
+    try:
+        patch = player_settings.patch_for(key, value)
+        if ch.uid < 0 and patch.get("notify", {}).get("push_enabled") is True:
+            return False, "Фоновые уведомления MAX пока не подключены. Ответы и текущий бой приходят как обычно."
+        if db and db.pool:
+            await db.set_player_setting(ch, key, value)
+        else:
+            player_settings.apply(ch.flags, patch)
+        return True, "Настройка сохранена."
+    except ValueError as exc:
+        return False, str(exc)
+    except StaleCharacterWrite as exc:
+        _elog.log_err(_log, "settings_stale_character", exc, uid=ch.uid)
+        _evict_stale(ch.uid)
+        return False, "Герой изменился. Напишите /start."
+    except Exception as exc:
+        _elog.log_err(_log, "settings_save_failed", exc, uid=ch.uid, key=key)
+        return False, "Не удалось сохранить настройку. Попробуйте позже."
+
+
+async def _max_preferences_command(ch: Character, command: str, parts):
+    if command not in ("map", "settings", "настройки", "notify", "уведомления"):
+        return False
+    if command == "map":
+        if ch.flags.get("dead"):
+            await send(ch.uid, "💀 Вы пали. Напишите /respawn.")
+        elif len(parts) != 1:
+            await send(ch.uid, "Формат: /map.")
+        else:
+            await send(ch.uid, render_map(ch) + "\n\nДля движения напишите направление: север, юг, восток, запад, вверх или вниз.")
+        return True
+    if command in ("settings", "настройки"):
+        if len(parts) == 1:
+            await send(ch.uid, ui.render_settings(ch) + "\n\n"
+                       "/settings autoloot on|off — авто-лут\n"
+                       "/settings roompics on|off — изображения (пока только Telegram; MAX текстовый)\n"
+                       "/notify — настройки уведомлений")
+        elif len(parts) == 3 and parts[1].lower() in ("autoloot", "roompics"):
+            _, msg = await player_setting_core(ch, parts[1].lower(), parts[2].lower())
+            await send(ch.uid, msg)
+        else:
+            await send(ch.uid, "Формат: /settings или /settings autoloot|roompics on|off.")
+        return True
+    if len(parts) == 1:
+        await send(ch.uid, ui.render_notify(ch) + f"\n\n🕐 Часовой пояс: UTC{_notify.tz_offset(ch):+d}\n"
+                   "Фоновые push MAX пока не доставляются. Эти настройки сохраняются на сервере.\n"
+                   "/notify off — отозвать согласие\n"
+                   "/notify <код категории> on|off\n"
+                   "/notify limit 1|2|5 · /notify quiet on|off · /notify tz <-2…+12>\n"
+                   "Коды: " + ", ".join(_notify.CATEGORIES))
+        return True
+    if len(parts) == 2 and parts[1].lower() in ("on", "off"):
+        key, value = "push", parts[1].lower()
+    elif len(parts) == 3:
+        key, value = parts[1].lower(), parts[2].lower()
+        if key not in set(_notify.CATEGORIES) | {"limit", "quiet", "tz"}:
+            await send(ch.uid, "Неизвестная настройка уведомлений. Список: /notify.")
+            return True
+    else:
+        await send(ch.uid, "Формат: /notify; /notify off; /notify <категория> on|off.")
+        return True
+    _, msg = await player_setting_core(ch, key, value)
+    await send(ch.uid, msg)
+    return True
+
+
 async def _max_handle_input(event: MaxInput):
     if not db or not db.pool:
         raise RuntimeError("MAX input requires PostgreSQL")
@@ -2252,7 +2320,7 @@ async def _max_handle_input(event: MaxInput):
                            "/confirm, /errand, /erraccept, /errturnin, /errabandon, "
                            "/shop [торговец], /buy <предмет>, /sell, /repair, "
                            "/train, /learn <умение>, /loadout <умение>, "
-"/preset save|load <1–3>, /group, /party <текст>, /guild, /auction, /respawn.")
+"/preset save|load <1–3>, /group, /party <текст>, /guild, /auction, /map, /settings, /notify, /respawn.")
                 await send(uid, ui.render_room(ch, world, others_in(ch.room)))
             else:
                 races = ", ".join(RACES)
@@ -2286,6 +2354,8 @@ async def _max_handle_input(event: MaxInput):
             analytics.track(uid, "character_created", {"race": race, "cls": cls})
             await send(uid, f"✨ Герой {name} создан. Вы в общем мире «Семи Корон».\n"
                        + ui.render_room(new, world, others_in(new.room)))
+            return
+        if await _max_preferences_command(ch, command, parts):
             return
         if ch.flags.get("dead"):
             if command != "respawn":
@@ -3521,7 +3591,7 @@ async def on_cb(cb: CallbackQuery):
             await cb.answer("Не удалось отправить файл.", show_alert=True)
         return
 
-    _non_game_settings = {"settings", "notify", "nmaster", "ntog", "nlim", "nquiet", "ntz", "ntzset"}
+    _non_game_settings = {"settings", "set", "notify", "nmaster", "ntog", "nlim", "nquiet", "ntz", "ntzset"}
     if ch.flags.get("dead") and action != "respawn" and action not in _non_game_settings:
         await cb.answer("Вы мертвы. Нажмите «⚰️ Возродиться».", show_alert=True)
         return
@@ -4028,34 +4098,30 @@ async def on_cb(cb: CallbackQuery):
         await safe_edit(cb, ui.render_settings(ch), ui.kb_settings(ch))
     elif action == "notify":
         await safe_edit(cb, ui.render_notify(ch), ui.kb_notify(ch))
-    elif action == "nmaster":
-        _notify.set_opt_in(ch, not _notify.opted_in(ch))
-        await save(ch)
-        await safe_edit(cb, ui.render_notify(ch), ui.kb_notify(ch))
-    elif action == "ntog":
-        if arg in _notify.CATEGORIES:
-            _notify.toggle_pref(ch, arg)
-            await save(ch)
-        await safe_edit(cb, ui.render_notify(ch), ui.kb_notify(ch))
-    elif action == "nlim":
-        new_lim = _notify.cycle_limit(ch)
-        await save(ch)
-        await cb.answer(f"🔔 Лимит push: {new_lim}/день")
-        await safe_edit(cb, ui.render_notify(ch), ui.kb_notify(ch))
-    elif action == "nquiet":
-        new_off = _notify.toggle_quiet_off(ch)
-        await save(ch)
-        await cb.answer("🌙 Тихие часы выключены" if new_off else "🌙 Тихие часы включены")
-        await safe_edit(cb, ui.render_notify(ch), ui.kb_notify(ch))
+    elif action in ("nmaster", "ntog", "nlim", "nquiet", "ntzset"):
+        if action == "nmaster":
+            key, value = "push", "off" if _notify.opted_in(ch) else "on"
+        elif action == "ntog":
+            if arg not in _notify.CATEGORIES:
+                await cb.answer("Неизвестная категория.", show_alert=True)
+                return
+            key, value = arg, "off" if _notify.enabled(ch, arg) else "on"
+        elif action == "nlim":
+            presets = _notify.LIMIT_PRESETS
+            key, value = "limit", str(presets[(presets.index(_notify.limit(ch)) + 1) % len(presets)])
+        elif action == "nquiet":
+            key, value = "quiet", "on" if _notify.quiet_off(ch) else "off"
+        else:
+            key, value = "tz", arg
+        ok, msg = await player_setting_core(ch, key, value)
+        if not ok:
+            await cb.answer(msg, show_alert=True)
+            return
+        if action == "ntzset":
+            await safe_edit(cb, ui.render_tz(ch), ui.kb_tz(ch))
+        else:
+            await safe_edit(cb, ui.render_notify(ch), ui.kb_notify(ch))
     elif action == "ntz":
-        await safe_edit(cb, ui.render_tz(ch), ui.kb_tz(ch))
-    elif action == "ntzset":
-        try:
-            _off = _notify.set_tz_offset(ch, int(arg))
-        except (TypeError, ValueError):
-            _off = _notify.tz_offset(ch)
-        await save(ch)
-        await cb.answer(f"🕐 Часовой пояс: UTC{_off:+d}")
         await safe_edit(cb, ui.render_tz(ch), ui.kb_tz(ch))
     elif action == "learnprof":
         from engine import professions as _pf
@@ -4083,12 +4149,14 @@ async def on_cb(cb: CallbackQuery):
             await cb.message.answer("🕊 Жрец снимает с вас PvP-метку. Совесть чиста.")
             await safe_edit(cb, npc_dialog(ch, "жрец_храма"), ui.kb_npc(ch, "жрец_храма"))
     elif action == "set":
-        if arg == "autoloot":
-            ch.flags["autoloot"] = not ch.flags.get("autoloot", False)
-            await save(ch)
-        elif arg == "roompics":
-            ch.flags["roompics"] = not ch.flags.get("roompics", True)
-            await save(ch)
+        if arg not in ("autoloot", "roompics"):
+            await cb.answer("Неизвестная настройка.", show_alert=True)
+            return
+        value = "off" if ch.flags.get(arg, arg == "roompics") else "on"
+        ok, msg = await player_setting_core(ch, arg, value)
+        if not ok:
+            await cb.answer(msg, show_alert=True)
+            return
         await safe_edit(cb, ui.render_settings(ch), ui.kb_settings(ch))
     elif action == "train":
         tr = game_actions.trainer_here(ch)
