@@ -19,6 +19,7 @@ def load_handler(env):
     from engine import max_navigation
     env.setdefault('_max_reply', env['send'])
     env.setdefault('_max_navigation', max_navigation)
+    env.setdefault('_max_shop_command', AsyncMock(return_value=False))
     if '_max_context_reply' not in env:
         async def context_reply(ch, text, npc_id=None):
             await env['send'](ch.uid, text)
@@ -37,7 +38,7 @@ def load_handler(env):
 
 async def test_create_and_move():
     messages = []
-    async def send(uid, value):
+    async def send(uid, value, **kwargs):
         messages.append((uid, value))
     async def move(ch, direction):
         ch.room = content.WORLD[ch.room]["exits"][direction]
@@ -105,8 +106,9 @@ async def test_create_and_move():
     ch.gold = 5000
     await handler(MaxInput("42", "message:42:shop", "/shop лавочник_туманного_брода"))
     assert "/buy малое_зелье" in messages[-1][1]
-    await handler(MaxInput("42", "message:42:buy", "/buy малое_зелье"))
-    assert "Куплено" in messages[-1][1]
+    # Buying is covered by the dedicated durable confirmation tests; seed loot
+    # through the shared rules here to continue testing the sell path.
+    assert game_actions.shop_buy_here(ch, "малое_зелье", "лавочник_туманного_брода")[0]
     assert "малое_зелье" in ch.inventory
     await handler(MaxInput("42", "message:42:sell-list", "/sell"))
     assert "/sell малое_зелье" in messages[-1][1]

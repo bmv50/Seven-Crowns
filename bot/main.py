@@ -50,6 +50,7 @@ from engine.max_outbox import MaxOutboxStore, MaxOutboxWorker
 from engine.max_notifications import MaxNotificationSender
 from engine import max_combat as _max_combat
 from engine import max_navigation as _max_navigation
+from engine.shop_purchase import ShopPurchaseStore
 
 from engine import content
 from engine import game_actions
@@ -532,12 +533,46 @@ async def send(uid: int, text: str, *, max_keyboard=None):
 EPHEMERAL_TTL = 40   # сек — сколько живёт эфемерная строка окружения по умолчанию
 
 
-async def _max_reply(uid: int, text: str):
-    await send(uid, text, max_keyboard=_max_navigation.keyboard(chars.get(uid), WORLD))
+async def _max_reply(uid: int, text: str, *, max_keyboard=None):
+    await send(uid, text, max_keyboard=(max_keyboard if max_keyboard is not None
+                                      else _max_navigation.keyboard(chars.get(uid), WORLD)))
 
 
 async def _max_context_reply(ch: Character, text: str, npc_id=None):
     await send(ch.uid, text, max_keyboard=_max_navigation.context_keyboard(ch, WORLD, npc_id))
+
+
+async def _max_shop_command(ch: Character, command: str, parts):
+    if command not in ('buy', 'купить', 'buyoffer', 'buyconfirm', 'buycancel'):
+        return False
+    if command != 'buycancel' and _in_combat(ch):
+        await _max_reply(ch.uid, 'Сначала выйдите из боя (flee).')
+        return True
+    try:
+        store = ShopPurchaseStore(db)
+        if command in ('buyconfirm', 'buycancel'):
+            token = parts[1] if len(parts) == 2 else ''
+            async with _econ_lock(ch.uid):
+                _, text = await store.confirm(ch, token, cancel=command == 'buycancel')
+            await _max_reply(ch.uid, text)
+        else:
+            vendor, stock = game_actions.shop_stock_here(ch, ui.current_vendor(ch))
+            query = ' '.join(parts[1:]).lower()
+            key = next((item for item in stock if query in
+                        (item.lower(), ITEMS.get(item, {}).get('name', '').lower())), '')
+            async with _econ_lock(ch.uid):
+                ok, text, token = await store.quote(ch, vendor, key)
+            if ok:
+                await send(ch.uid, text, max_keyboard=_max_navigation.purchase_keyboard(token))
+            else:
+                await _max_reply(ch.uid, text)
+    except StaleCharacterWrite:
+        _evict_stale(ch.uid)
+        await _max_reply(ch.uid, 'Герой изменился. Откройте игру заново.')
+    except Exception as exc:
+        _elog.log_err(_log, 'max_shop_failed', exc, uid=ch.uid)
+        await _max_reply(ch.uid, 'Не удалось подтвердить результат покупки. Повторите то же подтверждение позже; не выбирайте новый товар.')
+    return True
 
 
 async def _delete_after(uid: int, message_id: int, ttl: float):
@@ -2402,6 +2437,8 @@ async def _max_handle_input(event: MaxInput):
             return
         if await _max_guild_command(ch, command, parts, event):
             return
+        if await _max_shop_command(ch, command, parts):
+            return
         if command in ui.DIR_ICONS:
             if command not in WORLD[ch.room]["exits"]:
                 await send(uid, "Туда нельзя пройти.")
@@ -2623,16 +2660,7 @@ async def _max_handle_input(event: MaxInput):
                 if key in ITEMS:
                     lines.append(f"/buy {key} — {ITEMS[key]['name']} · "
                                  f"💰{money.fmt(game_actions.shop_price(ch, key, vendor))}")
-            await _max_context_reply(ch, "\n".join(lines), vendor)
-        elif command in ("buy", "купить"):
-            vendor, stock = game_actions.shop_stock_here(ch, ui.current_vendor(ch))
-            query = " ".join(parts[1:]).lower()
-            key = next((item for item in stock if query in
-                        (item.lower(), ITEMS.get(item, {}).get("name", "").lower())), "")
-            ok, msg = game_actions.shop_buy_here(ch, key, vendor)
-            if ok:
-                await save(ch, force=True)
-            await send(uid, msg)
+            await send(ch.uid, "\n".join(lines), max_keyboard=_max_navigation.shop_keyboard(ch, WORLD, vendor))
         elif command in ("sell", "продать"):
             vendor = ui.current_vendor(ch)
             if len(parts) == 1:

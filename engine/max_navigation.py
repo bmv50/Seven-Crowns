@@ -1,5 +1,8 @@
 """Allowlisted message buttons: labels map to existing MAX commands only."""
 from . import content, game_actions, npc, quest
+import re
+
+_PURCHASE = re.compile(r'(✅ Купить|❌ Отмена) \[([0-9a-f]{32})\]\Z')
 
 COMMANDS = {
     '🔍 Осмотр': '/look', '👤 Герой': '/stats', '🎒 Сумка': '/inv',
@@ -31,11 +34,35 @@ for _key, _entry in content.NPCS.items():
 for _key, _entry in content.QUESTS.items():
     _register('📜 Взять: ', _entry.get('name', _key), 'accept', _key)
     _register('✅ Сдать: ', _entry.get('name', _key), 'turnin', _key)
+for _key, _entry in content.ITEMS.items():
+    _register('🛍 ', _entry.get('name', _key), 'buyoffer', _key)
 _LABELS = {action: label for label, action in COMMANDS.items()}
 
 
 def command(text):
+    match = _PURCHASE.fullmatch(text)
+    if match:
+        return f"/{'buyconfirm' if match[1] == '✅ Купить' else 'buycancel'} {match[2]}"
     return COMMANDS.get(text, text)
+
+
+def purchase_keyboard(token):
+    if not re.fullmatch(r'[0-9a-f]{32}', token):
+        raise ValueError('Invalid purchase token')
+    return [[{'type': 'message', 'text': f'{label} [{token}]'}]
+            for label in ('✅ Купить', '❌ Отмена')] + [[{'type': 'message', 'text': '🔍 Осмотр'}]]
+
+
+def shop_keyboard(ch, rooms, vendor):
+    if ch.flags.get('dead') or ch.hp <= 0:
+        return keyboard(ch, rooms)
+    found, stock = game_actions.shop_stock_here(ch, vendor)
+    if found is None:
+        return context_keyboard(ch, rooms)
+    labels = [_LABELS[f'/buyoffer {key}'] for key in stock
+              if f'/buyoffer {key}' in _LABELS][:12]
+    return [[{'type': 'message', 'text': label}] for label in labels] + [
+        [{'type': 'message', 'text': '💬 Персонажи'}, {'type': 'message', 'text': '🔍 Осмотр'}]]
 
 
 def keyboard(ch, rooms):
@@ -92,7 +119,7 @@ def validate(rows):
         for button in row:
             if (not isinstance(button, dict) or set(button) != {'type', 'text'}
                     or button['type'] != 'message' or not isinstance(button['text'], str)
-                    or button['text'] not in COMMANDS):
+                    or (button['text'] not in COMMANDS and not _PURCHASE.fullmatch(button['text']))):
                 raise ValueError('Unsupported MAX navigation button')
             clean.append(dict(button))
         result.append(clean)

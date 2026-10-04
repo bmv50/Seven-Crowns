@@ -203,6 +203,20 @@ CREATE TABLE IF NOT EXISTS economy_ledger (
     created      DOUBLE PRECISION
 );
 CREATE INDEX IF NOT EXISTS idx_ledger_uid ON economy_ledger(uid);
+CREATE TABLE IF NOT EXISTS max_shop_intents (
+    token TEXT PRIMARY KEY,
+    uid BIGINT NOT NULL,
+    generation BIGINT NOT NULL,
+    room TEXT NOT NULL,
+    vendor TEXT NOT NULL,
+    item TEXT NOT NULL,
+    price BIGINT NOT NULL CHECK (price > 0),
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','done','cancelled')),
+    receipt TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at TIMESTAMPTZ NOT NULL DEFAULT now() + interval '5 minutes'
+);
+CREATE INDEX IF NOT EXISTS idx_max_shop_uid ON max_shop_intents(uid, status);
 -- ───────── Этап 3.2: гильдии и гильд-банк ─────────
 -- guilds/guild_members — источник истины по гильдиям (вместо guilds.json, чья
 -- запись глотала ошибки). Банк (bank_gold/bank_items) меняется транзакционно в
@@ -458,6 +472,10 @@ class Database:
         0 затронутых строк → StaleCharacterWrite: объект в памяти устарел
         (персонаж сброшен/поднят в новом поколении, либо мягко удалён). Писать
         его нельзя — иначе воскресим удалённого или затрём нового героя."""
+        # An uncertain purchase COMMIT must be reconciled before any snapshot can
+        # overwrite its durable balance. Recovery failure blocks this save.
+        from .shop_purchase import recover
+        await recover(self, ch)
         async with self.pool.acquire() as con:
             status = await con.execute("""
                 UPDATE characters SET
