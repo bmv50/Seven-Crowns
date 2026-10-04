@@ -46,11 +46,77 @@ class MaxOutboxStore:
                 # Keep all chunks of concurrent replies contiguous in this dialog.
                 await con.execute('SELECT pg_advisory_xact_lock(734925, hashtext($1))',
                                   external_user_id)
+                # A command/result is a boundary: close and release prior summaries.
+                await con.execute('''UPDATE max_outbox SET combat_open=FALSE,
+                    next_attempt_at=least(next_attempt_at,now())
+                    WHERE external_user_id=$1 AND combat_open AND status='pending' AND attempts=0
+                ''', external_user_id)
                 await con.executemany('''
                     INSERT INTO max_outbox(uid, external_user_id, message_text)
                     VALUES($1,$2,$3)
                 ''', [(uid, external_user_id, part) for part in parts])
         return len(parts)
+
+    async def enqueue_combat(self, uid, external_user_id, value, snapshot, battle_key,
+                             generation, urgent=False):
+        from .identity import identity_key
+        from . import max_combat
+        _, external_user_id = identity_key('max', external_user_id)
+        if type(uid) is not int or uid >= 0 or not battle_key or not isinstance(snapshot, str):
+            raise ValueError('Invalid MAX combat summary')
+        log = str(value).replace('*', '')
+        budget = 3500 - len(max_combat.HEADER) - len(snapshot) - 2
+        if budget < 1:
+            raise ValueError('MAX combat snapshot is too long')
+        if not log:
+            return False
+        async with self.pool.acquire() as con:
+            async with con.transaction():
+                await con.execute('SELECT pg_advisory_xact_lock(734925, hashtext($1))', external_user_id)
+                current = await con.fetchval('''SELECT EXISTS (
+                    SELECT 1 FROM characters c JOIN platform_identities i ON i.uid=c.uid
+                    WHERE c.uid=$1 AND c.generation=$2 AND c.deleted_at IS NULL
+                    AND i.platform='max' AND i.external_user_id=$3)
+                ''', uid, generation, external_user_id)
+                if not current:
+                    return False
+                await con.execute('''UPDATE max_outbox SET combat_open=FALSE, next_attempt_at=now()
+                    WHERE external_user_id=$1 AND combat_open AND status='pending' AND attempts=0
+                      AND (combat_key<>$2 OR generation<>$3)
+                ''', external_user_id, battle_key, generation)
+                pending = await con.fetchrow('''SELECT id, combat_log FROM max_outbox
+                    WHERE external_user_id=$1 AND combat_key=$2 AND generation=$3
+                    AND combat_open AND status='pending' AND attempts=0 AND expires_at>now()
+                    ORDER BY id DESC LIMIT 1 FOR UPDATE
+                ''', external_user_id, battle_key, generation)
+                combined = pending['combat_log'] + '\n' + log if pending else log
+                if pending and len(combined) <= budget:
+                    await con.execute('''UPDATE max_outbox SET combat_log=$2, combat_snapshot=$3,
+                        message_text=$4, combat_open=NOT $5,
+                        next_attempt_at=CASE WHEN $5 THEN now() ELSE next_attempt_at END
+                        WHERE id=$1
+                    ''', pending['id'], combined, snapshot, max_combat.render(combined, snapshot), urgent)
+                    return True
+                if pending:
+                    # Preserve the earlier chunk in full, rather than truncating old hits.
+                    await con.execute("UPDATE max_outbox SET combat_open=FALSE, next_attempt_at=now() WHERE id=$1",
+                                      pending['id'])
+                parts = [log[i:i+budget] for i in range(0, len(log), budget)]
+                for index, part in enumerate(parts):
+                    open_batch = not urgent and index == len(parts)-1
+                    await con.execute('''INSERT INTO max_outbox(uid,external_user_id,message_text,
+                        generation,combat_key,combat_open,combat_log,combat_snapshot,next_attempt_at,expires_at)
+                        VALUES($1,$2,$3,$4,$5,$6,$7,$8,
+                               now()+$9*interval '1 second',now()+$10*interval '1 second')
+                    ''', uid, external_user_id, max_combat.render(part, snapshot), generation,
+                        battle_key, open_batch, part, snapshot,
+                        float(max_combat.WINDOW_SECONDS if open_batch else 0), float(max_combat.TTL_SECONDS))
+        return True
+
+    async def combat_current(self, row):
+        return await self.pool.fetchval('''SELECT EXISTS (
+            SELECT 1 FROM characters WHERE uid=$1 AND generation=$2 AND deleted_at IS NULL)
+        ''', row['uid'], row['generation'])
 
     async def claim(self):
         token = uuid.uuid4().hex
@@ -73,7 +139,7 @@ class MaxOutboxStore:
                 row = dict(row)
                 await con.execute('''
                     UPDATE max_outbox SET status='processing', lease_token=$2,
-                        lease_until=now()+$3*interval '1 second', attempts=attempts+1
+                        lease_until=now()+$3*interval '1 second', attempts=attempts+1, combat_open=FALSE
                     WHERE id=$1
                 ''', row['id'], token, LEASE_SECONDS)
                 row['lease_token'] = token
@@ -120,6 +186,8 @@ class MaxOutboxStore:
                 lease_until=NULL, lease_token=NULL,
                 attempts=CASE WHEN $6 THEN attempts ELSE greatest(0,attempts-1) END,
                 message_text=CASE WHEN $3='pending' THEN message_text ELSE NULL END,
+                combat_log=CASE WHEN $3='pending' THEN combat_log ELSE NULL END,
+                combat_snapshot=CASE WHEN $3='pending' THEN combat_snapshot ELSE NULL END,
                 finished_at=CASE WHEN $3='pending' THEN NULL ELSE now() END
             WHERE id=$1 AND lease_token=$2 AND status='processing'
             RETURNING id
@@ -141,6 +209,9 @@ class MaxOutboxWorker:
             return False
         if row['expired'] or row['attempts'] > MAX_ATTEMPTS:
             await self.store.finish(row, 'failed', 'expired' if row['expired'] else 'attempts_exhausted')
+            return True
+        if row.get('combat_key') and not await self.store.combat_current(row):
+            await self.store.finish(row, 'failed', 'stale_combat')
             return True
         try:
             if row.get('category'):

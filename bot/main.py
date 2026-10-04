@@ -48,6 +48,7 @@ from aiohttp import web
 from bot.max_transport import MaxClient, MaxInput, MaxWebhook
 from engine.max_outbox import MaxOutboxStore, MaxOutboxWorker
 from engine.max_notifications import MaxNotificationSender
+from engine import max_combat as _max_combat
 
 from engine import content
 from engine import game_actions
@@ -861,7 +862,7 @@ async def render_combat_cb(cb: CallbackQuery, ch: Character):
 async def combat_hit(victim: Character, mob, lines):
     """Колбэк из игрового цикла: моб ударил игрока — обновить его боевое сообщение."""
     if victim.uid < 0:
-        await send(victim.uid, "\n".join(lines))
+        await _max_combat_progress(victim, mob, lines)
         return
     set_combat_line(victim.uid, "mob", "\n".join(lines))
     cv = combat_view.get(victim.uid)
@@ -2701,12 +2702,12 @@ async def _max_handle_input(event: MaxInput):
             lines = combat.player_basic_attack(ch, mob)
             await send_tutorial(ch, "attack")
             analytics.track_once(ch, "first_combat")
+            await _max_combat_progress(ch, mob, lines, urgent=mob.hp <= 0)
             if mob.hp <= 0:
                 killers = [chars[u] for u in mob.aggro if u in chars]
                 await gl.on_mob_death(mob, killers)
             else:
                 await save(ch)
-                await send(uid, "\n".join(lines) + f"\n❤️ Ваше здоровье: {ch.hp}/{ch.max_hp}")
         elif command in ("cast", "bash", "get", "use", "wield", "drop"):
             class _Answer:
                 async def answer(self, value, **_kwargs):
@@ -2737,6 +2738,22 @@ async def _max_enqueue_input(event: MaxInput):
     if not db or not db.pool:
         raise RuntimeError("MAX webhook requires PostgreSQL")
     await db.enqueue_max_update(event.event_key, event.external_user_id, event.text)
+
+
+async def _max_combat_progress(ch: Character, mob, lines, urgent=False):
+    if not db or not db.pool:
+        return False
+    try:
+        external_id = await db.max_external_user_id(ch.uid)
+        if external_id:
+            return await MaxOutboxStore(db.pool).enqueue_combat(
+                ch.uid, external_id, "\n".join(lines), _max_combat.status(ch, mob),
+                f"{ch.generation}:{ch.room}", ch.generation,
+                urgent=urgent or _max_combat.low_health(ch))
+    except Exception as exc:
+        # Presentation failure must not prevent death/reward handling after a hit.
+        _elog.log_err(_log, "max_combat_summary_failed", exc, uid=ch.uid)
+    return False
 
 
 async def _max_inbox_worker():
@@ -3022,11 +3039,17 @@ async def text_action(message, ch: Character, verb: str, arg: str):
         else:
             await send_tutorial(ch, "skill")
             analytics.track_once(ch, "first_skill")
+            if ch.uid < 0:
+                target = _combat_mob(ch)
+                finishing = any(m.hp <= 0 for m in world.living_in(ch.room))
+                await _max_combat_progress(ch, target, lines, urgent=finishing)
             for mob in list(world.living_in(ch.room)):
                 if mob.hp <= 0:
                     killers = [chars[u] for u in mob.aggro if u in chars]
                     await gl.on_mob_death(mob, killers)
         await save(ch)
+        if ok and ch.uid < 0:
+            return
         await message.answer("\n".join(lines), parse_mode="Markdown")
         return
     if verb == "get":

@@ -124,6 +124,10 @@ CREATE INDEX IF NOT EXISTS idx_max_outbox_finished ON max_outbox(finished_at)
 ALTER TABLE max_outbox ADD COLUMN IF NOT EXISTS category TEXT;
 ALTER TABLE max_outbox ADD COLUMN IF NOT EXISTS generation BIGINT;
 ALTER TABLE max_outbox ADD COLUMN IF NOT EXISTS dedup_key TEXT;
+ALTER TABLE max_outbox ADD COLUMN IF NOT EXISTS combat_key TEXT;
+ALTER TABLE max_outbox ADD COLUMN IF NOT EXISTS combat_open BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE max_outbox ADD COLUMN IF NOT EXISTS combat_log TEXT;
+ALTER TABLE max_outbox ADD COLUMN IF NOT EXISTS combat_snapshot TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_max_outbox_dedup ON max_outbox(dedup_key)
     WHERE dedup_key IS NOT NULL;
 -- Журнал аудита необратимых действий игрока (/reset и восстановление персонажа).
