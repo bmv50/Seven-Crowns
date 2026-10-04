@@ -45,7 +45,11 @@ async def run(dsn):
                     checkpoints.append(force)
                     if force:
                         await db.save(actor)
+                async def checkpoint(actor):
+                    checkpoints.append(True)
+                    await db.save(actor)
                 env = load_core(dict(game_actions=game_actions, save=save,
+                    db=SimpleNamespace(pool=object(), save=checkpoint),
                     gl=SimpleNamespace(_check_levelup=AsyncMock(side_effect=RuntimeError('callback failed')))))
                 action = env['complete_quest_core'] if kind == 'quest' else env['complete_errand_core']
                 key = 'sample_reach_well' if kind == 'quest' else 'наставник'

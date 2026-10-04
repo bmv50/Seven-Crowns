@@ -61,7 +61,7 @@ async def run():
     talk = AsyncMock(return_value=('Диалог', None, ['Прогресс']))
     ui = SimpleNamespace(DIR_ICONS={}, active_vendor={}, current_vendor=lambda _: None)
     env = dict(asyncio=asyncio, Character=Character, MaxInput=MaxInput,
-        db=SimpleNamespace(pool=object(), reserve_max_player_id=AsyncMock(return_value=-1)),
+        db=SimpleNamespace(pool=object(), reserve_max_player_id=AsyncMock(return_value=-1), save=save),
         _max_input_locks={}, _presence=SimpleNamespace(touch=Mock()),
         _mod=SimpleNamespace(is_banned=lambda _: False, is_muted=lambda _: False, chat_allowed=lambda _: True),
         chars={-1: ch}, send=sent, cmds=commands, ui=ui, WORLD=content.WORLD,
