@@ -8,15 +8,19 @@ from unittest.mock import AsyncMock, Mock
 
 from engine import content, game_actions, quest, reputation
 from engine.character import Character, START_ROOM
+from engine.lifecycle_errors import StaleCharacterWrite
 
 
 def load_core(env):
     # Python 3.12 evaluates annotations while exec() compiles extracted nodes;
     # Python 3.14 defers them, so provide the same symbol as bot.main imports.
     env.setdefault("Character", Character)
+    env.setdefault('db', None)
+    env.setdefault('StaleCharacterWrite', StaleCharacterWrite)
+    env.setdefault('_evict_stale', Mock())
     path = Path(__file__).resolve().parents[1] / "bot" / "main.py"
     tree = ast.parse(path.read_text(encoding="utf-8"))
-    wanted = {"talk_core", "complete_quest_core", "complete_errand_core"}
+    wanted = {"talk_core", "complete_quest_core", "complete_errand_core", "_reward_checkpoint"}
     nodes = [n for n in tree.body if isinstance(n, ast.AsyncFunctionDef) and n.name in wanted]
     assert len(nodes) == len(wanted)
     exec(compile(ast.Module(body=nodes, type_ignores=[]), str(path), "exec"), env)
@@ -125,6 +129,16 @@ async def test_reward_checkpoint_before_failure():
         else:
             raise AssertionError('Checkpoint failure not injected')
         levels.assert_not_awaited()
+    database = SimpleNamespace(pool=object(), save=AsyncMock(side_effect=StaleCharacterWrite('stale')))
+    env = load_core(dict(db=database, save=AsyncMock()))
+    try:
+        await env['_reward_checkpoint'](ch)
+    except StaleCharacterWrite:
+        pass
+    else:
+        raise AssertionError('Stale reward checkpoint swallowed')
+    env['_evict_stale'].assert_called_once_with(ch.uid)
+    env['save'].assert_not_awaited()
 
 
 if __name__ == "__main__":
