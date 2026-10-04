@@ -3022,6 +3022,7 @@ async def text_action(message, ch: Character, verb: str, arg: str):
                 await gl.on_player_death(ch)
         return
     if verb in ("cast", "bash"):
+        max_batched = False
         if verb == "bash":
             sid = (mudnames.match_skill("bash", ch.skills)
                    or mudnames.match_skill("trip", ch.skills)
@@ -3042,13 +3043,15 @@ async def text_action(message, ch: Character, verb: str, arg: str):
             if ch.uid < 0:
                 target = _combat_mob(ch)
                 finishing = any(m.hp <= 0 for m in world.living_in(ch.room))
-                await _max_combat_progress(ch, target, lines, urgent=finishing)
+                if target is not None or finishing or _in_combat(ch):
+                    await _max_combat_progress(ch, target, lines, urgent=finishing)
+                    max_batched = True
             for mob in list(world.living_in(ch.room)):
                 if mob.hp <= 0:
                     killers = [chars[u] for u in mob.aggro if u in chars]
                     await gl.on_mob_death(mob, killers)
         await save(ch)
-        if ok and ch.uid < 0:
+        if max_batched:
             return
         await message.answer("\n".join(lines), parse_mode="Markdown")
         return

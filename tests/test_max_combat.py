@@ -82,6 +82,14 @@ async def run():
         await env['text_action'](message, ch, 'cast', 'kick')
     assert message.answer.await_args.args == ('Telegram удар',)
     assert not order
+    ch.uid = -1
+    env['_combat_mob'] = lambda _: None
+    env['_in_combat'] = lambda _: False
+    env['combat'].use_skill.return_value = (True, ['Лечение вне боя'])
+    with patch('bot.mudnames.match_skill', return_value='heal'):
+        await env['text_action'](message, ch, 'cast', 'heal')
+    assert not order and message.answer.await_args.args == ('Лечение вне боя',)
+    env['_combat_mob'] = lambda _: mob
     # Real MAX basic-attack handler queues the final strike before its reward.
     handler = next(n for n in tree.body if isinstance(n, ast.AsyncFunctionDef) and n.name == '_max_handle_input')
     ch.uid = -1
