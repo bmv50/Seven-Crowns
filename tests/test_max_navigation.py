@@ -73,7 +73,7 @@ async def run():
     from bot import commands
     ch.room = 'a'
     mover = AsyncMock(return_value=(False, False))
-    handler_env = dict(asyncio=asyncio, MaxInput=MaxInput,
+    handler_env = dict(asyncio=asyncio, MaxInput=MaxInput, Character=Character,
         db=SimpleNamespace(pool=object(), reserve_max_player_id=AsyncMock(return_value=-1)),
         _max_input_locks={}, _presence=SimpleNamespace(touch=Mock()),
         _mod=SimpleNamespace(is_banned=lambda _: False), chars={-1: ch}, send=sent,
