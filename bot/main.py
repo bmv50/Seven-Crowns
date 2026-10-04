@@ -5448,7 +5448,8 @@ async def _max_guild_command(ch: Character, command: str, parts, event: MaxInput
                                      op_id=f"max:guild:{ch.uid}:{event.event_key}")
     if ok and target is not None:
         if op == "invite":
-            await send(target, f"🏰 {_ts.esc_md(ch.name)} приглашает вас в гильдию. /gaccept или /gdecline.")
+            await send(target, f"🏰 {_ts.esc_md(ch.name)} приглашает вас в гильдию. "
+                       "MAX: /gaccept или /gdecline. Telegram: откройте меню гильдии.")
         elif op in ("kick", "promote", "demote"):
             await send(target, f"🏰 Ваше членство или ранг изменены игроком {_ts.esc_md(ch.name)}.")
     if ok and op == "accept":
