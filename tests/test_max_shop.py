@@ -53,16 +53,16 @@ async def run():
     exec(compile(ast.Module(body=[node], type_ignores=[]), 'shop handler', 'exec'), env)
     command = env['_max_shop_command']
     assert await command(ch, 'buyoffer', ['buyoffer', key])
-    store.quote.assert_awaited_once_with(ch, vendor, key)
+    store.quote.assert_awaited_once_with(ch, vendor, key, operation='buy')
     store.confirm.assert_not_awaited()
     assert send.await_args.kwargs['max_keyboard'] == confirmation
     assert ch.gold == 10000 and key not in ch.inventory
     await command(ch, 'buy', ['buy', key])  # text cannot bypass confirmation either
     assert store.quote.await_count == 2 and store.confirm.await_count == 0
     await command(ch, 'buyconfirm', ['buyconfirm', token])
-    store.confirm.assert_awaited_with(ch, token, cancel=False)
+    store.confirm.assert_awaited_with(ch, token, cancel=False, operation='buy')
     await command(ch, 'buycancel', ['buycancel', token])
-    store.confirm.assert_awaited_with(ch, token, cancel=True)
+    store.confirm.assert_awaited_with(ch, token, cancel=True, operation='buy')
     env['_in_combat'] = lambda _: True
     count = store.confirm.await_count
     await command(ch, 'buyconfirm', ['buyconfirm', token])
@@ -88,7 +88,7 @@ async def run():
     await handler(MaxInput('42', 'product', label))
     assert store.quote.await_count == count+1
     await handler(MaxInput('42', 'confirm', confirmation[0][0]['text']))
-    store.confirm.assert_awaited_with(ch, token, cancel=False)
+    store.confirm.assert_awaited_with(ch, token, cancel=False, operation='buy')
     ch.target = 'mob'
     assert guard(ch)
     ch.target = None
@@ -97,13 +97,13 @@ async def run():
     @asynccontextmanager
     async def acquire():
         yield con
-    db = SimpleNamespace(_shop_uncertain={-1: (token, ch.generation, 200, key)},
+    db = SimpleNamespace(_shop_uncertain={-1: (token, ch.generation, -200, key, 1)},
                          pool=SimpleNamespace(acquire=acquire))
     await recover(db, ch)
     assert ch.gold == 9800 and ch.inventory.count(key) == 1
     await recover(db, ch)
     assert ch.gold == 9800 and ch.inventory.count(key) == 1
-    db._shop_uncertain[-1] = (token, ch.generation, 200, key)
+    db._shop_uncertain[-1] = (token, ch.generation, -200, key, 1)
     con.fetchrow.side_effect = ConnectionError()
     try:
         await recover(db, ch)

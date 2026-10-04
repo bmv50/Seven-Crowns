@@ -543,27 +543,38 @@ async def _max_context_reply(ch: Character, text: str, npc_id=None):
 
 
 async def _max_shop_command(ch: Character, command: str, parts):
-    if command not in ('buy', 'купить', 'buyoffer', 'buyconfirm', 'buycancel'):
+    if command not in ('buy', 'купить', 'buyoffer', 'buyconfirm', 'buycancel',
+                       'sell', 'продать', 'selloffer', 'sellconfirm', 'sellcancel'):
         return False
-    if command != 'buycancel' and _in_combat(ch):
+    if command not in ('buycancel', 'sellcancel') and _in_combat(ch):
         await _max_reply(ch.uid, 'Сначала выйдите из боя (flee).')
         return True
     try:
         store = ShopPurchaseStore(db)
-        if command in ('buyconfirm', 'buycancel'):
+        operation = 'sell' if command in ('sell', 'продать', 'selloffer', 'sellconfirm', 'sellcancel') else 'buy'
+        if command in ('sell', 'продать') and len(parts) == 1:
+            vendor = ui.current_vendor(ch)
+            available = game_actions.shop_sellable_here(ch, vendor)
+            text = ('💰 Скупка:\n' + '\n'.join(
+                f'/sell {key} — {ITEMS[key]["name"]} · {money.fmt(price)}' for key, price in available)
+                if available else 'У этого торговца сейчас нечего продать.')
+            await _max_reply(ch.uid, text, max_keyboard=_max_navigation.sell_keyboard(ch, WORLD, vendor))
+        elif command in ('buyconfirm', 'buycancel', 'sellconfirm', 'sellcancel'):
             token = parts[1] if len(parts) == 2 else ''
             async with _econ_lock(ch.uid):
-                _, text = await store.confirm(ch, token, cancel=command == 'buycancel')
+                _, text = await store.confirm(ch, token, cancel=command in ('buycancel', 'sellcancel'), operation=operation)
             await _max_reply(ch.uid, text)
         else:
             vendor, stock = game_actions.shop_stock_here(ch, ui.current_vendor(ch))
+            if operation == 'sell':
+                stock = [item for item, _ in game_actions.shop_sellable_here(ch, vendor)]
             query = ' '.join(parts[1:]).lower()
             key = next((item for item in stock if query in
                         (item.lower(), ITEMS.get(item, {}).get('name', '').lower())), '')
             async with _econ_lock(ch.uid):
-                ok, text, token = await store.quote(ch, vendor, key)
+                ok, text, token = await store.quote(ch, vendor, key, operation=operation)
             if ok:
-                await send(ch.uid, text, max_keyboard=_max_navigation.purchase_keyboard(token))
+                await send(ch.uid, text, max_keyboard=_max_navigation.purchase_keyboard(token, operation))
             else:
                 await _max_reply(ch.uid, text)
     except StaleCharacterWrite:
@@ -571,7 +582,7 @@ async def _max_shop_command(ch: Character, command: str, parts):
         await _max_reply(ch.uid, 'Герой изменился. Откройте игру заново.')
     except Exception as exc:
         _elog.log_err(_log, 'max_shop_failed', exc, uid=ch.uid)
-        await _max_reply(ch.uid, 'Не удалось подтвердить результат покупки. Повторите то же подтверждение позже; не выбирайте новый товар.')
+        await _max_reply(ch.uid, 'Не удалось подтвердить результат торговли. Повторите то же подтверждение позже; не выбирайте новый товар.')
     return True
 
 
@@ -2367,6 +2378,11 @@ async def _max_handle_input(event: MaxInput):
         parts = text.split()
         command = cmds.canonical(parts[0]) if parts else ""
         ch = chars.get(uid)
+        # Resolve an uncertain trade before any new input can consume/equip a
+        # sold item still present in the cache. Failure leaves input unapplied.
+        if ch is not None and getattr(db, '_shop_uncertain', {}).get(uid) is not None:
+            async with _econ_lock(uid):
+                await db.save(ch)
         if command in ("start", "help", "помощь"):
             if ch:
                 await send(uid, "Семь Корон · MAX\nКоманды: осмотр, север/юг/восток/запад, "
@@ -2661,25 +2677,6 @@ async def _max_handle_input(event: MaxInput):
                     lines.append(f"/buy {key} — {ITEMS[key]['name']} · "
                                  f"💰{money.fmt(game_actions.shop_price(ch, key, vendor))}")
             await send(ch.uid, "\n".join(lines), max_keyboard=_max_navigation.shop_keyboard(ch, WORLD, vendor))
-        elif command in ("sell", "продать"):
-            vendor = ui.current_vendor(ch)
-            if len(parts) == 1:
-                available = game_actions.shop_sellable_here(ch, vendor)
-                if not available:
-                    await send(uid, "У этого торговца сейчас нечего продать.")
-                else:
-                    await send(uid, "💰 Скупка:\n" + "\n".join(
-                        f"/sell {key} — {ITEMS[key]['name']} · {money.fmt(price)}"
-                        for key, price in available))
-                return
-            query = " ".join(parts[1:]).lower()
-            available = game_actions.shop_sellable_here(ch, vendor)
-            key = next((item for item, _price in available if query in
-                        (item.lower(), ITEMS[item]["name"].lower())), "")
-            ok, msg = game_actions.shop_sell_here(ch, key, vendor)
-            if ok:
-                await save(ch, force=True)
-            await send(uid, msg)
         elif command in ("repair", "починить"):
             if len(parts) == 1:
                 if "кузнец" not in WORLD[ch.room].get("npc", []):

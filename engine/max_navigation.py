@@ -2,7 +2,9 @@
 from . import content, game_actions, npc, quest
 import re
 
-_PURCHASE = re.compile(r'(✅ Купить|❌ Отмена) \[([0-9a-f]{32})\]\Z')
+_PURCHASE = re.compile(r'(✅ Купить|❌ Отмена|✅ Продать|❌ Отмена продажи) \[([0-9a-f]{32})\]\Z')
+_CONFIRM_COMMANDS = {'✅ Купить': 'buyconfirm', '❌ Отмена': 'buycancel',
+                     '✅ Продать': 'sellconfirm', '❌ Отмена продажи': 'sellcancel'}
 
 COMMANDS = {
     '🔍 Осмотр': '/look', '👤 Герой': '/stats', '🎒 Сумка': '/inv',
@@ -36,21 +38,34 @@ for _key, _entry in content.QUESTS.items():
     _register('✅ Сдать: ', _entry.get('name', _key), 'turnin', _key)
 for _key, _entry in content.ITEMS.items():
     _register('🛍 ', _entry.get('name', _key), 'buyoffer', _key)
+    _register('💰 Продать: ', _entry.get('name', _key), 'selloffer', _key)
 _LABELS = {action: label for label, action in COMMANDS.items()}
 
 
 def command(text):
     match = _PURCHASE.fullmatch(text)
     if match:
-        return f"/{'buyconfirm' if match[1] == '✅ Купить' else 'buycancel'} {match[2]}"
+        return f"/{_CONFIRM_COMMANDS[match[1]]} {match[2]}"
     return COMMANDS.get(text, text)
 
 
-def purchase_keyboard(token):
+def purchase_keyboard(token, operation='buy'):
+    if operation not in ('buy', 'sell'):
+        raise ValueError('Unsupported shop operation')
     if not re.fullmatch(r'[0-9a-f]{32}', token):
         raise ValueError('Invalid purchase token')
     return [[{'type': 'message', 'text': f'{label} [{token}]'}]
-            for label in ('✅ Купить', '❌ Отмена')] + [[{'type': 'message', 'text': '🔍 Осмотр'}]]
+            for label in (('✅ Купить', '❌ Отмена') if operation == 'buy'
+                          else ('✅ Продать', '❌ Отмена продажи'))] + [[{'type': 'message', 'text': '🔍 Осмотр'}]]
+
+
+def sell_keyboard(ch, rooms, vendor):
+    if ch.flags.get('dead') or ch.hp <= 0:
+        return keyboard(ch, rooms)
+    labels = [_LABELS[f'/selloffer {key}'] for key, _ in game_actions.shop_sellable_here(ch, vendor)
+              if f'/selloffer {key}' in _LABELS][:12]
+    return [[{'type': 'message', 'text': label}] for label in labels] + [
+        [{'type': 'message', 'text': '💬 Персонажи'}, {'type': 'message', 'text': '🔍 Осмотр'}]]
 
 
 def shop_keyboard(ch, rooms, vendor):

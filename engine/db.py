@@ -217,6 +217,8 @@ CREATE TABLE IF NOT EXISTS max_shop_intents (
     expires_at TIMESTAMPTZ NOT NULL DEFAULT now() + interval '5 minutes'
 );
 CREATE INDEX IF NOT EXISTS idx_max_shop_uid ON max_shop_intents(uid, status);
+ALTER TABLE max_shop_intents ADD COLUMN IF NOT EXISTS operation TEXT NOT NULL DEFAULT 'buy'
+    CHECK (operation IN ('buy','sell'));
 -- ───────── Этап 3.2: гильдии и гильд-банк ─────────
 -- guilds/guild_members — источник истины по гильдиям (вместо guilds.json, чья
 -- запись глотала ошибки). Банк (bank_gold/bank_items) меняется транзакционно в
