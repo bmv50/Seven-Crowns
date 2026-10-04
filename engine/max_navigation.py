@@ -1,13 +1,14 @@
 """Allowlisted message buttons: labels map to existing MAX commands only."""
-from . import content, game_actions, npc, quest, skills
+from . import content, game_actions, npc, quest, skills, errands
 import re
 
-_PURCHASE = re.compile(r'(✅ Купить|❌ Отмена|✅ Продать|❌ Отмена продажи|✅ Починить|❌ Отмена ремонта|✅ Изучить|❌ Отмена обучения|✅ Подтвердить путь|❌ Отмена выбора) \[([0-9a-f]{32})\]\Z')
+_PURCHASE = re.compile(r'(✅ Купить|❌ Отмена|✅ Продать|❌ Отмена продажи|✅ Починить|❌ Отмена ремонта|✅ Изучить|❌ Отмена обучения|✅ Подтвердить путь|❌ Отмена выбора|✅ Принять поручение) \[([0-9a-f]{32})\]\Z')
 _CONFIRM_COMMANDS = {'✅ Купить': 'buyconfirm', '❌ Отмена': 'buycancel',
                      '✅ Продать': 'sellconfirm', '❌ Отмена продажи': 'sellcancel',
                      '✅ Починить': 'repairconfirm', '❌ Отмена ремонта': 'repaircancel',
                      '✅ Изучить': 'learnconfirm', '❌ Отмена обучения': 'learncancel',
-                     '✅ Подтвердить путь': 'choiceconfirm', '❌ Отмена выбора': 'choicecancel'}
+                     '✅ Подтвердить путь': 'choiceconfirm', '❌ Отмена выбора': 'choicecancel',
+                     '✅ Принять поручение': 'erracceptoffer'}
 
 COMMANDS = {
     '🔍 Осмотр': '/look', '👤 Герой': '/stats', '🎒 Сумка': '/inv',
@@ -37,6 +38,8 @@ for _key, _entry in content.NPCS.items():
     _register('💬 ', npc.display_name(_key), 'talk', _key)
     if _entry.get('role') == 'vendor':
         _register('🛒 ', npc.display_name(_key), 'shop', _key)
+    _register('✉️ Поручение: ', npc.display_name(_key), 'errand', _key)
+    _register('✅ Доложить: ', npc.display_name(_key), 'errturnin', _key)
 for _key, _entry in content.QUESTS.items():
     _register('📜 Взять: ', _entry.get('name', _key), 'accept', _key)
     _register('✅ Сдать: ', _entry.get('name', _key), 'turnin', _key)
@@ -92,6 +95,13 @@ def choice_keyboard(token):
     return [[{'type': 'message', 'text': f'{label} [{token}]'}]
             for label in ('✅ Подтвердить путь', '❌ Отмена выбора')] + [
                 [{'type': 'message', 'text': '🔍 Осмотр'}]]
+
+
+def errand_keyboard(token):
+    if not isinstance(token, str) or not re.fullmatch(r'[0-9a-f]{32}', token):
+        raise ValueError('Invalid errand offer token')
+    return [[{'type': 'message', 'text': f'✅ Принять поручение [{token}]'}],
+            [{'type': 'message', 'text': '💬 Персонажи'}, {'type': 'message', 'text': '🔍 Осмотр'}]]
 
 
 def train_keyboard(ch, rooms):
@@ -154,6 +164,10 @@ def context_keyboard(ch, rooms, npc_id=None):
             actions.append('/train')
         if npc_id == 'кузнец':
             actions.append('/repair')
+        if errands.can_turn_in(ch, npc_id):
+            actions.insert(0, f'/errturnin {npc_id}')
+        elif game_actions.errand_can_offer_here(ch, npc_id):
+            actions.append(f'/errand {npc_id}')
     # Keep the mobile menu bounded; /talk still lists all actions as text commands.
     labels = [_LABELS[action] for action in dict.fromkeys(actions) if action in _LABELS][:12]
     rows = [[{'type': 'message', 'text': label}] for label in labels]

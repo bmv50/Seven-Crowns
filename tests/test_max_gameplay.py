@@ -2,6 +2,7 @@
 
 import ast
 import asyncio
+import uuid
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
@@ -47,7 +48,7 @@ async def test_create_and_move():
         return True, False
     database = SimpleNamespace(pool=object(), reserve_max_player_id=AsyncMock(
                                    side_effect=lambda external: -11 if external == "42" else -12),
-                               create_character=AsyncMock())
+                               create_character=AsyncMock(), save=AsyncMock())
     analytics = SimpleNamespace(track=Mock(), track_once=Mock())
     chosen_vendor = {}
     ui = SimpleNamespace(render_room=lambda *_: "ROOM", render_stats=lambda *_: "STATS",
@@ -57,7 +58,7 @@ async def test_create_and_move():
                          or (game_actions.vendors_here(ch) or [None])[0])
     characters = {}
     env = {
-        "asyncio": asyncio, "MaxInput": MaxInput, "db": database,
+        "asyncio": asyncio, "uuid": uuid, "MaxInput": MaxInput, "db": database,
         "_max_input_locks": {}, "_presence": Presence(), "cmds": cmds,
         "chars": characters, "send": send, "RACES": content.RACES,
         "CLASSES": content.CLASSES, "WORLD": content.WORLD,
@@ -128,7 +129,7 @@ async def test_create_and_move():
     assert "нет" in messages[-1][1].lower()
     await handler(MaxInput("42", "message:42:return", "юг"))
     await handler(MaxInput("42", "message:42:errand", "/errand наставник"))
-    assert "Напишите /erraccept" in messages[-1][1]
+    assert "напишите /erraccept" in messages[-1][1]
     await handler(MaxInput("42", "message:42:erraccept", "/erraccept"))
     assert errands.has_active(ch)
     await handler(MaxInput("42", "message:42:errturnin", "/errturnin"))

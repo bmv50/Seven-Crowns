@@ -2720,7 +2720,7 @@ async def _max_handle_input(event: MaxInput):
         elif command in ("errand", "поручение"):
             query = " ".join(parts[1:])
             npc_id = (_max_resolve_npc(ch, query) if query else talking_to.get(uid))
-            if not npc_id:
+            if not npc_id or npc_id not in WORLD[ch.room].get('npc', []):
                 await send(uid, "Сначала поговорите с NPC: /npcs, затем /talk <NPC>.")
                 return
             offer = ch.flags.get("errand_pending")
@@ -2729,23 +2729,44 @@ async def _max_handle_input(event: MaxInput):
             if not offer:
                 await send(uid, "Сейчас поручений нет или дневной лимит исчерпан.")
                 return
+            # Stable offer identity prevents an old button accepting a different
+            # NPC's newer proposal. Persist before exposing the acceptance button.
+            if not offer.get('_max_token'):
+                offer['_max_token'] = uuid.uuid4().hex
+            try:
+                await db.save(ch)
+            except StaleCharacterWrite:
+                _evict_stale(uid)
+                await send(uid, 'Герой изменился. Откройте игру заново.')
+                return
+            except Exception as exc:
+                _elog.log_err(_log, 'max_errand_offer_failed', exc, uid=uid)
+                await send(uid, 'Не удалось сохранить предложение. Попробуйте позже.')
+                return
             await send(uid, f"✉️ {offer['text']}\n"
                        + errands._goal_line({"type": offer["type"],
                                              "mob": offer.get("mob"), "item": offer.get("item"),
                                              "progress": 0, "count": offer["count"]})
                        + f"\n🎁 {offer['reward'].get('xp', 0)} опыта, "
                          f"💰{money.fmt(offer['reward'].get('gold', 0))}\n"
-                         "Напишите /erraccept, чтобы принять.")
-        elif command == "erraccept":
+                         "Нажмите кнопку или напишите /erraccept, чтобы принять.",
+                       max_keyboard=_max_navigation.errand_keyboard(offer['_max_token']))
+        elif command in ('erraccept', 'erracceptoffer'):
             offer = ch.flags.get("errand_pending") or {}
+            if command == 'erracceptoffer' and (len(parts) != 2 or parts[1] != offer.get('_max_token')):
+                await send(uid, 'Это предложение устарело. Получите поручение у NPC заново.')
+                return
             ok, msg = game_actions.errand_accept_here(ch, offer.get("npc", ""))
             if ok:
                 await save(ch, force=True)
-            await send(uid, msg)
+            await _max_context_reply(ch, msg, offer.get('npc'))
         elif command == "errturnin":
             active = ch.flags.get("errand") or {}
+            if len(parts) > 1 and (len(parts) != 2 or parts[1] != active.get('npc')):
+                await send(uid, 'Это поручение уже не активно. Проверьте журнал и NPC.')
+                return
             _ok, msg = await complete_errand_core(ch, active.get("npc", ""))
-            await send(uid, msg)
+            await _max_context_reply(ch, msg, active.get('npc'))
         elif command == "errabandon":
             msg = errands.abandon(ch)
             await save(ch, force=True)
