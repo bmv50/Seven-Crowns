@@ -5,7 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
-from engine import max_combat
+from engine import max_combat, max_navigation
 from engine.character import Character
 from bot.max_transport import MaxInput
 
@@ -107,6 +107,7 @@ async def run():
         target.hp -= 10
         return ['последний удар']
     env['combat'].player_basic_attack = Mock(side_effect=attack)
+    env.update(_max_reply=env['send'], _max_navigation=max_navigation)
     exec(compile(ast.Module(body=[handler], type_ignores=[]), 'MAX handler', 'exec'), env)
     await env['_max_handle_input'](MaxInput('42', 'attack:1', '/attack rat'))
     assert order == [('progress', True, ['последний удар']), ('reward',)]

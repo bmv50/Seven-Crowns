@@ -84,12 +84,16 @@ class MaxClient:
         for part in text_parts(value):
             await self.send_chunk(external_user_id, part)
 
-    async def send_chunk(self, external_user_id: str, text: str):
+    async def send_chunk(self, external_user_id: str, text: str, *, keyboard=None):
         """Send one persisted chunk, with no hidden network retry."""
         if self._session is None:
             raise RuntimeError("MAX client not started")
         if not text or len(text) > 3500:
             raise ValueError('MAX chunk must contain 1–3500 characters')
+        body = {'text': text}
+        if keyboard is not None:
+            from engine.max_navigation import validate
+            body['attachments'] = [{'type': 'inline_keyboard', 'payload': {'buttons': validate(keyboard)}}]
         lock = self._dialog_locks.setdefault(external_user_id, asyncio.Lock())
         async with lock:
             loop = asyncio.get_running_loop()
@@ -100,7 +104,7 @@ class MaxClient:
                 async with self._session.post(
                     f"{API_URL}/messages",
                     params={"user_id": external_user_id},
-                    json={"text": text},
+                    json=body,
                     headers={"Authorization": self._token},
                 ) as response:
                     if not 200 <= response.status < 300:

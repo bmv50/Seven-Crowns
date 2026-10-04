@@ -21,7 +21,7 @@ async def run():
         player_settings.apply(actor.flags, player_settings.patch_for(key, value))
     database = SimpleNamespace(pool=object(), set_player_setting=AsyncMock(side_effect=setting))
     env = dict(Character=Character, db=database, _notify=notify, _max_client=object(), WORLD=content.WORLD,
-               send=send, StaleCharacterWrite=StaleCharacterWrite, _evict_stale=Mock(),
+               send=send, _max_reply=send, StaleCharacterWrite=StaleCharacterWrite, _evict_stale=Mock(),
                _elog=SimpleNamespace(log_err=Mock()), _log=None,
                ui=SimpleNamespace(render_settings=lambda _: 'SETTINGS', render_notify=lambda _: 'NOTIFY'))
     names = {'player_setting_core', '_max_preferences_command', 'render_map'}

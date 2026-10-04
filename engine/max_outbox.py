@@ -3,6 +3,7 @@ import asyncio
 import logging
 import uuid
 import time
+import json
 from datetime import datetime, timezone
 
 from aiohttp import ClientError
@@ -33,11 +34,14 @@ class MaxOutboxStore:
             raise RuntimeError('MAX outbox requires PostgreSQL')
         self.pool = pool
 
-    async def enqueue(self, uid, external_user_id, value):
+    async def enqueue(self, uid, external_user_id, value, *, keyboard=None):
         from .identity import identity_key
         _, external_user_id = identity_key('max', external_user_id)
         if type(uid) is not int or uid >= 0:
             raise ValueError('MAX internal uid must be negative')
+        if keyboard is not None:
+            from .max_navigation import validate
+            keyboard = validate(keyboard)
         parts = text_parts(value)
         if not parts:
             return 0
@@ -52,9 +56,11 @@ class MaxOutboxStore:
                     WHERE external_user_id=$1 AND combat_open AND status='pending' AND attempts=0
                 ''', external_user_id)
                 await con.executemany('''
-                    INSERT INTO max_outbox(uid, external_user_id, message_text)
-                    VALUES($1,$2,$3)
-                ''', [(uid, external_user_id, part) for part in parts])
+                    INSERT INTO max_outbox(uid, external_user_id, message_text, keyboard)
+                    VALUES($1,$2,$3,$4)
+                ''', [(uid, external_user_id, part,
+                       json.dumps(keyboard) if keyboard is not None and i == len(parts)-1 else None)
+                      for i, part in enumerate(parts)])
         return len(parts)
 
     async def enqueue_combat(self, uid, external_user_id, value, snapshot, battle_key,
@@ -188,6 +194,7 @@ class MaxOutboxStore:
                 message_text=CASE WHEN $3='pending' THEN message_text ELSE NULL END,
                 combat_log=CASE WHEN $3='pending' THEN combat_log ELSE NULL END,
                 combat_snapshot=CASE WHEN $3='pending' THEN combat_snapshot ELSE NULL END,
+                keyboard=CASE WHEN $3='pending' THEN keyboard ELSE NULL END,
                 finished_at=CASE WHEN $3='pending' THEN NULL ELSE now() END
             WHERE id=$1 AND lease_token=$2 AND status='processing'
             RETURNING id
@@ -221,7 +228,11 @@ class MaxOutboxWorker:
                     await self.notification_sender.deliver(row)
                 return True
             # Exactly one HTTP chunk: successful earlier chunks are never replayed.
-            await self.client.send_chunk(row['external_user_id'], row['message_text'])
+            if row.get('keyboard') is not None:
+                keyboard = json.loads(row['keyboard']) if isinstance(row['keyboard'], str) else row['keyboard']
+                await self.client.send_chunk(row['external_user_id'], row['message_text'], keyboard=keyboard)
+            else:
+                await self.client.send_chunk(row['external_user_id'], row['message_text'])
         except asyncio.CancelledError:
             # Leave the lease for restart recovery; HTTP delivery may be uncertain.
             raise

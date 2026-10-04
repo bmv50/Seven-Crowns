@@ -49,6 +49,7 @@ from bot.max_transport import MaxClient, MaxInput, MaxWebhook
 from engine.max_outbox import MaxOutboxStore, MaxOutboxWorker
 from engine.max_notifications import MaxNotificationSender
 from engine import max_combat as _max_combat
+from engine import max_navigation as _max_navigation
 
 from engine import content
 from engine import game_actions
@@ -495,13 +496,16 @@ dp.message.outer_middleware(_input_middleware)
 dp.callback_query.outer_middleware(_input_middleware)
 
 
-async def send(uid: int, text: str):
+async def send(uid: int, text: str, *, max_keyboard=None):
     if uid < 0:
         if not db or not db.pool:
             raise RuntimeError("MAX delivery requires PostgreSQL")
         external_id = await db.max_external_user_id(uid)
         if external_id:
-            await MaxOutboxStore(db.pool).enqueue(uid, external_id, text)
+            if max_keyboard is None:
+                await MaxOutboxStore(db.pool).enqueue(uid, external_id, text)
+            else:
+                await MaxOutboxStore(db.pool).enqueue(uid, external_id, text, keyboard=max_keyboard)
         return
     try:
         await bot.send_message(uid, text, parse_mode="Markdown")
@@ -526,6 +530,10 @@ async def send(uid: int, text: str):
 
 
 EPHEMERAL_TTL = 40   # сек — сколько живёт эфемерная строка окружения по умолчанию
+
+
+async def _max_reply(uid: int, text: str):
+    await send(uid, text, max_keyboard=_max_navigation.keyboard(chars.get(uid), WORLD))
 
 
 async def _delete_after(uid: int, message_id: int, ttl: float):
@@ -903,7 +911,7 @@ async def drop_combat_photo(uid: int):
 async def death_screen(ch: Character):
     """Экран смерти с кнопкой возрождения. Игрок «заморожен» до возрождения."""
     if ch.uid < 0:
-        await send(ch.uid, "💀 Вы пали. Напишите /respawn, чтобы возродиться.")
+        await _max_reply(ch.uid, "💀 Вы пали. Напишите /respawn, чтобы возродиться.")
         return
     await drop_combat_photo(ch.uid)
     cv = combat_view.pop(ch.uid, None)
@@ -1416,7 +1424,7 @@ async def combat_reward(ch: Character, text: str):
     """Моб убит: удаляем боевую панель и публикуем итог (удар+награда+комната)
     НОВЫМ сообщением внизу, чтобы ничего не оставалось «под меню»."""
     if ch.uid < 0:
-        await send(ch.uid, text + "\n\n" + ui.render_room(ch, world, others_in(ch.room)))
+        await _max_reply(ch.uid, text + "\n\n" + ui.render_room(ch, world, others_in(ch.room)))
         return
     cv = combat_view.pop(ch.uid, None)
     # строки урона НЕ показываем — только итог боя (убит/награда) и комнату
@@ -2259,6 +2267,7 @@ async def player_setting_core(ch: Character, key: str, value: str):
 
 
 async def _max_preferences_command(ch: Character, command: str, parts):
+    send = _max_reply
     if command not in ("map", "settings", "настройки", "notify", "уведомления"):
         return False
     if command == "map":
@@ -2305,6 +2314,7 @@ async def _max_preferences_command(ch: Character, command: str, parts):
 
 
 async def _max_handle_input(event: MaxInput):
+    send = _max_reply
     if not db or not db.pool:
         raise RuntimeError("MAX input requires PostgreSQL")
     lock = _max_input_locks.setdefault(event.external_user_id, asyncio.Lock())
@@ -2314,7 +2324,7 @@ async def _max_handle_input(event: MaxInput):
         if _mod.is_banned(uid):
             await send(uid, "⛔ Доступ ограничен. По вопросам поддержки обратитесь к администрации.")
             return
-        text = event.text.strip()
+        text = _max_navigation.command(event.text.strip())
         parts = text.split()
         command = cmds.canonical(parts[0]) if parts else ""
         ch = chars.get(uid)
