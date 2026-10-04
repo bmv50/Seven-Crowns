@@ -121,6 +121,11 @@ CREATE INDEX IF NOT EXISTS idx_max_outbox_active ON max_outbox(external_user_id,
     WHERE status IN ('pending','processing');
 CREATE INDEX IF NOT EXISTS idx_max_outbox_finished ON max_outbox(finished_at)
     WHERE finished_at IS NOT NULL;
+ALTER TABLE max_outbox ADD COLUMN IF NOT EXISTS category TEXT;
+ALTER TABLE max_outbox ADD COLUMN IF NOT EXISTS generation BIGINT;
+ALTER TABLE max_outbox ADD COLUMN IF NOT EXISTS dedup_key TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_max_outbox_dedup ON max_outbox(dedup_key)
+    WHERE dedup_key IS NOT NULL;
 -- Журнал аудита необратимых действий игрока (/reset и восстановление персонажа).
 -- Пишется при подтверждённом сбросе: чтобы разобрать спорную «пропажу» персонажа
 -- и иметь след для поддержки на закрытой бете. Без пула (pool=None) — no-op.
@@ -437,6 +442,8 @@ class Database:
                     player_settings.apply(flags, patch)
                     await con.execute("UPDATE characters SET flags=$2, updated_at=now() WHERE uid=$1",
                                       ch.uid, json.dumps(flags))
+                    if ch.uid < 0 and patch.get('notify', {}).get('push_enabled') is True:
+                        await con.execute('UPDATE characters SET notify_blocked=FALSE WHERE uid=$1', ch.uid)
             # Publish after COMMIT, before queued saves serialize the live flags.
             player_settings.apply(ch.flags, patch)
 
@@ -923,13 +930,13 @@ class Database:
         if exclude_recent_sec is not None:
             async with self.pool.acquire() as con:
                 rows = await con.fetch(
-                    "SELECT uid FROM characters WHERE notify_blocked = FALSE "
+                    "SELECT uid FROM characters WHERE notify_blocked = FALSE AND deleted_at IS NULL "
                     "AND (last_seen IS NULL OR last_seen < now() - ($1 || ' seconds')::interval)",
                     str(int(exclude_recent_sec)))
             return [(r["uid"],) for r in rows]
         async with self.pool.acquire() as con:
             rows = await con.fetch(
-                "SELECT uid FROM characters WHERE notify_blocked = FALSE")
+                "SELECT uid FROM characters WHERE notify_blocked = FALSE AND deleted_at IS NULL")
         return [(r["uid"],) for r in rows]
 
     async def mark_notify_blocked(self, uid: int):

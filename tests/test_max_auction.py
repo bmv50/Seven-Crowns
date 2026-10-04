@@ -35,6 +35,7 @@ async def run():
                save=save, chars={seller.uid: seller, buyer.uid: buyer},
                send=AsyncMock(), show_auction=AsyncMock(), money=money,
                _notify=SimpleNamespace(ENABLED=False, emit=Mock()),
+               _notify_deliver=AsyncMock(return_value='queued'),
                _presence=SimpleNamespace(active=lambda _: True),
                weekly=SimpleNamespace(on_sell_lot=Mock()),
                _elog=SimpleNamespace(log_err=Mock()), _log=None)
@@ -93,6 +94,19 @@ async def run():
     await command(buyer, 'abuy', ['abuy', lid], event)
     assert buyer.inventory.count(key) == 1 and buyer.gold == before - price
     assert env['weekly'].on_sell_lot.call_count == 1
+    # A MAX seller offline gets a policy-checked durable push, not a raw reply.
+    env['_presence'].active = lambda _: False
+    env['_notify'].ENABLED = True
+    ok, _, offline_lot = await action(seller, 'list', key, 'offline_listing')
+    assert ok
+    assert (await action(buyer, 'buy', offline_lot['id'], 'offline_buy'))[0]
+    env['_notify_deliver'].assert_awaited_once_with(seller.uid, 'auction_sold',
+        env['_notify_deliver'].await_args.args[2], event_key=f"auction_sold:{offline_lot['id']}")
+    assert seller.inventory.count(key) == 0
+    seller.inventory.append(key)
+    conn.characters[seller.uid]['inventory'].append(key)
+    env['_presence'].active = lambda _: True
+    env['_notify'].ENABLED = False
     ok, _, listed = await action(seller, 'list', key, 'second')
     assert ok
     assert (await action(seller, 'cancel', listed['id'], 'cancel'))[0]

@@ -2,6 +2,8 @@
 import asyncio
 import logging
 import uuid
+import time
+from datetime import datetime, timezone
 
 from aiohttp import ClientError
 
@@ -62,8 +64,9 @@ class MaxOutboxStore:
                           SELECT 1 FROM max_outbox earlier
                           WHERE earlier.external_user_id=o.external_user_id
                             AND earlier.id<o.id
-                            AND earlier.status IN ('pending','processing'))
-                    ORDER BY o.id LIMIT 1 FOR UPDATE OF o SKIP LOCKED
+                            AND earlier.status IN ('pending','processing')
+                            AND (o.category IS NOT NULL OR earlier.category IS NULL))
+                    ORDER BY (o.category IS NOT NULL), o.id LIMIT 1 FOR UPDATE OF o SKIP LOCKED
                 ''')
                 if row is None:
                     return None
@@ -79,28 +82,58 @@ class MaxOutboxStore:
                     'SELECT expires_at<=now() FROM max_outbox WHERE id=$1', row['id'])
                 return row
 
-    async def finish(self, row, status, error=None, delay=0):
+    async def enqueue_notification(self, uid, external_user_id, value, category,
+                                   generation, expires_at=None, event_key=None):
+        from . import notify
+        from .identity import identity_key
+        _, external_user_id = identity_key('max', external_user_id)
+        if type(uid) is not int or uid >= 0 or category not in notify.CATEGORIES:
+            raise ValueError('Invalid MAX notification')
+        deadline = min(expires_at, time.time() + 86400) if expires_at is not None else time.time() + 86400
+        text = str(value).replace('*', '')
+        if len(text) > 3500:
+            suffix = '\n… Сообщение сокращено.'
+            text = text[:3500-len(suffix)] + suffix
+        if not text or deadline <= time.time():
+            return False
+        key = f'{uid}:{generation}:{event_key}' if event_key is not None else None
+        return await self.pool.fetchval('''
+            INSERT INTO max_outbox(uid, external_user_id, message_text, category, generation,
+                                   expires_at, dedup_key)
+            SELECT $1,$2,$3,$4,$5,$6,$7 FROM characters c
+            WHERE c.uid=$1 AND c.generation=$5 AND c.deleted_at IS NULL
+              AND NOT c.notify_blocked AND c.flags->'notify'->>'push_enabled'='true'
+              AND COALESCE(c.flags->'notify'->>$4,'true')='true'
+              AND EXISTS (SELECT 1 FROM platform_identities i
+                          WHERE i.platform='max' AND i.uid=c.uid AND i.external_user_id=$2)
+            ON CONFLICT DO NOTHING RETURNING id
+        ''', uid, external_user_id, text, category, generation,
+            datetime.fromtimestamp(deadline, timezone.utc), key) is not None
+
+    async def finish(self, row, status, error=None, delay=0, *, con=None, attempted=True):
         if status not in ('sent', 'failed', 'pending'):
             raise ValueError('Invalid outbox status')
         # Lease fencing prevents a stale sender from changing a recovered claim.
-        return await self.pool.fetchval('''
+        return await (con or self.pool).fetchval('''
             UPDATE max_outbox SET status=$3, last_error=$4,
                 next_attempt_at=now()+$5*interval '1 second',
                 lease_until=NULL, lease_token=NULL,
+                attempts=CASE WHEN $6 THEN attempts ELSE greatest(0,attempts-1) END,
                 message_text=CASE WHEN $3='pending' THEN message_text ELSE NULL END,
                 finished_at=CASE WHEN $3='pending' THEN NULL ELSE now() END
             WHERE id=$1 AND lease_token=$2 AND status='processing'
             RETURNING id
-        ''', row['id'], row['lease_token'], status, error, float(delay)) is not None
+        ''', row['id'], row['lease_token'], status, error, float(delay), attempted) is not None
 
     async def cleanup(self):
         await self.pool.execute("DELETE FROM max_outbox WHERE finished_at<now()-interval '7 days'")
 
 
 class MaxOutboxWorker:
-    def __init__(self, store, client):
+    def __init__(self, store, client, notification_sender=None):
         self.store = store
         self.client = client
+        self.notification_sender = notification_sender
 
     async def process_one(self):
         row = await self.store.claim()
@@ -110,6 +143,12 @@ class MaxOutboxWorker:
             await self.store.finish(row, 'failed', 'expired' if row['expired'] else 'attempts_exhausted')
             return True
         try:
+            if row.get('category'):
+                if self.notification_sender is None:
+                    await self.store.finish(row, 'failed', 'notification_policy_missing')
+                else:
+                    await self.notification_sender.deliver(row)
+                return True
             # Exactly one HTTP chunk: successful earlier chunks are never replayed.
             await self.client.send_chunk(row['external_user_id'], row['message_text'])
         except asyncio.CancelledError:
@@ -124,6 +163,8 @@ class MaxOutboxWorker:
                 delay = max(delay, exc.retry_after)
                 error = f'http_{exc.status}'
             elif not retryable:
+                if row.get('category'):
+                    raise  # DB/policy failure: retain lease; watchdog will recover.
                 error = 'unexpected_error'
             status = 'pending' if retryable and row['attempts'] < MAX_ATTEMPTS else 'failed'
             await self.store.finish(row, status, error, delay)

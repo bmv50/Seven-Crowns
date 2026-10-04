@@ -47,6 +47,7 @@ from aiogram.client.session.aiohttp import AiohttpSession
 from aiohttp import web
 from bot.max_transport import MaxClient, MaxInput, MaxWebhook
 from engine.max_outbox import MaxOutboxStore, MaxOutboxWorker
+from engine.max_notifications import MaxNotificationSender
 
 from engine import content
 from engine import game_actions
@@ -674,6 +675,9 @@ async def _queue_world_notify(text: str, category: str):
 
 
 async def _queue_personal_notify(uid: int, category: str, text: str):
+    if uid < 0:
+        await _notify_deliver(uid, category, text)
+        return
     _notify.emit(uid, category, text)
 
 
@@ -1058,6 +1062,9 @@ async def auction_action_core(ch: Character, op: str, value: str, op_id: str):
             if seller_uid < 0:
                 if _presence.active(seller_uid):
                     await send(seller_uid, sold)
+                elif _notify.ENABLED:
+                    await _notify_deliver(seller_uid, "auction_sold", sold,
+                                          event_key=f"auction_sold:{lot['id']}")
             elif _notify.ENABLED:
                 _notify.emit(seller_uid, "auction_sold", sold)
             elif seller_uid in chars:
@@ -2232,7 +2239,8 @@ async def player_setting_core(ch: Character, key: str, value: str):
     try:
         patch = player_settings.patch_for(key, value)
         if ch.uid < 0 and patch.get("notify", {}).get("push_enabled") is True:
-            return False, "Фоновые уведомления MAX пока не подключены. Ответы и текущий бой приходят как обычно."
+            if not _notify.ENABLED or not _max_client or not db or not db.pool:
+                return False, "Фоновые уведомления MAX временно недоступны. Ответы и текущий бой приходят как обычно."
         if db and db.pool:
             await db.set_player_setting(ch, key, value)
         else:
@@ -2274,8 +2282,8 @@ async def _max_preferences_command(ch: Character, command: str, parts):
         return True
     if len(parts) == 1:
         await send(ch.uid, ui.render_notify(ch) + f"\n\n🕐 Часовой пояс: UTC{_notify.tz_offset(ch):+d}\n"
-                   "Фоновые push MAX пока не доставляются. Эти настройки сохраняются на сервере.\n"
-                   "/notify off — отозвать согласие\n"
+                   "Фоновые push приходят только после вашего согласия; по умолчанию выключены.\n"
+                   "/notify on|off — дать или отозвать согласие\n"
                    "/notify <код категории> on|off\n"
                    "/notify limit 1|2|5 · /notify quiet on|off · /notify tz <-2…+12>\n"
                    "Коды: " + ", ".join(_notify.CATEGORIES))
@@ -2288,7 +2296,7 @@ async def _max_preferences_command(ch: Character, command: str, parts):
             await send(ch.uid, "Неизвестная настройка уведомлений. Список: /notify.")
             return True
     else:
-        await send(ch.uid, "Формат: /notify; /notify off; /notify <категория> on|off.")
+        await send(ch.uid, "Формат: /notify; /notify on|off; /notify <категория> on|off.")
         return True
     _, msg = await player_setting_core(ch, key, value)
     await send(ch.uid, msg)
@@ -2750,7 +2758,15 @@ async def _max_inbox_worker():
 
 async def _max_outbox_worker():
     """Retry delivery only, never a gameplay command or economic operation."""
-    await MaxOutboxWorker(MaxOutboxStore(db.pool), _max_client).run()
+    store = MaxOutboxStore(db.pool)
+    sender = MaxNotificationSender(db, store, _max_client, chars.get,
+                                   on_sent=_max_notification_sent)
+    await MaxOutboxWorker(store, _max_client, sender).run()
+
+
+def _max_notification_sent(row):
+    _last_notify_sent[row['uid']] = _time_mod.time()
+    analytics.track(row['uid'], "notification_sent", {"category": row['category'], "platform": "max"})
 
 
 async def _stop_max_workers():
@@ -5921,7 +5937,22 @@ _notification_delivery = NotificationDelivery(
 
 
 async def _notify_deliver(uid: int, category: str, text: str, ttl: float = None,
-                          expires_at: float = None):
+                          expires_at: float = None, event_key: str = None):
+    if uid < 0:
+        if not _notify.ENABLED or not _max_client or not db or not db.pool:
+            return "drop"
+        ch = chars.get(uid)
+        if ch is None:
+            return "drop"
+        deadline = expires_at if expires_at is not None else (
+            _time_mod.time() + ttl if ttl is not None else None)
+        external_id = await db.max_external_user_id(uid)
+        if not external_id:
+            return "drop"
+        queued = await MaxOutboxStore(db.pool).enqueue_notification(
+            uid, external_id, text, category, ch.generation,
+            expires_at=deadline, event_key=event_key)
+        return "queued" if queued else "drop"
     return await _notification_delivery.deliver(
         uid, category, text, ttl=ttl, expires_at=expires_at)
 

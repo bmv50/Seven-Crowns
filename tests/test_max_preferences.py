@@ -11,6 +11,7 @@ from engine.lifecycle_errors import StaleCharacterWrite
 
 
 async def run():
+    notify.ENABLED = True
     ch = Character(uid=-10, name='Тестер', cls='warrior', race='human')
     ch.flags['quest_progress'] = 42
     messages = []
@@ -19,7 +20,7 @@ async def run():
     async def setting(actor, key, value):
         player_settings.apply(actor.flags, player_settings.patch_for(key, value))
     database = SimpleNamespace(pool=object(), set_player_setting=AsyncMock(side_effect=setting))
-    env = dict(Character=Character, db=database, _notify=notify, WORLD=content.WORLD,
+    env = dict(Character=Character, db=database, _notify=notify, _max_client=object(), WORLD=content.WORLD,
                send=send, StaleCharacterWrite=StaleCharacterWrite, _evict_stale=Mock(),
                _elog=SimpleNamespace(log_err=Mock()), _log=None,
                ui=SimpleNamespace(render_settings=lambda _: 'SETTINGS', render_notify=lambda _: 'NOTIFY'))
@@ -48,9 +49,14 @@ async def run():
     await command(ch, 'settings', ['settings', 'dead', 'off'])
     await command(ch, 'notify', ['notify', 'admin', 'on'])
     await command(ch, 'notify', ['notify', 'on'])
-    assert database.set_player_setting.await_count == before
-    assert not notify.opted_in(ch) and 'пока' in messages[-1][1]
-    assert not (await core(ch, 'push', 'ON'))[0]
+    assert database.set_player_setting.await_count == before + 1
+    assert notify.opted_in(ch)
+    await command(ch, 'notify', ['notify', 'on'])
+    assert notify.opted_in(ch)  # explicit setting, not a toggle
+    env['_max_client'] = None
+    assert not (await core(ch, 'push', 'on'))[0]
+    env['_max_client'] = object()
+    assert (await core(ch, 'push', 'ON'))[0]
     await command(ch, 'notify', ['notify', 'quiet', 'on'])
     await command(ch, 'notify', ['notify', 'tz', '+12'])
     await command(ch, 'notify', ['notify', 'limit', '5'])

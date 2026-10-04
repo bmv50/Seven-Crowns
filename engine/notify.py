@@ -292,6 +292,9 @@ def due(now: float, chars: dict = None):
         if rec["uid"] is None:            # широковещалка — политика на стороне bot
             ready.append(rec)
             continue
+        if rec["uid"] < 0:  # MAX policy/defer must live in its durable delivery queue.
+            ready.append(rec)
+            continue
         ch = chars.get(rec["uid"])
         if ch is None:                    # нет настроек: доставщик откажет безопасно
             ready.append(rec)
