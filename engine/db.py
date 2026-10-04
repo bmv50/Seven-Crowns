@@ -126,7 +126,7 @@ CREATE TABLE IF NOT EXISTS notify_log (
 -- Универсальное key-value хранилище для рантайм-состояния мира.
 -- Один процесс, объёмы малы → простота важнее нормализации: снапшот мира,
 -- таймеры боссов, аукцион и территории лежат отдельными строками (k='world',
--- 'boss_last', 'auction', 'territory'), значение — цельный JSON.
+-- 'boss_last', 'auction', 'territory', 'parties'), значение — цельный JSON.
 CREATE TABLE IF NOT EXISTS kv_state (
     k       TEXT PRIMARY KEY,
     v       JSONB NOT NULL,
@@ -606,6 +606,8 @@ class Database:
                 await con.execute(
                     "UPDATE characters SET generation=$2, deleted_at=now() WHERE uid=$1",
                     uid, new_gen)
+                from . import party_store
+                await party_store.remove_player(con, uid)
                 await con.execute(
                     "INSERT INTO audit_log (ts, uid, action, details) VALUES ($1,$2,$3,$4)",
                     time.time(), uid, "reset", json.dumps(details or {}))

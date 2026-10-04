@@ -74,6 +74,9 @@ async def test_create_and_move():
         "weekly": SimpleNamespace(on_room_visit=lambda *_: None),
         "send_tutorial": AsyncMock(), "save": AsyncMock(),
     }
+    async def mutate_party(operation, unavailable, required_uids=()):
+        return operation(env["party_mgr"])
+    env["_party_mutate"] = mutate_party
     handler = load_handler(env)
     await handler(MaxInput("42", "start:42:1", "/start"))
     assert "MAX" in messages[-1][1] or "Семь Корон" in messages[-1][1]

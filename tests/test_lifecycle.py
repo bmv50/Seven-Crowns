@@ -135,6 +135,8 @@ class FakeConn:
         raise AssertionError("FakeConn.execute: неизвестный SQL:\n" + sql)
 
     async def fetchrow(self, sql, *args):
+        if "SELECT v FROM kv_state" in sql:
+            return None  # Эти lifecycle-сценарии не создают группы.
         # окно восстановления: свежесть мягкого удаления
         if "deleted_at > now()" in sql:
             uid, max_age = int(args[0]), int(args[1])

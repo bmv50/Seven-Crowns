@@ -85,6 +85,7 @@ from engine import analytics
 from engine.guild import GuildManager
 from engine import guild as guildlib
 from engine.social import PartyManager, DuelManager
+from engine import party_store
 from ai import npc_ai
 from ai import memory as _aimem   # долгая память NPC (наставник помнит первую встречу)
 from bot import ui
@@ -286,6 +287,7 @@ creating: dict[int, dict] = {}
 pending_ref: dict[int, int] = {}
 talking_to: dict[int, str] = {}   # uid -> npc_id (диалог свободным текстом)
 party_mgr = PartyManager()
+_party_state_lock = asyncio.Lock()
 duel_mgr = DuelManager()
 guild_mgr = GuildManager(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "guilds.json"))
 from engine.auction import AuctionManager
@@ -588,6 +590,8 @@ def _evict_stale(uid: int) -> None:
     «uid not in chars» → его вежливо направят на /start. Так stale-объект не
     затирает нового/восстановленного героя, а игрок не застревает в крашах."""
     chars.pop(uid, None)
+    party_mgr.leave(uid)
+    party_mgr.invites.pop(uid, None)
     _char_dirty.discard(uid)
     _presence.forget(uid)
     _player_clock.forget(uid)
@@ -2344,13 +2348,13 @@ async def _max_handle_input(event: MaxInput):
                 await send(uid, "Формат: /pinvite <ID игрока>. Список: /group.")
                 return
             target_uid = int(parts[1])
-            ok, msg = party_invite_core(ch, target_uid)
+            ok, msg = await party_invite_core(ch, target_uid)
             if ok:
                 await send(target_uid, f"👥 {ch.name} зовёт вас в группу. "
                            "Напишите /paccept или /pdecline.")
             await send(uid, msg)
         elif command == "paccept":
-            party, msg = party_accept_core(ch)
+            party, msg = await party_accept_core(ch)
             if party:
                 analytics.track(uid, "party_join", {"size": len(party["members"])})
                 names = ", ".join(chars[u].name for u in party["members"] if u in chars)
@@ -2359,15 +2363,15 @@ async def _max_handle_input(event: MaxInput):
             else:
                 await send(uid, msg)
         elif command == "pdecline":
-            await send(uid, party_decline_core(ch))
+            await send(uid, await party_decline_core(ch))
         elif command == "pleave":
-            mates = party_leave_core(ch)
+            mates, msg = await party_leave_core(ch)
             if mates is None:
-                await send(uid, "Вы не в группе.")
+                await send(uid, msg)
             else:
                 for member_uid in mates:
                     await send(member_uid, f"👥 {ch.name} покидает группу.")
-                await send(uid, "Вы вышли из группы.")
+                await send(uid, msg)
         elif command in ("party", "пати", "п"):
             if not parts[1:]:
                 await send(uid, "Формат: /party <текст>.")
@@ -4868,53 +4872,86 @@ def _has_heal_potion(ch: Character):
 
 
 # ---- группа ----
-def party_invite_core(ch: Character, target_uid: int) -> tuple[bool, str]:
+async def _party_restore():
+    snapshot = await party_store.load(db.pool.acquire, set(chars))
+    party_mgr.import_state(snapshot)
+
+
+async def _party_mutate(operation, unavailable, required_uids=()):
+    async with _party_state_lock:
+        try:
+            if db and db.pool:
+                result, snapshot = await party_store.change(db.pool.acquire, operation, set(chars), required_uids)
+            else:
+                candidate = PartyManager()
+                candidate.import_state(party_mgr.export_state(), set(chars))
+                result = operation(candidate)
+                snapshot = candidate.export_state()
+            party_mgr.import_state(snapshot)
+            return result
+        except Exception as e:
+            _elog.log_err(_log, "party_state_write_failed", e)
+            return unavailable
+
+
+async def party_invite_core(ch: Character, target_uid: int) -> tuple[bool, str]:
     """Validate an invitation at execution time for either chat transport."""
-    if not _uigate.unlocked("party", ch.level):
-        return False, _uigate.hint("party")
-    target = chars.get(target_uid)
-    if (target_uid == ch.uid or not target or target.room != ch.room
-            or target.hp <= 0 or not _presence.active(target_uid)):
+    if target_uid == ch.uid or target_uid not in chars:
         return False, "Игрок не находится рядом или недоступен."
-    if not _uigate.unlocked("party", target.level):
-        return False, "Игрок ещё не открыл группы."
-    party = party_mgr.party_of(ch.uid)
-    if party and party["leader"] != ch.uid:
-        return False, "Приглашать может только лидер группы."
-    if party_mgr.party_of(target_uid):
-        return False, "Игрок уже состоит в группе."
-    if target_uid in party_mgr.invites:
-        return False, "У игрока уже есть приглашение в группу."
-    if not party_mgr.invite(ch.uid, target_uid):
-        return False, "Не удалось отправить приглашение."
-    return True, "Приглашение отправлено."
+    def change(manager):
+        if not _uigate.unlocked("party", ch.level):
+            return False, _uigate.hint("party")
+        target = chars.get(target_uid)
+        if (target_uid == ch.uid or not target or target.room != ch.room
+                or target.hp <= 0 or not _presence.active(target_uid)):
+            return False, "Игрок не находится рядом или недоступен."
+        if not _uigate.unlocked("party", target.level):
+            return False, "Игрок ещё не открыл группы."
+        party = manager.party_of(ch.uid)
+        if party and party["leader"] != ch.uid:
+            return False, "Приглашать может только лидер группы."
+        if manager.party_of(target_uid):
+            return False, "Игрок уже состоит в группе."
+        if target_uid in manager.invites:
+            return False, "У игрока уже есть приглашение в группу."
+        if not manager.invite(ch.uid, target_uid):
+            return False, "Не удалось отправить приглашение."
+        return True, "Приглашение отправлено."
+    return await _party_mutate(change, (False, "Не удалось сохранить приглашение. Попробуйте позже."),
+                               (ch.uid, target_uid))
 
 
-def party_accept_core(ch: Character) -> tuple[dict | None, str]:
-    if not _uigate.unlocked("party", ch.level):
-        return None, _uigate.hint("party")
-    pid = party_mgr.invites.get(ch.uid)
-    if pid not in party_mgr.parties:
-        party_mgr.invites.pop(ch.uid, None)
-        return None, "Приглашение истекло."
-    if party_mgr.party_of(ch.uid):
-        return None, "Сначала выйдите из текущей группы."
-    party = party_mgr.accept(ch.uid)
-    return (party, "Вы вступили в группу.") if party else (None, "Приглашение истекло.")
+async def party_accept_core(ch: Character) -> tuple[dict | None, str]:
+    def change(manager):
+        if not _uigate.unlocked("party", ch.level):
+            return None, _uigate.hint("party")
+        pid = manager.invites.get(ch.uid)
+        if pid not in manager.parties:
+            manager.invites.pop(ch.uid, None)
+            return None, "Приглашение истекло."
+        if manager.party_of(ch.uid):
+            return None, "Сначала выйдите из текущей группы."
+        party = manager.accept(ch.uid)
+        return (party, "Вы вступили в группу.") if party else (None, "Приглашение истекло.")
+    return await _party_mutate(change, (None, "Не удалось сохранить вступление. Попробуйте позже."), (ch.uid,))
 
 
-def party_decline_core(ch: Character) -> str:
-    return ("❌ Приглашение отклонено." if party_mgr.invites.pop(ch.uid, None) is not None
-            else "Приглашения нет.")
+async def party_decline_core(ch: Character) -> str:
+    def change(manager):
+        return ("❌ Приглашение отклонено." if manager.invites.pop(ch.uid, None) is not None
+                else "Приглашения нет.")
+    return await _party_mutate(change, "Не удалось отклонить приглашение. Попробуйте позже.", (ch.uid,))
 
 
-def party_leave_core(ch: Character) -> list[int] | None:
-    party = party_mgr.party_of(ch.uid)
-    if not party:
-        return None
-    mates = [uid for uid in party["members"] if uid != ch.uid]
-    party_mgr.leave(ch.uid)
-    return mates
+async def party_leave_core(ch: Character) -> tuple[list[int] | None, str]:
+    def change(manager):
+        party = manager.party_of(ch.uid)
+        if not party:
+            return None, "Вы не в группе."
+        mates = [uid for uid in party["members"] if uid != ch.uid]
+        manager.leave(ch.uid)
+        return mates, "Вы вышли из группы."
+    return await _party_mutate(change, (None, "Не удалось сохранить выход из группы. Попробуйте позже."), (ch.uid,))
 
 
 async def party_chat_core(ch: Character, text: str) -> tuple[bool, str]:
@@ -4992,7 +5029,7 @@ async def show_group(cb: CallbackQuery, ch: Character):
 
 
 async def party_invite(cb: CallbackQuery, ch: Character, target_uid: int):
-    ok, msg = party_invite_core(ch, target_uid)
+    ok, msg = await party_invite_core(ch, target_uid)
     if not ok:
         await cb.answer(msg[:190], show_alert=True); return
     if target_uid < 0:
@@ -5009,7 +5046,7 @@ async def party_invite(cb: CallbackQuery, ch: Character, target_uid: int):
 
 
 async def party_accept(cb: CallbackQuery, ch: Character):
-    party, msg = party_accept_core(ch)
+    party, msg = await party_accept_core(ch)
     if not party:
         await cb.answer(msg[:190], show_alert=True); return
     analytics.track(ch.uid, "party_join", {"size": len(party.get("members", []))})   # Этап 7.1
@@ -5020,17 +5057,17 @@ async def party_accept(cb: CallbackQuery, ch: Character):
 
 
 async def party_decline(cb: CallbackQuery, ch: Character):
-    msg = party_decline_core(ch)
+    msg = await party_decline_core(ch)
     await safe_edit(cb, msg + "\n\n" +
                     ui.render_room(ch, world, others_in(ch.room)), ui.kb_room(ch, world))
     await cb.answer()
 
 
 async def party_leave(cb: CallbackQuery, ch: Character):
-    mates = party_leave_core(ch)
+    mates, msg = await party_leave_core(ch)
     for u in mates or []:
         await send(u, f"👥 *{ch.name}* покидает группу.")
-    await cb.answer("Вы вышли из группы" if mates is not None else "Вы не в группе")
+    await cb.answer(msg[:190], show_alert=mates is None)
     await show_group(cb, ch)
 
 
@@ -6149,6 +6186,7 @@ async def main():
         await db.connect()
         loaded = await db.load_all()
         chars.update(loaded)
+        await _party_restore()
         print(f"✅ PostgreSQL подключён, загружено персонажей: {len(loaded)}")
     except Exception as e:
         if PROD:

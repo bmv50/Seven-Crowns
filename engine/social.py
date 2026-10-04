@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """
 Группы (пати) и PvP-дуэли.
-Состояние — в памяти процесса (как и мир).
+Менеджер групп умеет экспортировать состояние для PostgreSQL; дуэли живут
+в памяти процесса.
 
 Пати: общий опыт делится между участниками в одной комнате (это уже
 работает в loop через aggro-киллеров, но пати позволяет делить опыт,
@@ -27,7 +28,11 @@ class PartyManager:
         return self.parties.get(pid) if pid else None
 
     def create(self, leader: int) -> int:
-        pid = leader
+        if leader in self.member_of:
+            return self.member_of[leader]
+        # После передачи лидерства прежний leader может создать новую группу.
+        # Старый pid при этом остаётся занят и не должен быть перезаписан.
+        pid = leader if leader not in self.parties else max([abs(k) for k in self.parties] + [0]) + 1
         self.parties[pid] = {"leader": leader, "members": [leader]}
         self.member_of[leader] = pid
         return pid
@@ -77,6 +82,41 @@ class PartyManager:
     def members(self, uid: int) -> List[int]:
         party = self.party_of(uid)
         return party["members"] if party else [uid]
+
+    def export_state(self) -> dict:
+        return {"version": 1,
+                "parties": {str(pid): {"leader": party["leader"],
+                                       "members": list(party["members"])}
+                            for pid, party in self.parties.items()},
+                "invites": {str(uid): pid for uid, pid in self.invites.items()}}
+
+    def import_state(self, state: dict | None, valid_uids: set[int] | None = None):
+        state = state if state is not None else {"version": 1, "parties": {}, "invites": {}}
+        if not isinstance(state, dict) or state.get("version") != 1:
+            raise ValueError("Unsupported party state")
+        parties, member_of, invites, changed_leaders = {}, {}, {}, set()
+        for raw_pid, entry in state["parties"].items():
+            pid, leader = int(raw_pid), int(entry["leader"])
+            original = [int(uid) for uid in entry["members"]]
+            if leader not in original or len(original) != len(set(original)):
+                raise ValueError("Invalid party membership")
+            members = [uid for uid in original if valid_uids is None or uid in valid_uids]
+            if not members:
+                continue
+            if leader not in members:
+                leader = members[0]
+                changed_leaders.add(pid)
+            for uid in members:
+                if uid in member_of:
+                    raise ValueError("Player belongs to multiple parties")
+                member_of[uid] = pid
+            parties[pid] = {"leader": leader, "members": members}
+        for raw_uid, raw_pid in state["invites"].items():
+            uid, pid = int(raw_uid), int(raw_pid)
+            if (pid in parties and pid not in changed_leaders and uid not in member_of
+                    and (valid_uids is None or uid in valid_uids)):
+                invites[uid] = pid
+        self.parties, self.member_of, self.invites = parties, member_of, invites
 
 
 class DuelManager:
