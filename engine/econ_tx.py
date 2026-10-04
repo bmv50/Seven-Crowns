@@ -32,7 +32,9 @@ import time
 
 # Зеркалит engine/auction.AUCTION_FEE (5%). Держим локально, чтобы ядро было
 # самодостаточным и не тянуло зависимостей ради одной константы.
-AUCTION_FEE = 0.05
+AUCTION_FEE_PERCENT = 5
+AUCTION_FEE = AUCTION_FEE_PERCENT / 100
+MAX_LISTINGS = 10
 
 LEDGER_SQL = (
     "INSERT INTO economy_ledger "
@@ -64,7 +66,7 @@ async def _lock_char(conn, uid):
     """Заблокировать строку персонажа (FOR UPDATE) и вернуть его изменяемый
     снимок {'gold': int, 'inventory': [..]} или None, если персонажа нет."""
     row = await conn.fetchrow(
-        "SELECT gold, inventory FROM characters WHERE uid=$1 FOR UPDATE", uid)
+        "SELECT gold, inventory FROM characters WHERE uid=$1 AND deleted_at IS NULL FOR UPDATE", uid)
     if row is None:
         return None
     return {"gold": int(row["gold"]), "inventory": _inv(row["inventory"])}
@@ -103,8 +105,15 @@ async def list_lot(cf, seller_uid, item, price, lot_id, op_id):
         try:
             async with conn.transaction():
                 seller = await _lock_char(conn, seller_uid)
+                count = await conn.fetchrow(
+                    "SELECT count(*) AS n FROM auction_listings WHERE seller=$1 AND status='active'",
+                    seller_uid)
                 if seller is None:
                     result = (False, "Персонаж не найден.", None)
+                elif price <= 0 or price > 2**63 - 1:
+                    result = (False, "Некорректная цена.", None)
+                elif int(count['n']) >= MAX_LISTINGS:
+                    result = (False, "Лимит активных лотов исчерпан (10).", None)
                 elif item not in seller["inventory"]:
                     result = (False, "Предмета нет в сумке.", None)
                 else:
@@ -122,7 +131,9 @@ async def list_lot(cf, seller_uid, item, price, lot_id, op_id):
                               {"gold": seller["gold"], "inventory": seller["inventory"]})
         except Exception as exc:
             if _is_duplicate(exc):
-                return True, "Лот уже выставлен.", None
+                if await _op_done(conn, op_id):
+                    return True, "Лот уже выставлен.", None
+                return False, "Идентификатор лота уже занят.", None
             return False, "⚙️ Торговля временно недоступна.", None
         return result
 
@@ -131,9 +142,9 @@ async def list_lot(cf, seller_uid, item, price, lot_id, op_id):
 async def buy_lot(cf, buyer_uid, lot_id, op_id):
     """Купить лот одной транзакцией.
 
-    Порядок: идемпотентность → SELECT лота FOR UPDATE (нет/не active →
-    недоступен; свой лот → отказ) → блокировка покупателя и продавца FOR UPDATE
-    В ПОРЯДКЕ ВОЗРАСТАНИЯ uid (профилактика дедлока) → проверка золота из БД →
+    Порядок: идемпотентность → предчтение лота → блокировка покупателя и
+    продавца FOR UPDATE в порядке возрастания uid → лот FOR UPDATE и
+    повторная проверка статуса → проверка золота из БД →
     покупатель gold−price, +предмет; продавец gold+int(price*0.95); лот → sold →
     3 строки ledger (buyer −price / seller +выручка / fee uid=0 +комиссия) →
     COMMIT.
@@ -148,7 +159,7 @@ async def buy_lot(cf, buyer_uid, lot_id, op_id):
             async with conn.transaction():
                 lot = await conn.fetchrow(
                     "SELECT lot_id, seller, item, price, status "
-                    "FROM auction_listings WHERE lot_id=$1 FOR UPDATE", lot_id)
+                    "FROM auction_listings WHERE lot_id=$1", lot_id)
                 if lot is None or lot["status"] != "active":
                     result = (False, "Лот недоступен.", None, None, None)
                 elif int(lot["seller"]) == int(buyer_uid):
@@ -163,12 +174,19 @@ async def buy_lot(cf, buyer_uid, lot_id, op_id):
                     c_hi = await _lock_char(conn, hi)
                     buyer = c_lo if lo == int(buyer_uid) else c_hi
                     seller = c_lo if lo == seller_uid else c_hi
-                    if buyer is None or seller is None:
+                    lot = await conn.fetchrow(
+                        "SELECT lot_id, seller, item, price, status "
+                        "FROM auction_listings WHERE lot_id=$1 FOR UPDATE", lot_id)
+                    if lot is None or lot['status'] != 'active' or int(lot['seller']) != seller_uid:
+                        result = (False, "Лот недоступен.", None, None, None)
+                    elif buyer is None or seller is None:
                         result = (False, "Персонаж не найден.", None, None, None)
+                    elif price <= 0:
+                        result = (False, "Некорректная цена лота.", None, None, None)
                     elif buyer["gold"] < price:
                         result = (False, "Не хватает монет.", None, None, None)
                     else:
-                        proceeds = int(price * (1 - AUCTION_FEE))
+                        proceeds = price * (100 - AUCTION_FEE_PERCENT) // 100
                         fee = price - proceeds
                         buyer["gold"] -= price
                         buyer["inventory"].append(item)
@@ -196,7 +214,9 @@ async def buy_lot(cf, buyer_uid, lot_id, op_id):
                              "item": item, "price": price, "proceeds": proceeds})
         except Exception as exc:
             if _is_duplicate(exc):
-                return True, "Покупка уже обработана.", None, None, None
+                if await _op_done(conn, op_id):
+                    return True, "Покупка уже обработана.", None, None, None
+                return False, "Конфликт операции покупки.", None, None, None
             return False, "⚙️ Торговля временно недоступна.", None, None, None
         return result
 
@@ -205,8 +225,8 @@ async def buy_lot(cf, buyer_uid, lot_id, op_id):
 async def cancel_lot(cf, seller_uid, lot_id, op_id):
     """Снять свой активный лот и вернуть предмет в сумку.
 
-    Порядок: идемпотентность → SELECT лота FOR UPDATE (нет/не active →
-    недоступен; чужой → отказ) → блокировка продавца → предмет обратно в
+    Порядок: идемпотентность → блокировка продавца → лот FOR UPDATE (нет/не
+    active → недоступен; чужой → отказ) → предмет обратно в
     инвентарь → лот → cancelled → ledger('auction_cancel', 0) → COMMIT.
 
     → (ok, msg, seller_data | None)
@@ -217,6 +237,7 @@ async def cancel_lot(cf, seller_uid, lot_id, op_id):
         now = time.time()
         try:
             async with conn.transaction():
+                seller = await _lock_char(conn, seller_uid)
                 lot = await conn.fetchrow(
                     "SELECT lot_id, seller, item, price, status "
                     "FROM auction_listings WHERE lot_id=$1 FOR UPDATE", lot_id)
@@ -225,7 +246,6 @@ async def cancel_lot(cf, seller_uid, lot_id, op_id):
                 elif int(lot["seller"]) != int(seller_uid):
                     result = (False, "Это не ваш лот.", None)
                 else:
-                    seller = await _lock_char(conn, seller_uid)
                     if seller is None:
                         result = (False, "Персонаж не найден.", None)
                     else:
@@ -242,12 +262,36 @@ async def cancel_lot(cf, seller_uid, lot_id, op_id):
                                   {"gold": seller["gold"], "inventory": seller["inventory"]})
         except Exception as exc:
             if _is_duplicate(exc):
-                return True, "Лот уже снят.", None
+                if await _op_done(conn, op_id):
+                    return True, "Лот уже снят.", None
+                return False, "Конфликт операции снятия.", None
             return False, "⚙️ Торговля временно недоступна.", None
         return result
 
 
 # ───────────────────────── чтение / миграция / сверка ─────────────────────────
+async def cancel_for_reset(conn, uid, generation):
+    """Return escrowed items before soft reset, inside its existing transaction.
+
+All auction mutations lock character rows before listing rows, so this does
+not deadlock with a concurrent purchase. Restoring the old hero restores its
+items, while a newly created hero cannot inherit an active old listing.
+"""
+    lots = await conn.fetch(
+        "SELECT lot_id, item FROM auction_listings WHERE seller=$1 AND status='active' FOR UPDATE", uid)
+    if not lots:
+        return
+    char = await _lock_char(conn, uid)  # already locked by reset_character
+    for lot in lots:
+        char['inventory'].append(lot['item'])
+        now = time.time()
+        await conn.execute("UPDATE auction_listings SET status='cancelled', closed=$1 WHERE lot_id=$2",
+                           now, lot['lot_id'])
+        await conn.execute(LEDGER_SQL, f"reset:auction:{uid}:{generation}:{lot['lot_id']}",
+                           uid, 'auction_reset_cancel', 0, lot['item'], None, now)
+    await _persist_char(conn, uid, char)
+
+
 async def load_active_lots(cf):
     """Активные лоты для витрины (дешевле цены — выше). Ключи совпадают с
     внутриигровым форматом лота (id/seller_uid/item/price) — рендер в bot/ без
@@ -255,7 +299,7 @@ async def load_active_lots(cf):
     async with cf() as conn:
         rows = await conn.fetch(
             "SELECT lot_id, seller, item, price, created "
-            "FROM auction_listings WHERE status='active' ORDER BY price ASC")
+            "FROM auction_listings WHERE status='active' ORDER BY price ASC, created ASC, lot_id ASC")
     return [{"id": r["lot_id"], "seller_uid": int(r["seller"]),
              "item": r["item"], "price": int(r["price"]),
              "created": r["created"]} for r in rows]

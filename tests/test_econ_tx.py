@@ -91,6 +91,8 @@ class FakeConn:
             lot_id, seller, item, price, created = args
             if "ON CONFLICT" in sql and str(lot_id) in self.lots:
                 return "INSERT 0 0"                        # миграция: пропустить
+            if str(lot_id) in self.lots:
+                raise _DupKey('duplicate key auction_listings_pkey')
             self.lots[str(lot_id)] = {
                 "lot_id": str(lot_id), "seller": int(seller), "item": item,
                 "price": int(price), "status": "active", "created": created,
@@ -130,11 +132,14 @@ class FakeConn:
         if "FROM characters" in sql:                      # SELECT gold, inventory
             uid = int(args[0])
             ch = self.characters.get(uid)
-            if ch is None:
+            if ch is None or ("deleted_at IS NULL" in sql and ch.get('deleted_at') is not None):
                 return None
             return {"gold": int(ch["gold"]),
                     "inventory": json.dumps(ch["inventory"])}
 
+        if "count(*) AS n FROM auction_listings" in sql:
+            return {'n': sum(l['seller'] == int(args[0]) and l['status'] == 'active'
+                             for l in self.lots.values())}
         if "FROM auction_listings" in sql:                # SELECT лота FOR UPDATE
             lot = self.lots.get(str(args[0]))
             return dict(lot) if lot is not None else None

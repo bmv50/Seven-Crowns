@@ -607,6 +607,8 @@ class Database:
                         f"(ожидали {expected_generation}, в БД {row['generation']}, "
                         f"deleted={row['deleted_at'] is not None})")
                 new_gen = int(row["generation"]) + 1
+                from . import econ_tx
+                await econ_tx.cancel_for_reset(con, uid, new_gen)
                 await con.execute(
                     "UPDATE characters SET generation=$2, deleted_at=now() WHERE uid=$1",
                     uid, new_gen)

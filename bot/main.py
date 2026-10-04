@@ -15,6 +15,7 @@ import os
 import random
 import sys
 import uuid
+from contextlib import AsyncExitStack
 from collections import deque
 
 # Загрузка .env (если установлен python-dotenv и файл существует)
@@ -966,12 +967,163 @@ async def do_respawn(cb: CallbackQuery, ch: Character):
 
 
 def _auc_open(ch: Character) -> bool:
-    return bool(WORLD[ch.room].get("bank") or WORLD[ch.room].get("auction"))
+    room = WORLD.get(ch.room, {})
+    return bool(room.get("bank") or room.get("auction"))
 
 
 def _auc_price(item: str) -> int:
     base = ITEMS.get(item, {}).get("price", 100)
     return max(100, int(base * 2))
+
+
+def auction_guard(ch: Character):
+    if not _uigate.unlocked("auction", ch.level):
+        return _uigate.hint("auction")
+    if ch.flags.get("dead") or ch.target:
+        return "Торговля недоступна во время боя или после смерти."
+    if not _auc_open(ch):
+        return "Аукцион доступен только в комнате с банком или аукционом."
+    return None
+
+
+def _auction_apply_data(ch: Character, data):
+    if data is not None:
+        ch.gold = data["gold"]
+        ch.inventory = list(data["inventory"])
+
+
+async def auction_action_core(ch: Character, op: str, value: str, op_id: str):
+    error = auction_guard(ch)
+    if error:
+        return False, error, None
+    if not (db and db.pool):
+        return False, "Торговля временно недоступна.", None
+    if op not in ("list", "buy", "cancel"):
+        return False, "Неизвестное действие аукциона.", None
+    if op == "list":
+        if value not in ITEMS or ITEMS[value].get("type") == "quest":
+            return False, "Этот предмет нельзя выставить на аукцион.", None
+        if value not in ch.inventory:
+            return False, "Предмета нет в сумке.", None
+    elif not value or len(value) > 64 or any(not c.isalnum() and c not in "-_" for c in value):
+        return False, "Некорректный ID лота.", None
+    lot = None
+    try:
+        seller_uid = ch.uid
+        if op == "buy":
+            lots = await econ_tx.load_active_lots(db.pool.acquire)
+            offered = next((l for l in lots if l["id"] == value), None)
+            if not offered:
+                return False, "Лот недоступен.", None
+            seller_uid = offered["seller_uid"]
+            if seller_uid == ch.uid:
+                return False, "Это ваш лот.", None
+        async with AsyncExitStack() as stack:
+            for uid in sorted({ch.uid, seller_uid}):
+                await stack.enter_async_context(_econ_lock(uid))
+            # Flush pending loot/rewards before SQL reads the authoritative balances.
+            await save(ch, force=True)
+            seller = chars.get(seller_uid) if seller_uid != ch.uid else None
+            if seller is not None:
+                await save(seller, force=True)
+            if op == "list":
+                lid = uuid.uuid5(uuid.NAMESPACE_URL, op_id).hex
+                ok, msg, data = await econ_tx.list_lot(
+                    db.pool.acquire, ch.uid, value, _auc_price(value), lid, op_id)
+                if ok:
+                    _auction_apply_data(ch, data)
+                return ok, msg, {"id": lid} if ok else None
+            if op == "cancel":
+                ok, msg, data = await econ_tx.cancel_lot(db.pool.acquire, ch.uid, value, op_id)
+                if ok:
+                    _auction_apply_data(ch, data)
+                return ok, msg, None
+            ok, msg, bd, sd, lot = await econ_tx.buy_lot(db.pool.acquire, ch.uid, value, op_id)
+            if ok:
+                # Update BOTH live balances before any further await. SQL already persisted them.
+                _auction_apply_data(ch, bd)
+                if seller is not None:
+                    _auction_apply_data(seller, sd)
+                if lot is not None and seller is not None:
+                    try:
+                        weekly.on_sell_lot(seller)
+                        await save(seller, force=True)
+                    except Exception as exc:
+                        _elog.log_err(_log, "auction_weekly_save_failed", exc, uid=seller_uid)
+    except Exception as exc:
+        _elog.log_err(_log, "auction_action_failed", exc, uid=ch.uid, op=op)
+        return False, "Не удалось выполнить действие аукциона. Попробуйте позже.", None
+    if ok and lot is not None:
+        name = ITEMS.get(lot["item"], {}).get("name", lot["item"])
+        sold = f"💰 Ваш лот «{name}» продан! +{money.fmt(lot['proceeds'])}."
+        try:
+            if seller_uid < 0:
+                if _presence.active(seller_uid):
+                    await send(seller_uid, sold)
+            elif _notify.ENABLED:
+                _notify.emit(seller_uid, "auction_sold", sold)
+            elif seller_uid in chars:
+                await send(seller_uid, sold)
+        except Exception as exc:
+            _elog.log_err(_log, "auction_notice_failed", exc, uid=seller_uid)
+    return ok, msg, lot
+
+
+async def _max_auction_command(ch: Character, command: str, parts, event: MaxInput):
+    if command not in ("auction", "аукцион", "alist", "abuy", "acancel"):
+        return False
+    error = auction_guard(ch)
+    if error:
+        await send(ch.uid, error)
+        return True
+    if command in ("auction", "аукцион"):
+        if len(parts) > 2 or (len(parts) == 2 and (not parts[1].isascii() or not parts[1].isdigit() or len(parts[1]) > 6)):
+            await send(ch.uid, "Формат: /auction [номер страницы].")
+            return True
+        page = int(parts[1]) if len(parts) == 2 else 1
+        try:
+            lots = await econ_tx.load_active_lots(db.pool.acquire)
+        except Exception as exc:
+            _elog.log_err(_log, "auction_view_failed", exc, uid=ch.uid)
+            await send(ch.uid, "Аукцион временно недоступен.")
+            return True
+        pages = max(1, (len(lots) + 7) // 8)
+        if not 1 <= page <= pages:
+            await send(ch.uid, f"Страницы: 1–{pages}. /auction 1")
+            return True
+        lines = [f"🏛 Аукцион · страница {page}/{pages} · лотов {len(lots)}",
+                 "Цена: база ×2. Комиссия продавца 5%. Лимит: 10 активных лотов."]
+        for offered in lots[(page - 1) * 8:page * 8]:
+            name = ITEMS.get(offered["item"], {}).get("name", offered["item"])
+            action = "acancel" if offered["seller_uid"] == ch.uid else "abuy"
+            lines.append(f"{name} · 💰{money.fmt(offered['price'])}\n/{action} {offered['id']}")
+        if not lots:
+            lines.append("Лотов пока нет.")
+        lines.append("/alist — предметы для продажи; /alist <код> — выставить один экземпляр.")
+        await send(ch.uid, "\n\n".join(lines))
+        return True
+    if command == "alist" and len(parts) == 1:
+        sellable = [key for key in dict.fromkeys(ch.inventory)
+                    if key in ITEMS and ITEMS[key].get("type") != "quest"]
+        lines = ["📤 Предметы для аукциона (цена = база ×2):"]
+        lines.extend(f"/alist {key} — {ITEMS[key]['name']} · 💰{money.fmt(_auc_price(key))}"
+                     for key in sellable[:20])
+        if not sellable:
+            lines.append("В сумке нет предметов для продажи.")
+        if len(sellable) > 20:
+            lines.append("Показаны первые 20 кодов; остальные можно взять из /inv.")
+        await send(ch.uid, "\n".join(lines))
+        return True
+    if len(parts) != 2:
+        await send(ch.uid, f"Формат: /{command} <{'код предмета' if command == 'alist' else 'ID лота'}>.")
+        return True
+    op = {"alist": "list", "abuy": "buy", "acancel": "cancel"}[command]
+    ok, msg, lot = await auction_action_core(
+        ch, op, parts[1], f"max:auction:{ch.uid}:{event.event_key}")
+    if ok and command == "alist" and lot:
+        msg += f"\nID: {lot['id']}\nСнять: /acancel {lot['id']}"
+    await send(ch.uid, msg)
+    return True
 
 
 def _kb_auction(ch: Character, lots=None) -> InlineKeyboardMarkup:
@@ -1004,6 +1156,10 @@ def _kb_auction(ch: Character, lots=None) -> InlineKeyboardMarkup:
 
 
 async def show_auction(cb: CallbackQuery, ch: Character):
+    error = auction_guard(ch)
+    if error:
+        await cb.answer(error, show_alert=True)
+        return
     if not _auc_open(ch):
         await cb.answer("Аукцион доступен в банке столицы", show_alert=True); return
     if db and db.pool:
@@ -1032,11 +1188,17 @@ async def show_auction(cb: CallbackQuery, ch: Character):
 
 
 async def show_auction_sell(cb: CallbackQuery, ch: Character):
+    error = auction_guard(ch)
+    if error:
+        await cb.answer(error, show_alert=True)
+        return
     if not _auc_open(ch):
         await cb.answer("Аукцион доступен в банке столицы", show_alert=True); return
     rows = []
     seen = {}
     for it in ch.inventory:
+        if it not in ITEMS or ITEMS[it].get("type") == "quest":
+            continue
         if it in seen:
             continue
         seen[it] = True
@@ -1053,25 +1215,20 @@ async def show_auction_sell(cb: CallbackQuery, ch: Character):
 
 
 async def do_auc_list(cb: CallbackQuery, ch: Character, item: str):
+    error = auction_guard(ch)
+    if error:
+        await cb.answer(error, show_alert=True)
+        return
+    if item not in ITEMS or ITEMS[item].get("type") == "quest":
+        await cb.answer("Этот предмет нельзя выставить на аукцион", show_alert=True); return
     if item not in ch.inventory:
         await cb.answer("Предмета нет в сумке", show_alert=True); return
     price = _auc_price(item)
     if db and db.pool:
-        # БД-путь: снятие предмета, создание лота и запись в ledger — одной
-        # транзакцией; при обрыве процесса предмет не потеряется и не удвоится.
-        lot_id = uuid.uuid4().hex
-        async with _econ_lock(ch.uid):
-            ok, msg, data = await econ_tx.list_lot(
-                db.pool.acquire, ch.uid, item, price, lot_id, f"list:{lot_id}")
-            if ok and data is not None:
-                ch.gold = data["gold"]
-                ch.inventory = list(data["inventory"])
-                await save(ch, force=True)
-        if not ok:
-            await cb.answer(msg, show_alert=True)
-            return
-        await cb.answer("📤 Лот выставлен!")
-        await show_auction(cb, ch)
+        ok, msg, _lot = await auction_action_core(ch, "list", item, f"tg:auction:{ch.uid}:{cb.id}")
+        await cb.answer(msg, show_alert=not ok)
+        if ok:
+            await show_auction(cb, ch)
         return
     if PROD:
         await cb.answer("⚙️ Торговля временно недоступна", show_alert=True); return
@@ -1086,6 +1243,10 @@ async def do_auc_list(cb: CallbackQuery, ch: Character, item: str):
 
 
 async def do_auc_buy(cb: CallbackQuery, ch: Character, lid: str):
+    error = auction_guard(ch)
+    if error:
+        await cb.answer(error, show_alert=True)
+        return
     if db and db.pool:
         await _do_auc_buy_db(cb, ch, lid)
         return
@@ -1133,79 +1294,21 @@ async def do_auc_buy(cb: CallbackQuery, ch: Character, lid: str):
 
 
 async def _do_auc_buy_db(cb: CallbackQuery, ch: Character, lid: str):
-    """БД-путь покупки: одна транзакция (econ_tx.buy_lot) под локами покупателя
-    и продавца в порядке возрастания uid. Выручка зачисляется продавцу сразу — и
-    в БД, и в память (если персонаж загружен). Память обновляем из возвращённых
-    data ДО отпускания локов."""
-    # предчтение лота: узнать продавца (для порядка локов) и быстрые отказы
-    lots = await econ_tx.load_active_lots(db.pool.acquire)
-    lot0 = next((x for x in lots if str(x["id"]) == str(lid)), None)
-    if lot0 is None:
-        await cb.answer("Лот уже продан", show_alert=True); await show_auction(cb, ch); return
-    seller_uid = lot0["seller_uid"]
-    if seller_uid == ch.uid:
-        await cb.answer("Это ваш лот", show_alert=True); return
-    if ch.gold < lot0["price"]:
-        await cb.answer("Не хватает монет", show_alert=True); return
-    op_id = f"buy:{lid}:{ch.uid}"
-    locks = [_econ_lock(u) for u in sorted({ch.uid, seller_uid})]
-    for lk in locks:
-        await lk.acquire()
-    try:
-        ok, msg, bd, sd, lot = await econ_tx.buy_lot(db.pool.acquire, ch.uid, lid, op_id)
-        if ok and bd is not None:
-            ch.gold = bd["gold"]
-            ch.inventory = list(bd["inventory"])
-            await save(ch, force=True)
-            if sd is not None:
-                seller = chars.get(seller_uid)
-                if seller is not None:
-                    seller.gold = sd["gold"]
-                    seller.inventory = list(sd["inventory"])
-                    await save(seller, force=True)
-    finally:
-        for lk in reversed(locks):
-            lk.release()
-    if not ok:
-        await cb.answer(msg, show_alert=True); await show_auction(cb, ch); return
-    if lot is not None:
-        # свежая продажа (не идемпотентный повтор) — уведомить продавца;
-        # выручка уже зачислена продавцу в транзакции econ_tx.buy_lot.
-        _iname = ITEMS.get(lot["item"], {}).get("name", lot["item"])
-        _proceeds = lot.get("proceeds", 0)
-        seller = chars.get(seller_uid)
-        _sold = f"💰 Ваш лот «{_iname}» продан! +{money.fmt(_proceeds)}."
-        if seller is not None:
-            _wsell = weekly.on_sell_lot(seller)   # недельная цель sell_lot (Этап 6.1)
-            if _wsell:
-                _sold += "\n" + _wsell
-            await save(seller, force=True)   # прогресс недельника — фиксируем вместе с выручкой
-            if _notify.ENABLED:
-                _notify.emit(seller.uid, "auction_sold", _sold)
-            else:
-                try:
-                    await bot.send_message(seller.uid, _sold)
-                except Exception:
-                    pass
-        elif _notify.ENABLED:
-            await _notify_deliver(seller_uid, "auction_sold", _sold)
-    await cb.answer("🛒 Покупка совершена!")
+    ok, msg, _lot = await auction_action_core(ch, "buy", lid, f"tg:auction:{ch.uid}:{cb.id}")
+    await cb.answer(msg, show_alert=not ok)
     await show_auction(cb, ch)
 
 
 async def do_auc_cancel(cb: CallbackQuery, ch: Character, lid: str):
+    error = auction_guard(ch)
+    if error:
+        await cb.answer(error, show_alert=True)
+        return
     if db and db.pool:
-        async with _econ_lock(ch.uid):
-            ok, msg, data = await econ_tx.cancel_lot(
-                db.pool.acquire, ch.uid, lid, f"cancel:{lid}")
-            if ok and data is not None:
-                ch.gold = data["gold"]
-                ch.inventory = list(data["inventory"])
-                await save(ch, force=True)
-        if not ok:
-            await cb.answer("Нельзя снять лот", show_alert=True); return
-        await cb.answer("❌ Лот снят, предмет возвращён в сумку")
-        await show_auction(cb, ch)
+        ok, msg, _lot = await auction_action_core(ch, "cancel", lid, f"tg:auction:{ch.uid}:{cb.id}")
+        await cb.answer(msg, show_alert=not ok)
+        if ok:
+            await show_auction(cb, ch)
         return
     if PROD:
         await cb.answer("⚙️ Торговля временно недоступна", show_alert=True); return
@@ -2149,7 +2252,7 @@ async def _max_handle_input(event: MaxInput):
                            "/confirm, /errand, /erraccept, /errturnin, /errabandon, "
                            "/shop [торговец], /buy <предмет>, /sell, /repair, "
                            "/train, /learn <умение>, /loadout <умение>, "
-"/preset save|load <1–3>, /group, /party <текст>, /guild, /respawn.")
+"/preset save|load <1–3>, /group, /party <текст>, /guild, /auction, /respawn.")
                 await send(uid, ui.render_room(ch, world, others_in(ch.room)))
             else:
                 races = ", ".join(RACES)
@@ -2203,6 +2306,8 @@ async def _max_handle_input(event: MaxInput):
             await save(ch, force=True)
             await send(uid, f"✨ Возрождение в {WORLD[ch.room]['name']}. Потеряно монет: {lost}.\n"
                        + ui.render_room(ch, world, others_in(ch.room)))
+            return
+        if await _max_auction_command(ch, command, parts, event):
             return
         if await _max_guild_command(ch, command, parts, event):
             return

@@ -163,6 +163,8 @@ class FakeConn:
         raise AssertionError("FakeConn.fetchrow: неизвестный SQL:\n" + sql)
 
     async def fetch(self, sql, *args):
+        if "FROM auction_listings" in sql:
+            return []  # Escrow cleanup is exercised in PostgreSQL auction tests.
         if "FROM guilds" in sql or "FROM guild_members" in sql or "FROM guild_invites" in sql:
             return []  # Guild cleanup is exercised against real PostgreSQL separately.
         if "WHERE deleted_at IS NULL" in sql:                     # load_all

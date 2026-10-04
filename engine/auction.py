@@ -10,8 +10,7 @@ import json
 import time
 from typing import Optional, List
 
-AUCTION_FEE = 0.05      # 5% комиссия с продажи (сток золота)
-MAX_LISTINGS = 10       # лимит активных лотов на игрока
+from .econ_tx import AUCTION_FEE, MAX_LISTINGS  # Shared display/transaction rules.
 
 
 class AuctionManager:
