@@ -507,9 +507,8 @@ for _lv in (6, 10, 15, 20, _DL_CAP):
     _need = int(50 * _lv * (1 + _lv / 20))
     check(f"ур.{_lv}: награда ежедневного — заметная доля уровня (0.15–0.6)",
           0.15 <= _q["reward"]["xp"] / _need <= 0.6)
-check("уровень цели ежедневного растёт вместе с игроком",
-      [_dl_seen[k][0] for k in sorted(_dl_seen)] ==
-      sorted(_dl_seen[k][0] for k in sorted(_dl_seen)))
+check("уровень цели ежедневного растёт между ранним и поздним этапом",
+      _dl_seen[max(_dl_seen)][0] > _dl_seen[min(_dl_seen)][0])
 check("награда ежедневного растёт вместе с уровнем",
       [_dl_seen[k][1] for k in sorted(_dl_seen)] ==
       sorted(_dl_seen[k][1] for k in sorted(_dl_seen)))

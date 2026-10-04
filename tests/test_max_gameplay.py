@@ -8,16 +8,19 @@ from unittest.mock import AsyncMock, Mock
 
 from bot import commands as cmds
 from bot.max_transport import MaxInput
-from engine import content, errands, game_actions, npc, quest, skills, starter, textsafe, money
+from engine import content, errands, game_actions, npc, quest, skills, starter, textsafe, money, uigate
 from engine.character import Character, START_ROOM
 from engine.interaction import Presence
+from engine.social import PartyManager
 from engine.lifecycle_errors import ActiveCharacterExists, NameTaken
 
 
 def load_handler(env):
     path = Path(__file__).resolve().parents[1] / "bot" / "main.py"
     tree = ast.parse(path.read_text(encoding="utf-8"))
-    names = {"_max_handle_input", "_max_npc_commands", "_max_resolve_npc"}
+    names = {"_max_handle_input", "_max_npc_commands", "_max_resolve_npc",
+             "party_invite_core", "party_accept_core", "party_decline_core",
+             "party_leave_core", "party_chat_core"}
     nodes = [n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
              and n.name in names]
     assert len(nodes) == len(names)
@@ -32,7 +35,8 @@ async def test_create_and_move():
     async def move(ch, direction):
         ch.room = content.WORLD[ch.room]["exits"][direction]
         return True, False
-    database = SimpleNamespace(pool=object(), reserve_max_player_id=AsyncMock(return_value=-11),
+    database = SimpleNamespace(pool=object(), reserve_max_player_id=AsyncMock(
+                                   side_effect=lambda external: -11 if external == "42" else -12),
                                create_character=AsyncMock())
     analytics = SimpleNamespace(track=Mock(), track_once=Mock())
     chosen_vendor = {}
@@ -41,16 +45,21 @@ async def test_create_and_move():
                          DIR_ICONS={"север": "↑", "юг": "↓"}, active_vendor=chosen_vendor,
                          current_vendor=lambda ch: chosen_vendor.get(ch.uid)
                          or (game_actions.vendors_here(ch) or [None])[0])
+    characters = {}
     env = {
         "asyncio": asyncio, "MaxInput": MaxInput, "db": database,
         "_max_input_locks": {}, "_presence": Presence(), "cmds": cmds,
-        "chars": {}, "send": send, "RACES": content.RACES,
+        "chars": characters, "send": send, "RACES": content.RACES,
         "CLASSES": content.CLASSES, "WORLD": content.WORLD,
         "world": object(),
         "Character": Character, "_ts": textsafe, "_starter": starter,
         "HUB_ROOM": START_ROOM, "NameTaken": NameTaken,
         "ActiveCharacterExists": ActiveCharacterExists,
         "analytics": analytics, "ui": ui, "game_actions": game_actions,
+        "_uigate": uigate, "party_mgr": PartyManager(),
+        "players_in_room": lambda actor: [other for other in characters.values()
+                            if other.uid != actor.uid and other.room == actor.room],
+        "render_group": lambda actor: f"GROUP {actor.name}",
         "_mod": SimpleNamespace(is_banned=lambda _uid: False,
                                 is_muted=lambda _uid: False,
                                 chat_allowed=lambda _uid: True),
@@ -157,6 +166,22 @@ async def test_create_and_move():
     await handler(MaxInput("42", "message:42:3", "/stats"))
     assert messages[-1] == (-11, "STATS")
     assert env["_presence"].active(-11)
+    await handler(MaxInput("43", "message:43:start", "/start"))
+    await handler(MaxInput("43", "message:43:create", "/create human warrior Напарник"))
+    mate = characters[-12]
+    ch.room = mate.room = START_ROOM
+    ch.level = mate.level = 3
+    await handler(MaxInput("42", "message:42:group", "/group"))
+    assert "/pinvite -12" in messages[-1][1]
+    await handler(MaxInput("42", "message:42:pinvite", "/pinvite -12"))
+    assert env["party_mgr"].invites[-12] == -11
+    assert messages[-2][0] == -12 and "/paccept" in messages[-2][1]
+    await handler(MaxInput("43", "message:43:accept", "/paccept"))
+    assert set(env["party_mgr"].members(-11)) == {-11, -12}
+    await handler(MaxInput("42", "message:42:party-chat", "/party Привет, напарник!"))
+    assert any(uid == -12 and "Привет, напарник!" in msg for uid, msg in messages)
+    await handler(MaxInput("43", "message:43:leave", "/pleave"))
+    assert env["party_mgr"].party_of(-12) is None
 
 
 if __name__ == "__main__":

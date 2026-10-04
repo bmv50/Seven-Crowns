@@ -33,6 +33,8 @@ class PartyManager:
         return pid
 
     def invite(self, leader: int, target: int) -> bool:
+        if leader == target or target in self.member_of or target in self.invites:
+            return False
         if leader not in self.member_of:
             self.create(leader)
         pid = self.member_of[leader]
@@ -42,11 +44,11 @@ class PartyManager:
         return True
 
     def accept(self, uid: int) -> Optional[dict]:
+        if uid in self.member_of:
+            return None
         pid = self.invites.pop(uid, None)
         if pid is None or pid not in self.parties:
             return None
-        if uid in self.member_of:
-            self.leave(uid)
         self.parties[pid]["members"].append(uid)
         self.member_of[uid] = pid
         return self.parties[pid]
@@ -62,6 +64,10 @@ class PartyManager:
             party["members"].remove(uid)
         # лидер ушёл — передать или распустить
         if party["leader"] == uid:
+            # Старые приглашения выданы прежним лидером. При роспуске и смене
+            # лидера они не должны оживать после создания новой группы с тем же pid.
+            self.invites = {target: invited_pid for target, invited_pid in self.invites.items()
+                            if invited_pid != pid}
             if party["members"]:
                 party["leader"] = party["members"][0]
             else:
