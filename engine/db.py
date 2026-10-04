@@ -100,6 +100,27 @@ CREATE TABLE IF NOT EXISTS max_inbox (
 );
 CREATE INDEX IF NOT EXISTS idx_max_inbox_pending ON max_inbox(received_at)
     WHERE status='pending';
+-- Delivery is retried independently; game inputs are NEVER replayed here.
+CREATE TABLE IF NOT EXISTS max_outbox (
+    id BIGSERIAL PRIMARY KEY,
+    uid BIGINT NOT NULL CHECK (uid<0),
+    external_user_id TEXT NOT NULL,
+    message_text TEXT,
+    status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending','processing','sent','failed')),
+    attempts INT NOT NULL DEFAULT 0,
+    next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    lease_until TIMESTAMPTZ,
+    lease_token TEXT,
+    last_error TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at TIMESTAMPTZ NOT NULL DEFAULT now()+interval '24 hours',
+    finished_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_max_outbox_active ON max_outbox(external_user_id,id)
+    WHERE status IN ('pending','processing');
+CREATE INDEX IF NOT EXISTS idx_max_outbox_finished ON max_outbox(finished_at)
+    WHERE finished_at IS NOT NULL;
 -- Журнал аудита необратимых действий игрока (/reset и восстановление персонажа).
 -- Пишется при подтверждённом сбросе: чтобы разобрать спорную «пропажу» персонажа
 -- и иметь след для поддержки на закрытой бете. Без пула (pool=None) — no-op.

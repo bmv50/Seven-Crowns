@@ -8,10 +8,12 @@ command handling. MAX credentials never appear in URLs or logs.
 import asyncio
 import hmac
 import logging
+import math
 import re
 from dataclasses import dataclass
 
 from aiohttp import ClientSession, ClientTimeout, web
+from engine.max_outbox import MaxSendError, text_parts
 
 
 API_URL = "https://platform-api2.max.ru"
@@ -79,25 +81,48 @@ class MaxClient:
             self._session = None
 
     async def send_user(self, external_user_id: str, value: str):
+        for part in text_parts(value):
+            await self.send_chunk(external_user_id, part)
+
+    async def send_chunk(self, external_user_id: str, text: str):
+        """Send one persisted chunk, with no hidden network retry."""
         if self._session is None:
             raise RuntimeError("MAX client not started")
-        # MAX accepts at most 4000 characters; keep a margin and no Telegram
-        # Markdown parse mode, which is not compatible with MAX formatting.
-        text = str(value).replace("*", "")
+        if not text or len(text) > 3500:
+            raise ValueError('MAX chunk must contain 1–3500 characters')
         lock = self._dialog_locks.setdefault(external_user_id, asyncio.Lock())
         async with lock:
-            for start in range(0, len(text), 3500):
-                loop = asyncio.get_running_loop()
-                delay = self._last_sent.get(external_user_id, 0) + 0.55 - loop.time()
-                if delay > 0:
-                    await asyncio.sleep(delay)
+            loop = asyncio.get_running_loop()
+            delay = self._last_sent.get(external_user_id, 0) + 0.55 - loop.time()
+            if delay > 0:
+                await asyncio.sleep(delay)
+            try:
                 async with self._session.post(
                     f"{API_URL}/messages",
                     params={"user_id": external_user_id},
-                    json={"text": text[start:start + 3500]},
+                    json={"text": text},
                     headers={"Authorization": self._token},
                 ) as response:
-                    response.raise_for_status()
+                    if not 200 <= response.status < 300:
+                        try:
+                            retry_after = float(response.headers.get('Retry-After', '0'))
+                        except (TypeError, ValueError):
+                            retry_after = 0
+                        if not math.isfinite(retry_after):
+                            retry_after = 0
+                        raise MaxSendError(response.status, min(3600, max(0, retry_after)))
+                    # A 2xx without the documented message object is not an ACK.
+                    try:
+                        payload = await response.json()
+                    except ValueError:
+                        raise MaxSendError(502) from None
+                    message = payload.get('message') if isinstance(payload, dict) else None
+                    body = message.get('body') if isinstance(message, dict) else None
+                    mid = body.get('mid') if isinstance(body, dict) else None
+                    if not isinstance(mid, str) or not mid:
+                        raise MaxSendError(502)
+            finally:
+                # Throttle failures too, not only successful responses.
                 self._last_sent[external_user_id] = loop.time()
 
 

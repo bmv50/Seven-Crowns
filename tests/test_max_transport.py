@@ -54,6 +54,11 @@ async def test_webhook():
 class _Response:
     def __init__(self):
         self.checked = False
+        self.status = 200
+        self.headers = {}
+
+    async def json(self):
+        return {'message': {'body': {'mid': 'm-1'}}}
 
     async def __aenter__(self):
         return self

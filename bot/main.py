@@ -46,6 +46,7 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiohttp import web
 from bot.max_transport import MaxClient, MaxInput, MaxWebhook
+from engine.max_outbox import MaxOutboxStore, MaxOutboxWorker
 
 from engine import content
 from engine import game_actions
@@ -494,14 +495,11 @@ dp.callback_query.outer_middleware(_input_middleware)
 
 async def send(uid: int, text: str):
     if uid < 0:
-        if not _max_client or not db or not db.pool:
-            return
+        if not db or not db.pool:
+            raise RuntimeError("MAX delivery requires PostgreSQL")
         external_id = await db.max_external_user_id(uid)
         if external_id:
-            try:
-                await _max_client.send_user(external_id, text)
-            except Exception as e:
-                _elog.log_err(_log, "max_send_failed", e, uid=uid)
+            await MaxOutboxStore(db.pool).enqueue(uid, external_id, text)
         return
     try:
         await bot.send_message(uid, text, parse_mode="Markdown")
@@ -2748,6 +2746,23 @@ async def _max_inbox_worker():
             await db.finish_max_update(event.event_key, failed=True)
         else:
             await db.finish_max_update(event.event_key)
+
+
+async def _max_outbox_worker():
+    """Retry delivery only, never a gameplay command or economic operation."""
+    await MaxOutboxWorker(MaxOutboxStore(db.pool), _max_client).run()
+
+
+async def _stop_max_workers():
+    # Remove first so watchdog cannot restart them against a closed HTTP client.
+    tasks = []
+    for name in ("max_inbox_worker", "max_outbox_worker"):
+        rec = _WORKERS.pop(name, None)
+        if rec and rec.get("task"):
+            rec["task"].cancel()
+            tasks.append(rec["task"])
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 def _help_text(ch: Character) -> str:
@@ -6426,12 +6441,14 @@ async def main():
         port = int(os.environ.get("MAX_WEBHOOK_PORT", "8080"))
         await web.TCPSite(max_runner, "0.0.0.0", port).start()
         _spawn_worker("max_inbox_worker", _max_inbox_worker)
+        _spawn_worker("max_outbox_worker", _max_outbox_worker)
         print(f"🌐 MAX webhook слушает внутренний порт {port}; общий GameLoop сохранён.")
     try:
         await dp.start_polling(bot)
     finally:
         if max_runner:
             await max_runner.cleanup()
+        await _stop_max_workers()
         if _max_client:
             await _max_client.close()
             _max_client = None
