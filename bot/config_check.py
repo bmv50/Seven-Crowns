@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import os
 from typing import Dict, List, NamedTuple, Optional
+from bot.transport_runtime import telegram_enabled
 
 
 # Заглушки-плейсхолдеры из .env.example — если BOT_TOKEN всё ещё равен одной из
@@ -103,9 +104,17 @@ def check_config(env: Optional[Dict[str, str]] = None) -> ConfigResult:
     warnings: List[str] = []
 
     prod = _is_truthy(env.get("PROD"))
+    telegram = telegram_enabled(env)
+    max_enabled = (env.get('MAX_ENABLED', '0').strip().lower()
+                   in ('1', 'true', 'yes', 'on'))
+    if env.get('TELEGRAM_ENABLED', '1').strip().lower() not in (
+            '0', '1', 'false', 'true', 'no', 'yes', 'off', 'on'):
+        errors.append('TELEGRAM_ENABLED: используйте 0 или 1.')
+    if not telegram and not max_enabled:
+        errors.append('Нет включённых транспортов: TELEGRAM_ENABLED=0 требует MAX_ENABLED=1.')
 
     # 1) BOT_TOKEN обязателен и не должен быть заглушкой
-    if _is_placeholder_token(env.get("BOT_TOKEN", "")):
+    if telegram and _is_placeholder_token(env.get("BOT_TOKEN", "")):
         errors.append(
             "BOT_TOKEN не задан или оставлен заглушкой. Получите токен у @BotFather "
             "и пропишите BOT_TOKEN в .env (или в окружении).")
@@ -129,6 +138,9 @@ def check_config(env: Optional[Dict[str, str]] = None) -> ConfigResult:
 
     # 3) ADMIN_IDS — не фатально, но предупреждаем о мусорных токенах
     good, bad = parse_admin_ids(env.get("ADMIN_IDS", ""))
+    if not telegram:
+        warnings.append('TELEGRAM_ENABLED=0: Telegram /admin и Telegram-алерты недоступны; '
+                        'контролируйте MAX через серверные журналы. ADMIN_IDS не даёт MAX-админку.')
     if bad:
         warnings.append(
             "ADMIN_IDS: не распознаны как uid и проигнорированы: "
@@ -164,6 +176,8 @@ def check_config(env: Optional[Dict[str, str]] = None) -> ConfigResult:
     # 5) Платежи (задел Telegram Stars): включать только в PROD и только с
     # заполненными юридическими/контактными полями.
     if _is_truthy(env.get("STARS_ENABLED")):
+        if not telegram:
+            errors.append('STARS_ENABLED=1 требует включённого Telegram.')
         if not prod:
             errors.append("STARS_ENABLED=1 вне PROD-режима: платежи в dev запрещены.")
         _missing = []
@@ -176,6 +190,20 @@ def check_config(env: Optional[Dict[str, str]] = None) -> ConfigResult:
                 "STARS_ENABLED=1, но не заполнены: " + ", ".join(_missing)
                 + ". Платежи без оферты, политики возврата и контакта поддержки "
                   "включать нельзя.")
+
+    if max_enabled:
+        if not db_url or _is_placeholder_token(db_url):
+            errors.append('MAX_ENABLED=1 требует DATABASE_URL (PostgreSQL).')
+        if _is_placeholder_token(env.get('MAX_BOT_TOKEN', '')):
+            errors.append('MAX_ENABLED=1 требует MAX_BOT_TOKEN.')
+        if len(env.get('MAX_WEBHOOK_SECRET', '').strip()) < 5:
+            errors.append('MAX_ENABLED=1 требует MAX_WEBHOOK_SECRET длиной не менее 5 символов.')
+        try:
+            port_ok = 1 <= int(env.get('MAX_WEBHOOK_PORT', '8080')) <= 65535
+        except ValueError:
+            port_ok = False
+        if not port_ok:
+            errors.append('MAX_WEBHOOK_PORT должен быть целым числом от 1 до 65535.')
 
     return ConfigResult(errors=errors, warnings=warnings)
 

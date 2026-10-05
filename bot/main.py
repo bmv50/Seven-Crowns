@@ -101,6 +101,7 @@ from bot import ui
 from bot import mapgen
 from bot import commands as cmds
 from bot import config_check   # Этап 9: fail-fast валидация окружения на старте
+from bot.transport_runtime import create_telegram_bot, telegram_username, run_transport
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "PASTE_YOUR_TOKEN_HERE")
 PROXY_URL = os.environ.get("PROXY_URL", "").strip()
@@ -274,12 +275,11 @@ except ValueError:
 
 # ───────── глобальное состояние ─────────
 # Если задан PROXY_URL — бот ходит к Telegram через прокси (обход блокировок).
-if PROXY_URL:
-    _session = AiohttpSession(proxy=PROXY_URL)
-    bot = Bot(token=BOT_TOKEN, session=_session)
-    print(f"🌐 Бот использует прокси: {PROXY_URL.split('@')[-1]}")
-else:
-    bot = Bot(token=BOT_TOKEN)
+bot = create_telegram_bot(os.environ, Bot, AiohttpSession)
+if bot is None:
+    print('📡 MAX-only: Telegram-клиент отключён, подключений к Telegram нет.')
+elif PROXY_URL:
+    print('🌐 Telegram использует настроенный прокси.')
 dp = Dispatcher()
 world = World()
 chars: dict[int, Character] = {}
@@ -511,6 +511,8 @@ async def send(uid: int, text: str, *, max_keyboard=None):
             else:
                 await MaxOutboxStore(db.pool).enqueue(uid, external_id, text, keyboard=max_keyboard)
         return
+    if bot is None:
+        return  # Stored Telegram heroes must not trigger network calls in MAX-only.
     try:
         await bot.send_message(uid, text, parse_mode="Markdown")
     except Exception as e:
@@ -712,7 +714,7 @@ async def send_ephemeral(uid: int, text: str, ttl: float = EPHEMERAL_TTL):
     """Отправить самоудаляющуюся строку окружения (анонс забредания, шаги
     другого игрока, ambient-реплика NPC). Плейтест владельца: такие строки
     спамили чат — теперь исчезают сами через ttl секунд, не засоряя историю."""
-    if uid < 0:
+    if uid < 0 or bot is None:
         return  # MAX text MVP has no disappearing messages; avoid chat spam.
     try:
         m = await bot.send_message(uid, text, parse_mode="Markdown",
@@ -6065,6 +6067,8 @@ async def guild_manage(cb: CallbackQuery, ch: Character):
 
 async def _send_notification(uid: int, category: str, text: str, ttl: float = None):
     """Только транспорт. Политику и квоту применяет NotificationDelivery."""
+    if bot is None:
+        return False
     import time as _time
     deadline = _time.time() + ttl if ttl is not None else None
     success = False
@@ -6122,6 +6126,8 @@ async def _notify_deliver(uid: int, category: str, text: str, ttl: float = None,
             uid, external_id, text, category, ch.generation,
             expires_at=deadline, event_key=event_key)
         return "queued" if queued else "drop"
+    if bot is None:
+        return "drop"
     return await _notification_delivery.deliver(
         uid, category, text, ttl=ttl, expires_at=expires_at)
 
@@ -6233,7 +6239,7 @@ async def _epic_outward(prev_season, epic: str):
     # (2) пост в канал сообщества — только если задан ID чата и бот там админ.
     # Ссылки COMMUNITY_URL для этого мало: постить можно лишь по chat_id.
     _cid = (os.environ.get("COMMUNITY_CHAT_ID") or "").strip()
-    if not _cid:
+    if not _cid or bot is None:
         return
     try:
         await bot.send_message(_cid, f"🏛 *Летопись сезона {prev_season}*\n\n{epic}",
@@ -6395,6 +6401,9 @@ def _spawn_worker(name: str, factory):
 
 async def _alert_admins(text: str):
     """Разослать текст всем ADMIN_IDS (алерт о падении воркера). Ошибки — молча."""
+    if bot is None:
+        _elog.log_err(_log, "telegram_admin_alert_unavailable")
+        return
     for _uid in ADMIN_IDS:
         try:
             await bot.send_message(_uid, text)
@@ -6462,8 +6471,7 @@ async def main():
             f"проекту требуется 3.12+. Игра попробует запуститься, но это не поддерживается."
         )
     validate()
-    me = await bot.get_me()
-    BOT_USERNAME = me.username or ""
+    BOT_USERNAME = await telegram_username(bot)
     db = Database()
     try:
         await db.connect()
@@ -6624,27 +6632,27 @@ async def main():
     _spawn_worker("snapshot_worker",
                   lambda: snapshot_worker(snap_interval=60.0, flush_interval=3.0))
     # watchdog: сторож живости всех воркеров выше (сам в реестр не входит).
-    asyncio.create_task(watchdog_worker(interval=60.0))
+    watchdog_task = asyncio.create_task(watchdog_worker(interval=60.0))
     if db and db.pool:
         print("💾 Персистентность рантайма включена (снимок мира раз в 60с).")
     print("⚔️  СЕМЬ КОРОН v3 запущена. Реал-тайм цикл активен.")
     max_runner = None
-    if os.environ.get("MAX_ENABLED", "0").strip().lower() in ("1", "true", "yes", "on"):
-        token = os.environ.get("MAX_BOT_TOKEN", "").strip()
-        secret = os.environ.get("MAX_WEBHOOK_SECRET", "").strip()
-        if not db or not db.pool or not token or len(secret) < 5:
-            raise RuntimeError("MAX_ENABLED requires PostgreSQL, MAX_BOT_TOKEN and MAX_WEBHOOK_SECRET")
-        _max_client = MaxClient(token)
-        await _max_client.start()
-        max_runner = web.AppRunner(MaxWebhook(secret, _max_enqueue_input).app())
-        await max_runner.setup()
-        port = int(os.environ.get("MAX_WEBHOOK_PORT", "8080"))
-        await web.TCPSite(max_runner, "0.0.0.0", port).start()
-        _spawn_worker("max_inbox_worker", _max_inbox_worker)
-        _spawn_worker("max_outbox_worker", _max_outbox_worker)
-        print(f"🌐 MAX webhook слушает внутренний порт {port}; общий GameLoop сохранён.")
     try:
-        await dp.start_polling(bot)
+        if os.environ.get("MAX_ENABLED", "0").strip().lower() in ("1", "true", "yes", "on"):
+            token = os.environ.get("MAX_BOT_TOKEN", "").strip()
+            secret = os.environ.get("MAX_WEBHOOK_SECRET", "").strip()
+            if not db or not db.pool or not token or len(secret) < 5:
+                raise RuntimeError("MAX_ENABLED requires PostgreSQL, MAX_BOT_TOKEN and MAX_WEBHOOK_SECRET")
+            _max_client = MaxClient(token)
+            await _max_client.start()
+            max_runner = web.AppRunner(MaxWebhook(secret, _max_enqueue_input).app())
+            await max_runner.setup()
+            port = int(os.environ.get("MAX_WEBHOOK_PORT", "8080"))
+            await web.TCPSite(max_runner, "0.0.0.0", port).start()
+            _spawn_worker("max_inbox_worker", _max_inbox_worker)
+            _spawn_worker("max_outbox_worker", _max_outbox_worker)
+            print(f"🌐 MAX webhook слушает внутренний порт {port}; общий GameLoop сохранён.")
+        await run_transport(bot, dp)
     finally:
         if max_runner:
             await max_runner.cleanup()
@@ -6652,6 +6660,12 @@ async def main():
         if _max_client:
             await _max_client.close()
             _max_client = None
+        # Stop game mutations before the final durable snapshot.
+        tasks = [watchdog_task] + [rec['task'] for rec in _WORKERS.values()
+                                  if rec.get('task') is not None]
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
         # graceful shutdown: финальный снимок мира и флаш всех грязных персонажей,
         # чтобы не потерять прогресс между последним тиком снапшота и остановкой.
         try:
@@ -6667,6 +6681,10 @@ async def main():
             print("💾 Финальный снимок сохранён.")
         except Exception as e:
             _elog.log_err(_log, "final_snapshot_failed", e)
+        if bot is not None:
+            await bot.session.close()
+        if db:
+            await db.close()
 
 
 if __name__ == "__main__":

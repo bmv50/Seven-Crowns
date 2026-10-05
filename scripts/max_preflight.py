@@ -8,6 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from engine.max_terms import configuration
+from bot.transport_runtime import telegram_enabled
 
 TABLES = ('characters', 'platform_identities', 'max_inbox', 'max_outbox',
           'max_shop_intents', 'max_service_intents', 'max_choice_intents',
@@ -25,7 +26,7 @@ def check_config(env):
     return {'max_enabled': env.get('MAX_ENABLED', '0').strip().lower() in ('1', 'true', 'yes', 'on'),
             'production_mode': env.get('PROD', '0').strip() == '1',
             'database_configured': present('DATABASE_URL'),
-            'telegram_token_configured': present('BOT_TOKEN'),
+            'telegram_token_configured': not telegram_enabled(env) or present('BOT_TOKEN'),
             'max_token_configured': present('MAX_BOT_TOKEN'),
             'webhook_secret_configured': present('MAX_WEBHOOK_SECRET'),
             'webhook_port_valid': port_ok, 'legal_configuration_ready': configuration(env) is not None}

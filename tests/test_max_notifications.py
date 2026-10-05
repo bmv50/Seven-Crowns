@@ -16,7 +16,7 @@ async def run():
     queue = AsyncMock(return_value=True)
     telegram = SimpleNamespace(deliver=AsyncMock(return_value='sent'))
     db = SimpleNamespace(pool=object(), max_external_user_id=AsyncMock(return_value='42'))
-    env = dict(_notify=notify, _max_client=object(), db=db, chars={ch.uid: ch},
+    env = dict(bot=object(), _notify=notify, _max_client=object(), db=db, chars={ch.uid: ch},
                _time_mod=time, _notification_delivery=telegram,
                MaxOutboxStore=lambda _: SimpleNamespace(enqueue_notification=queue))
     tree = ast.parse(Path('bot/main.py').read_text(encoding='utf-8'))
@@ -31,6 +31,9 @@ async def run():
     queue.return_value = False
     assert await deliver(-1, 'world_event', 'нет согласия') == 'drop'
     assert await deliver(10, 'world_event', 'Telegram') == 'sent'
+    telegram.deliver.assert_awaited_once()
+    env['bot'] = None
+    assert await deliver(10, 'world_event', 'Telegram disabled') == 'drop'
     telegram.deliver.assert_awaited_once()
     env['_max_client'] = None
     before = queue.await_count

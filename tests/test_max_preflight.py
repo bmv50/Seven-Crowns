@@ -19,6 +19,7 @@ async def run():
     result = module.check_config(env)
     assert all(result.values())
     assert 'sensitive' not in str(result)
+    assert all(module.check_config(dict(env, TELEGRAM_ENABLED='0', BOT_TOKEN='')).values())
     for key in ('DATABASE_URL', 'BOT_TOKEN', 'MAX_BOT_TOKEN', 'MAX_WEBHOOK_SECRET', 'MAX_LEGAL_VERSION'):
         assert not all(module.check_config(dict(env, **{key: ''})).values())
     assert not module.check_config(dict(env, MAX_WEBHOOK_PORT='no'))['webhook_port_valid']
