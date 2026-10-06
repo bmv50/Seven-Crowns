@@ -129,9 +129,20 @@ def race_card(key):
 
 def class_card(race, cls):
     entry = content.CLASSES[cls]
+    bonuses = []
+    for field, label, unit in (('damage_reduction', 'Базовое поглощение урона', '%'),
+                               ('crit_bonus', 'Критический удар', ' п.п.'),
+                               ('double_strike', 'Шанс двойного удара', '%'),
+                               ('lifesteal', 'Вампиризм', '%')):
+        value = entry.get(field, 0)
+        if value:
+            bonuses.append(f'{label}: {round(value*100)}{unit}')
+    resource = {'mana': 'Мана', 'energy': 'Энергия', 'rage': 'Ярость'}[entry['resource']]
+    skills = ', '.join(content.SKILLS[key]['name'] for key in entry['skills'])
     return (f"{entry['emoji']} {content.RACES[race]['name']} · {entry['name']}\n\n{entry['desc']}\n"
             f"Роль: {entry['role']}. Сложность: {entry['difficulty']}/3.\n"
-            f"Главная характеристика: {ATTR[entry['primary']]}.\n\n"
+            f"Главная характеристика: {ATTR[entry['primary']]}. Ресурс: {resource}.\n"
+            f'Умения класса: {skills}.\n' + ('\n'.join(bonuses)+'\n' if bonuses else '') + '\n' +
             '✅ Преимущества\n' + '\n'.join('• '+p for p in entry['pros']) +
             '\n\n⚠️ Недостатки\n' + '\n'.join('• '+p for p in CLASS_CONS[cls]) +
             ('\n\n'+entry['resource_note'] if entry.get('resource_note') else '') +

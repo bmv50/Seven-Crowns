@@ -1,0 +1,156 @@
+{
+  "tool": "built-in image_gen",
+  "asset_directory": "images/onboarding",
+  "note": "Original PNG sources stay local. JPEGs are mechanical optimizations for MAX and Docker. Each asset was generated in its own tool call. Class edits use the matching race PNG as the identity anchor.",
+  "assets": [
+    {
+      "file": "world.jpg",
+      "prompt": "Use case: stylized-concept. Asset type: onboarding world illustration for Russian medieval fantasy MUD Seven Crowns. A beautiful sweeping landscape of a connected fantasy world: a welcoming stone human city and small village in a lush valley, ancient elven forest, rugged orc hills, dwarven mountain citadel, goblin caves, distant mysterious ruined towers. Cinematic painterly realistic medieval fantasy, warm dawn rays and mist, rich atmospheric depth, landscape 3:2 composition, inviting adventure, age-12 friendly. No text, no logos, no watermark, no gore. One coherent landscape, not panels or map labels."
+    },
+    {
+      "file": "human.jpg",
+      "prompt": "Use case: stylized-concept. Asset type: race-selection character portrait for medieval fantasy game Seven Crowns. Subject: human man, athletic but ordinary build, shoulder length dark brown hair and short beard, warm brown eyes, approachable face, medieval linen tunic and brown leather travel vest, no weapon. Single adult character, centered three-quarter body view with hands visible, dignified neutral stance, subtle medieval stone archway background and distant misty countryside. Premium painterly realistic RPG concept art, warm natural cinematic dawn light, clear facial identity and silhouette, 2:3 portrait. Age-12 friendly. No text, no border, no logos, no watermark, no gore. This is a neutral race portrait before class selection; no class-specific armor or magic."
+    },
+    {
+      "file": "orc.jpg",
+      "prompt": "Use case: stylized-concept. Asset type: race-selection character portrait for medieval fantasy game Seven Crowns. Subject: orc man, tall powerful broad body, muted olive-green skin, strong jaw, small tusks, dark hair in a short topknot, medieval rugged wool tunic and worn brown leather vest, no weapon. Single adult character, centered three-quarter body view with hands visible, dignified neutral stance, subtle medieval stone archway background and distant misty countryside. Premium painterly realistic RPG concept art, warm natural cinematic dawn light, clear facial identity and silhouette, 2:3 portrait. Age-12 friendly. No text, no border, no logos, no watermark, no gore. This is a neutral race portrait before class selection; no class-specific armor or magic."
+    },
+    {
+      "file": "elf.jpg",
+      "prompt": "Use case: stylized-concept. Asset type: race-selection character portrait for medieval fantasy game Seven Crowns. Subject: elf man, slender tall body, pointed ears, long silver blond hair, fine angular face, green eyes, medieval forest green tunic and travel cloak, no weapon. Single adult character, centered three-quarter body view with hands visible, dignified neutral stance, subtle medieval stone archway background and distant misty countryside. Premium painterly realistic RPG concept art, warm natural cinematic dawn light, clear facial identity and silhouette, 2:3 portrait. Age-12 friendly. No text, no border, no logos, no watermark, no gore. This is a neutral race portrait before class selection; no class-specific armor or magic."
+    },
+    {
+      "file": "dwarf.jpg",
+      "prompt": "Use case: stylized-concept. Asset type: race-selection character portrait for medieval fantasy game Seven Crowns. Subject: dwarf man, short broad sturdy body, thick chestnut braided beard and hair, friendly rugged face, medieval wool tunic and leather travel vest, no weapon. Single adult character, centered three-quarter body view with hands visible, dignified neutral stance, subtle medieval stone archway background and distant misty countryside. Premium painterly realistic RPG concept art, warm natural cinematic dawn light, clear facial identity and silhouette, 2:3 portrait. Age-12 friendly. No text, no border, no logos, no watermark, no gore. This is a neutral race portrait before class selection; no class-specific armor or magic."
+    },
+    {
+      "file": "goblin.jpg",
+      "prompt": "Use case: stylized-concept. Asset type: race-selection character portrait for medieval fantasy game Seven Crowns. Subject: goblin man, small wiry body, olive green skin, long pointed ears, clever amber eyes, short black hair, medieval patched linen tunic and leather vest, no weapon. Single adult character, centered three-quarter body view with hands visible, dignified neutral stance, subtle medieval stone archway background and distant misty countryside. Premium painterly realistic RPG concept art, warm natural cinematic dawn light, clear facial identity and silhouette, 2:3 portrait. Age-12 friendly. No text, no border, no logos, no watermark, no gore. This is a neutral race portrait before class selection; no class-specific armor or magic."
+    },
+    {
+      "file": "human-warrior.jpg",
+      "reference": "human.png",
+      "prompt": "Use case: identity-preserve. Asset type: class-selection portrait for Seven Crowns fantasy RPG. Image 1 is the edit target and the race identity anchor. Change ONLY the character's clothing and held equipment to: heavy medieval steel armor over padded cloth, a longsword in one hand and a sturdy shield in the other; clearly a front-line warrior. Keep EXACTLY the same character's face, race, skin color, hair, beard, ears, proportions, age, expression, eye color and identity. Preserve the same stone archway background, dawn lighting, camera angle, framing and painterly realistic medieval fantasy style. Arms may move naturally to hold class equipment; keep head and body stance unchanged. Entire face visible. Single character; no extra people, no text, no border, no logos, no watermark. No gore or horror."
+    },
+    {
+      "file": "human-mage.jpg",
+      "reference": "human.png",
+      "prompt": "Use case: identity-preserve. Asset type: class-selection portrait for Seven Crowns fantasy RPG. Image 1 is the edit target and the race identity anchor. Change ONLY the character's clothing and held equipment to: elegant dark blue medieval wizard robe with subtle embroidered arcane trim, leather belt, holding a wooden staff capped with a small blue crystal; clearly a mage. Keep EXACTLY the same character's face, race, skin color, hair, beard, ears, proportions, age, expression, eye color and identity. Preserve the same stone archway background, dawn lighting, camera angle, framing and painterly realistic medieval fantasy style. Arms may move naturally to hold class equipment; keep head and body stance unchanged. Entire face visible. Single character; no extra people, no text, no border, no logos, no watermark. No gore or horror."
+    },
+    {
+      "file": "human-rogue.jpg",
+      "reference": "human.png",
+      "prompt": "Use case: identity-preserve. Asset type: class-selection portrait for Seven Crowns fantasy RPG. Image 1 is the edit target and the race identity anchor. Change ONLY the character's clothing and held equipment to: practical dark brown fitted leather armor and a hood folded back to leave the entire face visible, a dagger in each hand; clearly a rogue. Keep EXACTLY the same character's face, race, skin color, hair, beard, ears, proportions, age, expression, eye color and identity. Preserve the same stone archway background, dawn lighting, camera angle, framing and painterly realistic medieval fantasy style. Arms may move naturally to hold class equipment; keep head and body stance unchanged. Entire face visible. Single character; no extra people, no text, no border, no logos, no watermark. No gore or horror."
+    },
+    {
+      "file": "human-priest.jpg",
+      "reference": "human.png",
+      "prompt": "Use case: identity-preserve. Asset type: class-selection portrait for Seven Crowns fantasy RPG. Image 1 is the edit target and the race identity anchor. Change ONLY the character's clothing and held equipment to: cream and gold medieval priest vestments, modest luminous sun pendant, holding a simple ceremonial staff with gentle warm healing light; fantasy cleric, no real religious logos. Keep EXACTLY the same character's face, race, skin color, hair, beard, ears, proportions, age, expression, eye color and identity. Preserve the same stone archway background, dawn lighting, camera angle, framing and painterly realistic medieval fantasy style. Arms may move naturally to hold class equipment; keep head and body stance unchanged. Entire face visible. Single character; no extra people, no text, no border, no logos, no watermark. No gore or horror."
+    },
+    {
+      "file": "human-paladin.jpg",
+      "reference": "human.png",
+      "prompt": "Use case: identity-preserve. Asset type: class-selection portrait for Seven Crowns fantasy RPG. Image 1 is the edit target and the race identity anchor. Change ONLY the character's clothing and held equipment to: polished medieval plate armor with a white and gold surcoat, a broad sword and kite shield with a simple sun motif; clearly a holy paladin. Keep EXACTLY the same character's face, race, skin color, hair, beard, ears, proportions, age, expression, eye color and identity. Preserve the same stone archway background, dawn lighting, camera angle, framing and painterly realistic medieval fantasy style. Arms may move naturally to hold class equipment; keep head and body stance unchanged. Entire face visible. Single character; no extra people, no text, no border, no logos, no watermark. No gore or horror."
+    },
+    {
+      "file": "human-necromancer.jpg",
+      "reference": "human.png",
+      "prompt": "Use case: identity-preserve. Asset type: class-selection portrait for Seven Crowns fantasy RPG. Image 1 is the edit target and the race identity anchor. Change ONLY the character's clothing and held equipment to: charcoal and muted violet medieval robes with restrained bone-like embroidered ornament, holding an ancient dark staff with a small green magical glow; clearly a necromancer, age-12 friendly, no skull gore or corpses. Keep EXACTLY the same character's face, race, skin color, hair, beard, ears, proportions, age, expression, eye color and identity. Preserve the same stone archway background, dawn lighting, camera angle, framing and painterly realistic medieval fantasy style. Arms may move naturally to hold class equipment; keep head and body stance unchanged. Entire face visible. Single character; no extra people, no text, no border, no logos, no watermark. No gore or horror."
+    },
+    {
+      "file": "orc-warrior.jpg",
+      "reference": "orc.png",
+      "prompt": "Use case: identity-preserve. Asset type: class-selection portrait for Seven Crowns fantasy RPG. Image 1 is the edit target and the race identity anchor. Change ONLY the character's clothing and held equipment to: heavy medieval steel armor over padded cloth, a longsword in one hand and a sturdy shield in the other; clearly a front-line warrior. Keep EXACTLY the same character's face, race, skin color, hair, beard, ears, proportions, age, expression, eye color and identity. Preserve the same stone archway background, dawn lighting, camera angle, framing and painterly realistic medieval fantasy style. Arms may move naturally to hold class equipment; keep head and body stance unchanged. Entire face visible. Single character; no extra people, no text, no border, no logos, no watermark. No gore or horror."
+    },
+    {
+      "file": "orc-rogue.jpg",
+      "reference": "orc.png",
+      "prompt": "Use case: identity-preserve. Asset type: class-selection portrait for Seven Crowns fantasy RPG. Image 1 is the edit target and the race identity anchor. Change ONLY the character's clothing and held equipment to: practical dark brown fitted leather armor and a hood folded back to leave the entire face visible, a dagger in each hand; clearly a rogue. Keep EXACTLY the same character's face, race, skin color, hair, beard, ears, proportions, age, expression, eye color and identity. Preserve the same stone archway background, dawn lighting, camera angle, framing and painterly realistic medieval fantasy style. Arms may move naturally to hold class equipment; keep head and body stance unchanged. Entire face visible. Single character; no extra people, no text, no border, no logos, no watermark. No gore or horror."
+    },
+    {
+      "file": "orc-priest.jpg",
+      "reference": "orc.png",
+      "prompt": "Use case: identity-preserve. Asset type: class-selection portrait for Seven Crowns fantasy RPG. Image 1 is the edit target and the race identity anchor. Change ONLY the character's clothing and held equipment to: cream and gold medieval priest vestments, modest luminous sun pendant, holding a simple ceremonial staff with gentle warm healing light; fantasy cleric, no real religious logos. Keep EXACTLY the same character's face, race, skin color, hair, beard, ears, proportions, age, expression, eye color and identity. Preserve the same stone archway background, dawn lighting, camera angle, framing and painterly realistic medieval fantasy style. Arms may move naturally to hold class equipment; keep head and body stance unchanged. Entire face visible. Single character; no extra people, no text, no border, no logos, no watermark. No gore or horror."
+    },
+    {
+      "file": "orc-paladin.jpg",
+      "reference": "orc.png",
+      "prompt": "Use case: identity-preserve. Asset type: class-selection portrait for Seven Crowns fantasy RPG. Image 1 is the edit target and the race identity anchor. Change ONLY the character's clothing and held equipment to: polished medieval plate armor with a white and gold surcoat, a broad sword and kite shield with a simple sun motif; clearly a holy paladin. Keep EXACTLY the same character's face, race, skin color, hair, beard, ears, proportions, age, expression, eye color and identity. Preserve the same stone archway background, dawn lighting, camera angle, framing and painterly realistic medieval fantasy style. Arms may move naturally to hold class equipment; keep head and body stance unchanged. Entire face visible. Single character; no extra people, no text, no border, no logos, no watermark. No gore or horror."
+    },
+    {
+      "file": "orc-necromancer.jpg",
+      "reference": "orc.png",
+      "prompt": "Use case: identity-preserve. Asset type: class-selection portrait for Seven Crowns fantasy RPG. Image 1 is the edit target and the race identity anchor. Change ONLY the character's clothing and held equipment to: charcoal and muted violet medieval robes with restrained bone-like embroidered ornament, holding an ancient dark staff with a small green magical glow; clearly a necromancer, age-12 friendly, no skull gore or corpses. Keep EXACTLY the same character's face, race, skin color, hair, beard, ears, proportions, age, expression, eye color and identity. Preserve the same stone archway background, dawn lighting, camera angle, framing and painterly realistic medieval fantasy style. Arms may move naturally to hold class equipment; keep head and body stance unchanged. Entire face visible. Single character; no extra people, no text, no border, no logos, no watermark. No gore or horror."
+    },
+    {
+      "file": "elf-warrior.jpg",
+      "reference": "elf.png",
+      "prompt": "Use case: identity-preserve. Asset type: class-selection portrait for Seven Crowns fantasy RPG. Image 1 is the edit target and the race identity anchor. Change ONLY the character's clothing and held equipment to: heavy medieval steel armor over padded cloth, a longsword in one hand and a sturdy shield in the other; clearly a front-line warrior. Keep EXACTLY the same character's face, race, skin color, hair, beard, ears, proportions, age, expression, eye color and identity. Preserve the same stone archway background, dawn lighting, camera angle, framing and painterly realistic medieval fantasy style. Arms may move naturally to hold class equipment; keep head and body stance unchanged. Entire face visible. Single character; no extra people, no text, no border, no logos, no watermark. No gore or horror."
+    },
+    {
+      "file": "elf-mage.jpg",
+      "reference": "elf.png",
+      "prompt": "Use case: identity-preserve. Asset type: class-selection portrait for Seven Crowns fantasy RPG. Image 1 is the edit target and the race identity anchor. Change ONLY the character's clothing and held equipment to: elegant dark blue medieval wizard robe with subtle embroidered arcane trim, leather belt, holding a wooden staff capped with a small blue crystal; clearly a mage. Keep EXACTLY the same character's face, race, skin color, hair, beard, ears, proportions, age, expression, eye color and identity. Preserve the same stone archway background, dawn lighting, camera angle, framing and painterly realistic medieval fantasy style. Arms may move naturally to hold class equipment; keep head and body stance unchanged. Entire face visible. Single character; no extra people, no text, no border, no logos, no watermark. No gore or horror."
+    },
+    {
+      "file": "elf-rogue.jpg",
+      "reference": "elf.png",
+      "prompt": "Use case: identity-preserve. Asset type: class-selection portrait for Seven Crowns fantasy RPG. Image 1 is the edit target and the race identity anchor. Change ONLY the character's clothing and held equipment to: practical dark brown fitted leather armor and a hood folded back to leave the entire face visible, a dagger in each hand; clearly a rogue. Keep EXACTLY the same character's face, race, skin color, hair, beard, ears, proportions, age, expression, eye color and identity. Preserve the same stone archway background, dawn lighting, camera angle, framing and painterly realistic medieval fantasy style. Arms may move naturally to hold class equipment; keep head and body stance unchanged. Entire face visible. Single character; no extra people, no text, no border, no logos, no watermark. No gore or horror."
+    },
+    {
+      "file": "elf-priest.jpg",
+      "reference": "elf.png",
+      "prompt": "Use case: identity-preserve. Asset type: class-selection portrait for Seven Crowns fantasy RPG. Image 1 is the edit target and the race identity anchor. Change ONLY the character's clothing and held equipment to: cream and gold medieval priest vestments, modest luminous sun pendant, holding a simple ceremonial staff with gentle warm healing light; fantasy cleric, no real religious logos. Keep EXACTLY the same character's face, race, skin color, hair, beard, ears, proportions, age, expression, eye color and identity. Preserve the same stone archway background, dawn lighting, camera angle, framing and painterly realistic medieval fantasy style. Arms may move naturally to hold class equipment; keep head and body stance unchanged. Entire face visible. Single character; no extra people, no text, no border, no logos, no watermark. No gore or horror."
+    },
+    {
+      "file": "elf-paladin.jpg",
+      "reference": "elf.png",
+      "prompt": "Use case: identity-preserve. Asset type: class-selection portrait for Seven Crowns fantasy RPG. Image 1 is the edit target and the race identity anchor. Change ONLY the character's clothing and held equipment to: polished medieval plate armor with a white and gold surcoat, a broad sword and kite shield with a simple sun motif; clearly a holy paladin. Keep EXACTLY the same character's face, race, skin color, hair, beard, ears, proportions, age, expression, eye color and identity. Preserve the same stone archway background, dawn lighting, camera angle, framing and painterly realistic medieval fantasy style. Arms may move naturally to hold class equipment; keep head and body stance unchanged. Entire face visible. Single character; no extra people, no text, no border, no logos, no watermark. No gore or horror."
+    },
+    {
+      "file": "elf-necromancer.jpg",
+      "reference": "elf.png",
+      "prompt": "Use case: identity-preserve. Asset type: class-selection portrait for Seven Crowns fantasy RPG. Image 1 is the edit target and the race identity anchor. Change ONLY the character's clothing and held equipment to: charcoal and muted violet medieval robes with restrained bone-like embroidered ornament, holding an ancient dark staff with a small green magical glow; clearly a necromancer, age-12 friendly, no skull gore or corpses. Keep EXACTLY the same character's face, race, skin color, hair, beard, ears, proportions, age, expression, eye color and identity. Preserve the same stone archway background, dawn lighting, camera angle, framing and painterly realistic medieval fantasy style. Arms may move naturally to hold class equipment; keep head and body stance unchanged. Entire face visible. Single character; no extra people, no text, no border, no logos, no watermark. No gore or horror."
+    },
+    {
+      "file": "dwarf-warrior.jpg",
+      "reference": "dwarf.png",
+      "prompt": "Use case: identity-preserve. Asset type: class-selection portrait for Seven Crowns fantasy RPG. Image 1 is the edit target and the race identity anchor. Change ONLY the character's clothing and held equipment to: heavy medieval steel armor over padded cloth, a longsword in one hand and a sturdy shield in the other; clearly a front-line warrior. Keep EXACTLY the same character's face, race, skin color, hair, beard, ears, proportions, age, expression, eye color and identity. Preserve the same stone archway background, dawn lighting, camera angle, framing and painterly realistic medieval fantasy style. Arms may move naturally to hold class equipment; keep head and body stance unchanged. Entire face visible. Single character; no extra people, no text, no border, no logos, no watermark. No gore or horror."
+    },
+    {
+      "file": "dwarf-mage.jpg",
+      "reference": "dwarf.png",
+      "prompt": "Use case: identity-preserve. Asset type: class-selection portrait for Seven Crowns fantasy RPG. Image 1 is the edit target and the race identity anchor. Change ONLY the character's clothing and held equipment to: elegant dark blue medieval wizard robe with subtle embroidered arcane trim, leather belt, holding a wooden staff capped with a small blue crystal; clearly a mage. Keep EXACTLY the same character's face, race, skin color, hair, beard, ears, proportions, age, expression, eye color and identity. Preserve the same stone archway background, dawn lighting, camera angle, framing and painterly realistic medieval fantasy style. Arms may move naturally to hold class equipment; keep head and body stance unchanged. Entire face visible. Single character; no extra people, no text, no border, no logos, no watermark. No gore or horror."
+    },
+    {
+      "file": "dwarf-priest.jpg",
+      "reference": "dwarf.png",
+      "prompt": "Use case: identity-preserve. Asset type: class-selection portrait for Seven Crowns fantasy RPG. Image 1 is the edit target and the race identity anchor. Change ONLY the character's clothing and held equipment to: cream and gold medieval priest vestments, modest luminous sun pendant, holding a simple ceremonial staff with gentle warm healing light; fantasy cleric, no real religious logos. Keep EXACTLY the same character's face, race, skin color, hair, beard, ears, proportions, age, expression, eye color and identity. Preserve the same stone archway background, dawn lighting, camera angle, framing and painterly realistic medieval fantasy style. Arms may move naturally to hold class equipment; keep head and body stance unchanged. Entire face visible. Single character; no extra people, no text, no border, no logos, no watermark. No gore or horror."
+    },
+    {
+      "file": "dwarf-paladin.jpg",
+      "reference": "dwarf.png",
+      "prompt": "Use case: identity-preserve. Asset type: class-selection portrait for Seven Crowns fantasy RPG. Image 1 is the edit target and the race identity anchor. Change ONLY the character's clothing and held equipment to: polished medieval plate armor with a white and gold surcoat, a broad sword and kite shield with a simple sun motif; clearly a holy paladin. Keep EXACTLY the same character's face, race, skin color, hair, beard, ears, proportions, age, expression, eye color and identity. Preserve the same stone archway background, dawn lighting, camera angle, framing and painterly realistic medieval fantasy style. Arms may move naturally to hold class equipment; keep head and body stance unchanged. Entire face visible. Single character; no extra people, no text, no border, no logos, no watermark. No gore or horror."
+    },
+    {
+      "file": "dwarf-necromancer.jpg",
+      "reference": "dwarf.png",
+      "prompt": "Use case: identity-preserve. Asset type: class-selection portrait for Seven Crowns fantasy RPG. Image 1 is the edit target and the race identity anchor. Change ONLY the character's clothing and held equipment to: charcoal and muted violet medieval robes with restrained bone-like embroidered ornament, holding an ancient dark staff with a small green magical glow; clearly a necromancer, age-12 friendly, no skull gore or corpses. Keep EXACTLY the same character's face, race, skin color, hair, beard, ears, proportions, age, expression, eye color and identity. Preserve the same stone archway background, dawn lighting, camera angle, framing and painterly realistic medieval fantasy style. Arms may move naturally to hold class equipment; keep head and body stance unchanged. Entire face visible. Single character; no extra people, no text, no border, no logos, no watermark. No gore or horror."
+    },
+    {
+      "file": "goblin-mage.jpg",
+      "reference": "goblin.png",
+      "prompt": "Use case: identity-preserve. Asset type: class-selection portrait for Seven Crowns fantasy RPG. Image 1 is the edit target and the race identity anchor. Change ONLY the character's clothing and held equipment to: elegant dark blue medieval wizard robe with subtle embroidered arcane trim, leather belt, holding a wooden staff capped with a small blue crystal; clearly a mage. Keep EXACTLY the same character's face, race, skin color, hair, beard, ears, proportions, age, expression, eye color and identity. Preserve the same stone archway background, dawn lighting, camera angle, framing and painterly realistic medieval fantasy style. Arms may move naturally to hold class equipment; keep head and body stance unchanged. Entire face visible. Single character; no extra people, no text, no border, no logos, no watermark. No gore or horror."
+    },
+    {
+      "file": "goblin-rogue.jpg",
+      "reference": "goblin.png",
+      "prompt": "Use case: identity-preserve. Asset type: class-selection portrait for Seven Crowns fantasy RPG. Image 1 is the edit target and the race identity anchor. Change ONLY the character's clothing and held equipment to: practical dark brown fitted leather armor and a hood folded back to leave the entire face visible, a dagger in each hand; clearly a rogue. Keep EXACTLY the same character's face, race, skin color, hair, beard, ears, proportions, age, expression, eye color and identity. Preserve the same stone archway background, dawn lighting, camera angle, framing and painterly realistic medieval fantasy style. Arms may move naturally to hold class equipment; keep head and body stance unchanged. Entire face visible. Single character; no extra people, no text, no border, no logos, no watermark. No gore or horror."
+    },
+    {
+      "file": "goblin-necromancer.jpg",
+      "reference": "goblin.png",
+      "prompt": "Use case: identity-preserve. Asset type: class-selection portrait for Seven Crowns fantasy RPG. Image 1 is the edit target and the race identity anchor. Change ONLY the character's clothing and held equipment to: charcoal and muted violet medieval robes with restrained bone-like embroidered ornament, holding an ancient dark staff with a small green magical glow; clearly a necromancer, age-12 friendly, no skull gore or corpses. Keep EXACTLY the same character's face, race, skin color, hair, beard, ears, proportions, age, expression, eye color and identity. Preserve the same stone archway background, dawn lighting, camera angle, framing and painterly realistic medieval fantasy style. Arms may move naturally to hold class equipment; keep head and body stance unchanged. Entire face visible. Single character; no extra people, no text, no border, no logos, no watermark. No gore or horror."
+    }
+  ]
+}

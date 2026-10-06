@@ -2,6 +2,7 @@
 import ast
 import asyncio
 import copy
+import io
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
@@ -58,6 +59,11 @@ def test_paths():
             assert nav.validate(wizard.screen(state)[1]) == wizard.screen(state)[1]
     assert 'Получаемый опыт +15%' in wizard.race_card('human')
     assert 'Получаемый опыт -15%' in wizard.race_card('orc')
+    with patch('engine.rules2.ENABLED', True):
+        assert 'святой урон' in wizard.race_card('orc') and 'урон +50%' in wizard.race_card('orc')
+        assert 'урон −33%' in wizard.race_card('dwarf')
+    with patch('engine.rules2.ENABLED', False):
+        assert 'Уязвимость' not in wizard.race_card('orc')
     for value in (None, '', '/onboard x begin', '/onboard '+'a'*32+' buy sword', '/create human mage Evil'):
         assert not wizard.valid_callback(value)
     for key in ('../.env', '/etc/passwd', 'https://host/image.jpg', 'orc-mage', None):
@@ -67,6 +73,14 @@ def test_paths():
             pass
         else:
             raise AssertionError('Arbitrary image reference allowed')
+    # Every displayed image must be shipped as a valid, bounded JPEG in Docker.
+    from PIL import Image
+    for key in wizard.asset_keys():
+        path = wizard.asset_path(key)
+        assert path.is_file() and path.stat().st_size < 1024*1024, key
+        with Image.open(path) as art:
+            assert art.format == 'JPEG' and max(art.size) <= 1280 and min(art.size) >= 800
+            art.verify()
     token = 'a'*32
     accept = nav.terms_keyboard(token)[0][0]
     assert accept == {'type': 'callback', 'text': '✅ Принимаю условия', 'payload': '/termsagree '+token}
@@ -208,8 +222,54 @@ async def test_media_delivery():
     assert sender.send_chunk.await_args.kwargs['image_asset'] == 'world'
 
 
+async def test_upload_boundary():
+    client = MaxClient('test-token')
+    calls = []
+    class Response(_Response):
+        def __init__(self, value):
+            super().__init__()
+            self.value = value
+        async def json(self):
+            return self.value
+    responses = [Response({'url': 'https://pu.mycdn.me/upload'}),
+                 Response({'photos': {'1': {'token': 'photo-token'}}}), _Response()]
+    def post(url, **kwargs):
+        calls.append((url, kwargs))
+        return responses.pop(0)
+    client._session = SimpleNamespace(post=post)
+    path = SimpleNamespace(name='world.jpg', is_file=lambda: True,
+                            stat=lambda: SimpleNamespace(st_size=12),
+                            open=lambda _: io.BytesIO(b'jpeg-fixture'))
+    with patch.object(wizard, 'asset_path', return_value=path):
+        first = await client.image_payload('world')
+        assert first == await client.image_payload('world')
+        assert len(calls) == 2
+        await client.send_chunk('42', 'World', image_asset='world')
+    assert calls[0][0] == API_URL+'/uploads'
+    assert calls[0][1]['headers']['Authorization'] == 'test-token'
+    assert 'headers' not in calls[1][1]  # No bot token at the signed CDN URL.
+    assert calls[1][1]['data']._fields[0][0]['name'] == 'data'
+    assert all(call[1]['allow_redirects'] is False for call in calls)
+    for url in ('http://pu.mycdn.me/u', 'https://127.0.0.1/u', 'https://max.ru.evil.org/u',
+                'https://user:pass@max.ru/u', 'https://max.ru:8443/u'):
+        blocked = MaxClient('test-token')
+        seen = []
+        def unsafe_post(target, **kwargs):
+            seen.append(target)
+            return Response({'url': url})
+        blocked._session = SimpleNamespace(post=unsafe_post)
+        try:
+            await blocked.image_payload('world')
+        except MaxSendError:
+            pass
+        else:
+            raise AssertionError('Unsafe upload destination allowed')
+        assert seen == [API_URL+'/uploads']
+
+
 if __name__ == '__main__':
     test_paths()
     asyncio.run(test_application())
     asyncio.run(test_media_delivery())
+    asyncio.run(test_upload_boundary())
     print('OK: MAX complete wizard, all races/classes, cancel, stale callbacks, name validation, recovery and image retry')

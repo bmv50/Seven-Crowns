@@ -44,6 +44,8 @@ docker exec kvlp9nwktlkhhzzb4bvbtzbp python scripts/max_subscribe.py \
 Ошибка `attachment.not.ready` приводит к повтору доставки, а не игрового действия.
 
 Исходники PNG локальные; для контейнера и Git используются оптимизированные JPEG.
+Иллюстрации созданы встроенным imagegen, отдельным вызовом на каждую картинку.
+Полный набор использованных промптов: [ONBOARDING_ART_PROMPTS.json](ONBOARDING_ART_PROMPTS.json).
 Механическая конвертация только новой папки, без затрагивания существующих артов:
 
 ```bash
