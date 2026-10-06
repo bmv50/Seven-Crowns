@@ -17,7 +17,10 @@ async def run():
         assert config and len(config['token']) == 32
         token = config['token']
         assert nav.validate(nav.terms_keyboard(token)) == nav.terms_keyboard(token)
-        assert nav.command(nav.terms_keyboard(token)[0][0]['text']) == '/termsagree '+token
+        assert nav.terms_keyboard(token)[0][0]['text'] == '✅ Принимаю условия'
+        assert nav.terms_keyboard(token)[0][0]['payload'] == '/termsagree '+token
+        # Old delivered keyboards remain usable; new labels hide the token.
+        assert nav.command('✅ Принимаю условия ['+token+']') == '/termsagree '+token
         with patch.dict(os.environ, {'MAX_LEGAL_VERSION': '2026-10-05'}):
             assert max_terms.configuration()['token'] != token
         for url in ('', 'http://example.org/legal', 'https://user:password@example.org', 'https://[УКАЖИТЕ]'):
@@ -29,7 +32,7 @@ async def run():
                 assert invalid is None
         store = SimpleNamespace(accepted=AsyncMock(return_value=False), accept=AsyncMock(), revoke=AsyncMock())
         env = dict(max_terms=SimpleNamespace(configuration=max_terms.configuration, ConsentStore=lambda _: store),
-                   db=object(), _max_reply=AsyncMock(), _max_navigation=nav)
+                   db=object(), _max_reply=AsyncMock(), _max_navigation=nav, _max_intro=AsyncMock())
         tree = ast.parse(Path('bot/main.py').read_text(encoding='utf-8'))
         node = next(n for n in tree.body if isinstance(n, ast.AsyncFunctionDef) and n.name == '_max_legal_command')
         exec(compile(ast.Module(body=[node], type_ignores=[]), 'legal handler', 'exec'), env)
@@ -43,7 +46,7 @@ async def run():
         store.accept.assert_not_awaited()
         assert await route(-1, 'termsagree', ['termsagree', token])
         store.accept.assert_awaited_once_with(-1, token)
-        assert 'не включает уведомления' in env['_max_reply'].await_args.args[1]
+        env['_max_intro'].assert_awaited_once_with(-1)
         store.accepted.return_value = True
         assert not await route(-1, 'attack', ['attack'])
         assert await route(-1, 'privacy', ['privacy'])

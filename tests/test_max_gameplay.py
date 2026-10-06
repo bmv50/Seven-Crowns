@@ -24,6 +24,11 @@ def load_handler(env):
     env.setdefault('_max_service_command', AsyncMock(return_value=False))
     env.setdefault('_max_choice_command', AsyncMock(return_value=False))
     env.setdefault('_max_legal_command', AsyncMock(return_value=False))
+    env.setdefault('_max_intro', AsyncMock())
+    env.setdefault('_max_onboarding_input', AsyncMock(return_value=None))
+    env.setdefault('_max_onboarding_done', AsyncMock())
+    env.setdefault('_max_restore_character', AsyncMock(return_value=None))
+    env.setdefault('_max_onboarding_error', AsyncMock())
     if '_max_context_reply' not in env:
         async def context_reply(ch, text, npc_id=None):
             await env['send'](ch.uid, text)
@@ -94,7 +99,7 @@ async def test_create_and_move():
     env["_party_mutate"] = mutate_party
     handler = load_handler(env)
     await handler(MaxInput("42", "start:42:1", "/start"))
-    assert "MAX" in messages[-1][1] or "Семь Корон" in messages[-1][1]
+    env['_max_intro'].assert_awaited_once_with(-11)
     await handler(MaxInput("42", "message:42:1", "/create human warrior Тестер"))
     ch = env["chars"][-11]
     assert ch.room == START_ROOM and ch.name == "Тестер"

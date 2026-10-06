@@ -66,7 +66,7 @@ def main(argv=None):
             print(json.dumps({'target_found': any(r['url'] == args.url for r in rows), 'changed': False}))
             return 0
         result = request(opener, token, {'url': args.url,
-            'update_types': ['message_created', 'bot_started'], 'secret': secret})
+            'update_types': ['message_created', 'bot_started', 'message_callback'], 'secret': secret})
         success = result.get('success') is True
         found = success and any(row['url'] == args.url for row in subscriptions(request(opener, token)))
         print(json.dumps({'registration_success': success, 'target_found': found}))

@@ -129,6 +129,12 @@ ALTER TABLE max_outbox ADD COLUMN IF NOT EXISTS combat_open BOOLEAN NOT NULL DEF
 ALTER TABLE max_outbox ADD COLUMN IF NOT EXISTS combat_log TEXT;
 ALTER TABLE max_outbox ADD COLUMN IF NOT EXISTS combat_snapshot TEXT;
 ALTER TABLE max_outbox ADD COLUMN IF NOT EXISTS keyboard JSONB;
+ALTER TABLE max_outbox ADD COLUMN IF NOT EXISTS image_asset TEXT;
+CREATE TABLE IF NOT EXISTS max_onboarding (
+    uid BIGINT PRIMARY KEY CHECK (uid<0),
+    state JSONB NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_max_outbox_dedup ON max_outbox(dedup_key)
     WHERE dedup_key IS NOT NULL;
 -- Журнал аудита необратимых действий игрока (/reset и восстановление персонажа).
@@ -480,6 +486,11 @@ class Database:
             ch = self._row_to_char(r)
             out[ch.uid] = ch
         return out
+
+    async def load_active_character(self, uid):
+        """Recover a committed creation after the caller lost its DB response."""
+        row = await self.pool.fetchrow('SELECT * FROM characters WHERE uid=$1 AND deleted_at IS NULL', uid)
+        return self._row_to_char(row) if row else None
 
     async def save(self, ch: Character):
         async with self._character_write_locks.setdefault(ch.uid, asyncio.Lock()):

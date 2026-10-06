@@ -87,7 +87,7 @@ async def run():
             code, data = call('--url', URL, '--apply')
             assert code == 0 and data == {'registration_success': True, 'target_found': True}
             body = request.call_args_list[1].args[2]
-            assert body == {'url': URL, 'update_types': ['message_created', 'bot_started'],
+            assert body == {'url': URL, 'update_types': ['message_created', 'bot_started', 'message_callback'],
                             'secret': ENV['MAX_WEBHOOK_SECRET']}
             request.reset_mock()
             request.side_effect = None

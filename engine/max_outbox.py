@@ -34,7 +34,7 @@ class MaxOutboxStore:
             raise RuntimeError('MAX outbox requires PostgreSQL')
         self.pool = pool
 
-    async def enqueue(self, uid, external_user_id, value, *, keyboard=None):
+    async def enqueue(self, uid, external_user_id, value, *, keyboard=None, image_asset=None):
         from .identity import identity_key
         _, external_user_id = identity_key('max', external_user_id)
         if type(uid) is not int or uid >= 0:
@@ -42,6 +42,9 @@ class MaxOutboxStore:
         if keyboard is not None:
             from .max_navigation import validate
             keyboard = validate(keyboard)
+        if image_asset is not None:
+            from .max_onboarding import asset_path
+            asset_path(image_asset)
         parts = text_parts(value)
         if not parts:
             return 0
@@ -56,10 +59,11 @@ class MaxOutboxStore:
                     WHERE external_user_id=$1 AND combat_open AND status='pending' AND attempts=0
                 ''', external_user_id)
                 await con.executemany('''
-                    INSERT INTO max_outbox(uid, external_user_id, message_text, keyboard)
-                    VALUES($1,$2,$3,$4)
+                    INSERT INTO max_outbox(uid, external_user_id, message_text, keyboard, image_asset)
+                    VALUES($1,$2,$3,$4,$5)
                 ''', [(uid, external_user_id, part,
-                       json.dumps(keyboard) if keyboard is not None and i == len(parts)-1 else None)
+                       json.dumps(keyboard) if keyboard is not None and i == len(parts)-1 else None,
+                       image_asset if i == len(parts)-1 else None)
                       for i, part in enumerate(parts)])
         return len(parts)
 
@@ -195,6 +199,7 @@ class MaxOutboxStore:
                 combat_log=CASE WHEN $3='pending' THEN combat_log ELSE NULL END,
                 combat_snapshot=CASE WHEN $3='pending' THEN combat_snapshot ELSE NULL END,
                 keyboard=CASE WHEN $3='pending' THEN keyboard ELSE NULL END,
+                image_asset=CASE WHEN $3='pending' THEN image_asset ELSE NULL END,
                 finished_at=CASE WHEN $3='pending' THEN NULL ELSE now() END
             WHERE id=$1 AND lease_token=$2 AND status='processing'
             RETURNING id
@@ -202,6 +207,7 @@ class MaxOutboxStore:
 
     async def cleanup(self):
         await self.pool.execute("DELETE FROM max_outbox WHERE finished_at<now()-interval '7 days'")
+        await self.pool.execute("DELETE FROM max_onboarding WHERE updated_at<now()-interval '7 days'")
 
 
 class MaxOutboxWorker:
@@ -228,11 +234,13 @@ class MaxOutboxWorker:
                     await self.notification_sender.deliver(row)
                 return True
             # Exactly one HTTP chunk: successful earlier chunks are never replayed.
+            options = {}
             if row.get('keyboard') is not None:
                 keyboard = json.loads(row['keyboard']) if isinstance(row['keyboard'], str) else row['keyboard']
-                await self.client.send_chunk(row['external_user_id'], row['message_text'], keyboard=keyboard)
-            else:
-                await self.client.send_chunk(row['external_user_id'], row['message_text'])
+                options['keyboard'] = keyboard
+            if row.get('image_asset') is not None:
+                options['image_asset'] = row['image_asset']
+            await self.client.send_chunk(row['external_user_id'], row['message_text'], **options)
         except asyncio.CancelledError:
             # Leave the lease for restart recovery; HTTP delivery may be uncertain.
             raise

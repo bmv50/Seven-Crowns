@@ -10,9 +10,10 @@ import hmac
 import logging
 import math
 import re
+from urllib.parse import urlsplit
 from dataclasses import dataclass
 
-from aiohttp import ClientSession, ClientTimeout, TCPConnector, web
+from aiohttp import ClientSession, ClientTimeout, TCPConnector, FormData, web
 from bot.max_tls import max_ssl_context
 from engine.max_outbox import MaxSendError, text_parts
 
@@ -42,6 +43,21 @@ def parse_update(data: dict) -> MaxInput | None:
         if type(user_id) is not int or user_id <= 0 or type(stamp) is not int:
             return None
         return MaxInput(str(user_id), f"start:{user_id}:{stamp}", "/start")
+    if kind == 'message_callback':
+        from engine.max_onboarding import valid_callback
+        callback, message = data.get('callback'), data.get('message')
+        if not isinstance(callback, dict) or not isinstance(message, dict):
+            return None
+        user, recipient = callback.get('user'), message.get('recipient')
+        if not isinstance(user, dict) or not isinstance(recipient, dict):
+            return None
+        user_id, callback_id, payload = user.get('user_id'), callback.get('callback_id'), callback.get('payload')
+        if (recipient.get('chat_type') != 'dialog' or user.get('is_bot')
+                or type(user_id) is not int or user_id <= 0
+                or not isinstance(callback_id, str) or not 1 <= len(callback_id) <= 256
+                or not valid_callback(payload)):
+            return None
+        return MaxInput(str(user_id), f'callback:{user_id}:{callback_id}', payload)
     if kind != "message_created":
         return None
     message = data.get("message") or {}
@@ -72,6 +88,8 @@ class MaxClient:
         self._session: ClientSession | None = None
         self._dialog_locks: dict[str, asyncio.Lock] = {}
         self._last_sent: dict[str, float] = {}
+        self._image_tokens: dict[str, dict] = {}
+        self._upload_lock = asyncio.Lock()
 
     async def start(self):
         connector = TCPConnector(ssl=max_ssl_context())
@@ -86,16 +104,69 @@ class MaxClient:
         for part in text_parts(value):
             await self.send_chunk(external_user_id, part)
 
-    async def send_chunk(self, external_user_id: str, text: str, *, keyboard=None):
+    async def answer_callback(self, callback_id):
+        if self._session is None:
+            raise RuntimeError('MAX client not started')
+        async with self._session.post(f'{API_URL}/answers', params={'callback_id': callback_id},
+                                      json={'notification': '✓'}, headers={'Authorization': self._token},
+                                      allow_redirects=False) as response:
+            if not 200 <= response.status < 300:
+                raise MaxSendError(response.status)
+
+    async def image_payload(self, asset):
+        """Upload bundled art once per process; never forward auth to a CDN."""
+        from engine.max_onboarding import asset_path
+        path = asset_path(asset)
+        async with self._upload_lock:
+            if asset in self._image_tokens:
+                return self._image_tokens[asset]
+            async with self._session.post(f'{API_URL}/uploads', params={'type': 'image'},
+                                          headers={'Authorization': self._token},
+                                          allow_redirects=False) as response:
+                if not 200 <= response.status < 300:
+                    raise MaxSendError(response.status)
+                endpoint = await response.json()
+            url = endpoint.get('url') if isinstance(endpoint, dict) else None
+            parsed = urlsplit(url) if isinstance(url, str) else None
+            host = parsed.hostname if parsed else None
+            if (not host or parsed.scheme != 'https' or parsed.username or parsed.password
+                    or parsed.port not in (None, 443)
+                    or not any(host == d or host.endswith('.'+d)
+                               for d in ('max.ru', 'mycdn.me', 'okcdn.ru', 'oneme.ru'))):
+                raise MaxSendError(502)
+            if not path.is_file() or path.stat().st_size > 10 * 1024 * 1024:
+                raise ValueError('Bundled MAX image missing or too large')
+            with path.open('rb') as image:
+                form = FormData()
+                form.add_field('data', image, filename=path.name, content_type='image/jpeg')
+                async with self._session.post(url, data=form, allow_redirects=False) as response:
+                    if not 200 <= response.status < 300:
+                        raise MaxSendError(response.status)
+                    data = await response.json()
+            photos = data.get('photos') if isinstance(data, dict) else None
+            if (not isinstance(photos, dict) or not photos
+                    or not all(isinstance(p, dict) and isinstance(p.get('token'), str) and p['token']
+                               for p in photos.values())):
+                raise MaxSendError(502)
+            payload = {'photos': photos}
+            self._image_tokens[asset] = payload
+            return payload
+
+    async def send_chunk(self, external_user_id: str, text: str, *, keyboard=None, image_asset=None):
         """Send one persisted chunk, with no hidden network retry."""
         if self._session is None:
             raise RuntimeError("MAX client not started")
         if not text or len(text) > 3500:
             raise ValueError('MAX chunk must contain 1–3500 characters')
         body = {'text': text}
+        attachments = []
+        if image_asset is not None:
+            attachments.append({'type': 'image', 'payload': await self.image_payload(image_asset)})
         if keyboard is not None:
             from engine.max_navigation import validate
-            body['attachments'] = [{'type': 'inline_keyboard', 'payload': {'buttons': validate(keyboard)}}]
+            attachments.append({'type': 'inline_keyboard', 'payload': {'buttons': validate(keyboard)}})
+        if attachments:
+            body['attachments'] = attachments
         lock = self._dialog_locks.setdefault(external_user_id, asyncio.Lock())
         async with lock:
             loop = asyncio.get_running_loop()
@@ -111,6 +182,13 @@ class MaxClient:
                     allow_redirects=False,
                 ) as response:
                     if not 200 <= response.status < 300:
+                        if response.status == 400 and image_asset is not None:
+                            try:
+                                error = await response.json()
+                            except ValueError:
+                                error = None
+                            if isinstance(error, dict) and error.get('code') == 'attachment.not.ready':
+                                raise MaxSendError(503, 2)
                         try:
                             retry_after = float(response.headers.get('Retry-After', '0'))
                         except (TypeError, ValueError):

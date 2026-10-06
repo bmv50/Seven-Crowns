@@ -40,6 +40,7 @@ IMAGES = os.path.join(ROOT, "images")
 TARGETS = {
     "rooms": 1280,
     "mobs": 1024,
+    "onboarding": 1280,
 }
 CACHE_DIR = os.path.join(IMAGES, "items_cache")
 
@@ -57,6 +58,7 @@ def main():
     ap.add_argument("--quality", type=int, default=85, help="качество JPEG (80–92 разумно)")
     ap.add_argument("--dry-run", action="store_true", help="только показать, что будет")
     ap.add_argument("--keep-png", action="store_true", help="не удалять исходные PNG")
+    ap.add_argument("--only", choices=tuple(TARGETS), help="обработать только выбранную папку")
     args = ap.parse_args()
 
     try:
@@ -69,6 +71,8 @@ def main():
     converted = skipped = 0
 
     for sub, max_side in TARGETS.items():
+        if args.only and sub != args.only:
+            continue
         d = os.path.join(IMAGES, sub)
         if not os.path.isdir(d):
             print(f"— {sub}: папки нет, пропуск")
@@ -106,7 +110,7 @@ def main():
                 print(f"  ! {fname}: {e}")
 
     # кэш карточек предметов (рамки редкости) пересобирается автоматически
-    if os.path.isdir(CACHE_DIR) and not args.dry_run:
+    if os.path.isdir(CACHE_DIR) and not args.dry_run and not args.only:
         n = 0
         for f in os.listdir(CACHE_DIR):
             try:

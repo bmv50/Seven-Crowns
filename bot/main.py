@@ -54,6 +54,7 @@ from engine.shop_purchase import ShopPurchaseStore
 from engine.service_purchase import ServicePurchaseStore
 from engine.max_choice import ChoiceStore
 from engine import max_terms
+from engine import max_onboarding
 
 from engine import content
 from engine import game_actions
@@ -500,16 +501,19 @@ dp.message.outer_middleware(_input_middleware)
 dp.callback_query.outer_middleware(_input_middleware)
 
 
-async def send(uid: int, text: str, *, max_keyboard=None):
+async def send(uid: int, text: str, *, max_keyboard=None, max_image=None):
     if uid < 0:
         if not db or not db.pool:
             raise RuntimeError("MAX delivery requires PostgreSQL")
         external_id = await db.max_external_user_id(uid)
         if external_id:
-            if max_keyboard is None:
+            if max_keyboard is None and max_image is None:
                 await MaxOutboxStore(db.pool).enqueue(uid, external_id, text)
             else:
-                await MaxOutboxStore(db.pool).enqueue(uid, external_id, text, keyboard=max_keyboard)
+                options = {'keyboard': max_keyboard}
+                if max_image is not None:
+                    options['image_asset'] = max_image
+                await MaxOutboxStore(db.pool).enqueue(uid, external_id, text, **options)
         return
     if bot is None:
         return  # Stored Telegram heroes must not trigger network calls in MAX-only.
@@ -675,8 +679,7 @@ async def _max_legal_command(uid: int, command: str, parts):
             await _max_reply(uid, 'Версия условий изменилась или документы ещё не опубликованы. Откройте /terms.')
             return True
         await store.accept(uid, config['token'])
-        await _max_reply(uid, '✅ Принятие условий сохранено. Для входа в игру напишите /start. '
-                         'Это не включает уведомления и не является согласием на рекламу.')
+        await _max_intro(uid)
         return True
     if command in ('terms', 'privacy', 'rules', 'support'):
         if config:
@@ -699,6 +702,64 @@ async def _max_legal_command(uid: int, command: str, parts):
                          max_keyboard=_max_navigation.terms_keyboard(config['token']))
         return True
     return False
+
+
+async def _max_onboarding_show(uid, state, note=''):
+    text, keyboard, image = max_onboarding.screen(state)
+    await send(uid, (note+'\n\n' if note else '')+text, max_keyboard=keyboard, max_image=image)
+
+
+async def _max_intro(uid):
+    if uid in chars:
+        await _max_reply(uid, '✅ Условия приняты. Добро пожаловать обратно!\n'
+                         + ui.render_room(chars[uid], world, others_in(chars[uid].room)))
+        return
+    store = max_onboarding.Store(db.pool)
+    state = await store.load(uid) or await store.begin(uid)
+    await _max_onboarding_show(uid, state)
+
+
+async def _max_onboarding_input(uid, text):
+    """Return a validated creation tuple only at the final, persisted name step."""
+    store = max_onboarding.Store(db.pool)
+    state = await store.load(uid) or await store.begin(uid)
+    if text.startswith('/onboard '):
+        next_state = max_onboarding.advance(state, text)
+        if next_state is not None and await store.transition(uid, state, next_state):
+            await _max_onboarding_show(uid, next_state)
+        else:
+            await _max_onboarding_show(uid, await store.load(uid) or state,
+                                       'Эта кнопка устарела. Продолжите на текущем экране.')
+        return None
+    if state['step'] == 'name' and not text.startswith('/'):
+        name = _ts.clean_name(text)
+        if name is not None and all(c.isalnum() for c in name):
+            return state['race'], state['cls'], name
+        await _max_onboarding_show(uid, state, 'Имя должно содержать 2–20 букв или цифр, '
+                                   'без пробелов, служебных и запрещённых слов.')
+        return None
+    await _max_onboarding_show(uid, state)
+    return None
+
+
+async def _max_onboarding_done(uid):
+    await max_onboarding.Store(db.pool).clear(uid)
+
+
+async def _max_restore_character(uid):
+    ch = await db.load_active_character(uid)
+    if ch is not None:
+        chars[uid] = ch
+        await _max_onboarding_done(uid)
+    return ch
+
+
+async def _max_onboarding_error(uid, message):
+    state = await max_onboarding.Store(db.pool).load(uid)
+    if state is None:
+        await _max_reply(uid, message)
+    else:
+        await _max_onboarding_show(uid, state, message)
 
 
 async def _delete_after(uid: int, message_id: int, ttl: float):
@@ -2492,6 +2553,8 @@ async def _max_handle_input(event: MaxInput):
             await send(uid, "⛔ Доступ ограничен. Контакт поддержки и порядок обращения: /support.")
             return
         ch = chars.get(uid)
+        if ch is None:
+            ch = await _max_restore_character(uid)
         # Resolve an uncertain trade before any new input can consume/equip a
         # sold item still present in the cache. Failure leaves input unapplied.
         if ch is not None and (getattr(db, '_shop_uncertain', {}).get(uid) is not None
@@ -2500,6 +2563,9 @@ async def _max_handle_input(event: MaxInput):
             async with _econ_lock(uid):
                 await db.save(ch)
         if await _max_legal_command(uid, command, parts):
+            return
+        if ch and command == 'onboard':
+            await send(uid, 'Герой уже создан.\n' + ui.render_room(ch, world, others_in(ch.room)))
             return
         if command in ("start", "help", "помощь"):
             if ch:
@@ -2513,20 +2579,23 @@ async def _max_handle_input(event: MaxInput):
 "/preset save|load <1–3>, /group, /party <текст>, /guild, /auction, /map, /settings, /notify, /respawn.")
                 await send(uid, ui.render_room(ch, world, others_in(ch.room)))
             else:
-                races = ", ".join(RACES)
-                classes = ", ".join(CLASSES)
-                await send(uid, "Добро пожаловать в «Семь Корон»!\n"
-                           f"Расы: {races}\nКлассы: {classes}\n"
-                           "Создать героя: /create <раса> <класс> <имя>\n"
-                           "Аккаунт MAX создаётся отдельно от Telegram.")
+                await _max_intro(uid)
             return
         if not ch:
+            if command != 'create':
+                selection = await _max_onboarding_input(uid, event.text.strip())
+                if selection is None:
+                    return
+                parts = ['/create', *selection]
+                command = 'create'
             if command != "create" or len(parts) != 4:
                 await send(uid, "Напишите /start и затем /create <раса> <класс> <имя>.")
                 return
             race, cls = parts[1].lower(), parts[2].lower()
             name = _ts.clean_name(parts[3])
-            if race not in RACES or cls not in CLASSES or name is None:
+            if (race not in RACES or cls not in CLASSES or name is None
+                    or cls not in RACES[race]['allowed_classes']
+                    or not all(c.isalnum() for c in name)):
                 await send(uid, "Проверьте расу, класс и имя (2–20 букв/цифр). /start покажет варианты.")
                 return
             new = Character(uid=uid, name=name, cls=cls, race=race)
@@ -2537,10 +2606,18 @@ async def _max_handle_input(event: MaxInput):
             new.inventory = list(_starter.starting_consumables(cls))
             try:
                 await db.create_character(new)
-            except (ActiveCharacterExists, NameTaken):
-                await send(uid, "Герой уже существует или имя занято. Попробуйте другое имя.")
+            except ActiveCharacterExists:
+                recovered = await _max_restore_character(uid)
+                if recovered is not None:
+                    await send(uid, 'Герой уже создан.\n' + ui.render_room(recovered, world, others_in(recovered.room)))
+                else:
+                    await send(uid, 'Не удалось загрузить героя. Повторите /start.')
+                return
+            except NameTaken:
+                await _max_onboarding_error(uid, 'Имя уже занято. Отправьте другое имя.')
                 return
             chars[uid] = new
+            await _max_onboarding_done(uid)
             analytics.track(uid, "character_created", {"race": race, "cls": cls})
             await send(uid, f"✨ Герой {name} создан. Вы в общем мире «Семи Корон».\n"
                        + ui.render_room(new, world, others_in(new.room)))
@@ -2896,6 +2973,11 @@ async def _max_inbox_worker():
             await asyncio.sleep(0.25)
             continue
         event = MaxInput(row["external_user_id"], row["event_key"], row["message_text"])
+        if event.event_key.startswith('callback:'):
+            try:
+                await _max_client.answer_callback(event.event_key.split(':', 2)[2])
+            except Exception as exc:
+                _elog.log_err(_log, 'max_callback_answer_failed', error_type=type(exc).__name__)
         try:
             await _max_handle_input(event)
         except Exception as e:

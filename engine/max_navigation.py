@@ -108,7 +108,7 @@ def errand_keyboard(token):
 def terms_keyboard(token):
     if not isinstance(token, str) or not re.fullmatch(r'[0-9a-f]{32}', token):
         raise ValueError('Invalid terms version token')
-    return [[{'type': 'message', 'text': f'✅ Принимаю условия [{token}]'}],
+    return [[{'type': 'callback', 'text': '✅ Принимаю условия', 'payload': f'/termsagree {token}'}],
             [{'type': 'message', 'text': '❌ Не принимаю условия'}]]
 
 
@@ -193,6 +193,14 @@ def validate(rows):
             raise ValueError('Invalid MAX navigation row')
         clean = []
         for button in row:
+            if isinstance(button, dict) and button.get('type') == 'callback':
+                from .max_onboarding import valid_callback
+                if (set(button) != {'type', 'text', 'payload'}
+                        or not isinstance(button.get('text'), str) or not 1 <= len(button['text']) <= 128
+                        or not valid_callback(button.get('payload'))):
+                    raise ValueError('Unsupported MAX callback button')
+                clean.append(dict(button))
+                continue
             if (not isinstance(button, dict) or set(button) != {'type', 'text'}
                     or button['type'] != 'message' or not isinstance(button['text'], str)
                     or (button['text'] not in COMMANDS and not _PURCHASE.fullmatch(button['text']))):
