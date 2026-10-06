@@ -192,6 +192,12 @@ def check_config(env: Optional[Dict[str, str]] = None) -> ConfigResult:
                   "включать нельзя.")
 
     if max_enabled:
+        if env.get('MAX_CA_FILE', '').strip():
+            from bot.max_tls import max_ssl_context
+            try:
+                max_ssl_context(env['MAX_CA_FILE'])
+            except ValueError:
+                errors.append('MAX_CA_FILE: PEM-хранилище сертификатов не найдено или некорректно.')
         if not db_url or _is_placeholder_token(db_url):
             errors.append('MAX_ENABLED=1 требует DATABASE_URL (PostgreSQL).')
         if _is_placeholder_token(env.get('MAX_BOT_TOKEN', '')):

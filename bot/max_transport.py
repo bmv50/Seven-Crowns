@@ -12,7 +12,8 @@ import math
 import re
 from dataclasses import dataclass
 
-from aiohttp import ClientSession, ClientTimeout, web
+from aiohttp import ClientSession, ClientTimeout, TCPConnector, web
+from bot.max_tls import max_ssl_context
 from engine.max_outbox import MaxSendError, text_parts
 
 
@@ -73,7 +74,8 @@ class MaxClient:
         self._last_sent: dict[str, float] = {}
 
     async def start(self):
-        self._session = ClientSession(timeout=ClientTimeout(total=10))
+        connector = TCPConnector(ssl=max_ssl_context())
+        self._session = ClientSession(timeout=ClientTimeout(total=10), connector=connector)
 
     async def close(self):
         if self._session:
@@ -106,6 +108,7 @@ class MaxClient:
                     params={"user_id": external_user_id},
                     json=body,
                     headers={"Authorization": self._token},
+                    allow_redirects=False,
                 ) as response:
                     if not 200 <= response.status < 300:
                         try:

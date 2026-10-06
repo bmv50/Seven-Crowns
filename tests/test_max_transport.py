@@ -81,6 +81,7 @@ async def test_outgoing():
     assert len(calls) == 2
     assert calls[0][1]["headers"] == {"Authorization": "private-token"}
     assert calls[0][1]["params"] == {"user_id": "42"}
+    assert all(c[1]['allow_redirects'] is False for c in calls)
     assert all(len(c[1]["json"]["text"]) <= 3500 for c in calls)
 
 
