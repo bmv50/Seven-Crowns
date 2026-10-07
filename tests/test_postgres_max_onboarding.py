@@ -79,6 +79,14 @@ async def run(dsn):
         await db.pool.execute('UPDATE max_outbox SET next_attempt_at=now()')
         await worker.process_one()
         assert await db.pool.fetchval('SELECT count(*) FROM max_outbox WHERE image_asset IS NOT NULL') == 0
+        # The same durable media path handles allowlisted location previews.
+        from engine.max_media import PREVIEW_ROOMS
+        for room in sorted(PREVIEW_ROOMS):
+            key = 'room:'+room
+            await outbox.enqueue(uid, '42', 'Location:'+room, image_asset=key)
+            await worker.process_one()
+            assert sender.send_chunk.await_args.kwargs == {'image_asset': key}
+        assert await db.pool.fetchval('SELECT count(*) FROM max_outbox WHERE image_asset IS NOT NULL') == 0
         # Bad paths must be rejected before inserting any delivery.
         before = await db.pool.fetchval('SELECT count(*) FROM max_outbox')
         try:

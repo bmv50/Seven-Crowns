@@ -43,7 +43,7 @@ class MaxOutboxStore:
             from .max_navigation import validate
             keyboard = validate(keyboard)
         if image_asset is not None:
-            from .max_onboarding import asset_path
+            from .max_media import asset_path
             asset_path(image_asset)
         parts = text_parts(value)
         if not parts:

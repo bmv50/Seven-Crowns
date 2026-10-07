@@ -41,6 +41,7 @@ TARGETS = {
     "rooms": 1280,
     "mobs": 1024,
     "onboarding": 1280,
+    "room_previews": 1280,
 }
 CACHE_DIR = os.path.join(IMAGES, "items_cache")
 

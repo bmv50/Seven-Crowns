@@ -115,7 +115,7 @@ class MaxClient:
 
     async def image_payload(self, asset):
         """Upload bundled art once per process; never forward auth to a CDN."""
-        from engine.max_onboarding import asset_path
+        from engine.max_media import asset_path
         path = asset_path(asset)
         async with self._upload_lock:
             if asset in self._image_tokens:

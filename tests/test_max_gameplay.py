@@ -17,9 +17,10 @@ from engine.lifecycle_errors import ActiveCharacterExists, NameTaken
 
 
 def load_handler(env):
-    from engine import max_navigation
+    from engine import max_navigation, max_media
     env.setdefault('_max_reply', env['send'])
     env.setdefault('_max_navigation', max_navigation)
+    env.setdefault('max_media', max_media)
     env.setdefault('_max_shop_command', AsyncMock(return_value=False))
     env.setdefault('_max_service_command', AsyncMock(return_value=False))
     env.setdefault('_max_choice_command', AsyncMock(return_value=False))
@@ -35,7 +36,7 @@ def load_handler(env):
         env['_max_context_reply'] = context_reply
     path = Path(__file__).resolve().parents[1] / "bot" / "main.py"
     tree = ast.parse(path.read_text(encoding="utf-8"))
-    names = {"_max_handle_input", "_max_npc_commands", "_max_resolve_npc",
+    names = {"_max_handle_input", "_max_npc_commands", "_max_resolve_npc", "_max_room_reply",
              "party_invite_core", "party_accept_core", "party_decline_core",
              "party_leave_core", "party_chat_core"}
     nodes = [n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))

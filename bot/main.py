@@ -55,6 +55,7 @@ from engine.service_purchase import ServicePurchaseStore
 from engine.max_choice import ChoiceStore
 from engine import max_terms
 from engine import max_onboarding
+from engine import max_media
 
 from engine import content
 from engine import game_actions
@@ -551,6 +552,16 @@ async def _max_context_reply(ch: Character, text: str, npc_id=None):
     await send(ch.uid, text, max_keyboard=_max_navigation.context_keyboard(ch, WORLD, npc_id))
 
 
+async def _max_room_reply(ch, prefix=''):
+    """Location card only; no quests, rewards or mutations in presentation."""
+    text = (prefix+'\n\n' if prefix else '') + ui.render_room(ch, world, others_in(ch.room))
+    image = max_media.room_asset(ch.room, enabled=ch.flags.get('roompics', True))
+    if image is None:
+        await _max_reply(ch.uid, text)
+    else:
+        await send(ch.uid, text, max_keyboard=_max_navigation.keyboard(ch, WORLD), max_image=image)
+
+
 async def _max_shop_command(ch: Character, command: str, parts):
     if command not in ('buy', 'купить', 'buyoffer', 'buyconfirm', 'buycancel',
                        'sell', 'продать', 'selloffer', 'sellconfirm', 'sellcancel'):
@@ -711,8 +722,7 @@ async def _max_onboarding_show(uid, state, note=''):
 
 async def _max_intro(uid):
     if uid in chars:
-        await _max_reply(uid, '✅ Условия приняты. Добро пожаловать обратно!\n'
-                         + ui.render_room(chars[uid], world, others_in(chars[uid].room)))
+        await _max_room_reply(chars[uid], '✅ Условия приняты. Добро пожаловать обратно!')
         return
     store = max_onboarding.Store(db.pool)
     state = await store.load(uid) or await store.begin(uid)
@@ -1650,7 +1660,7 @@ async def combat_reward(ch: Character, text: str):
     """Моб убит: удаляем боевую панель и публикуем итог (удар+награда+комната)
     НОВЫМ сообщением внизу, чтобы ничего не оставалось «под меню»."""
     if ch.uid < 0:
-        await _max_reply(ch.uid, text + "\n\n" + ui.render_room(ch, world, others_in(ch.room)))
+        await _max_room_reply(ch, text)
         return
     cv = combat_view.pop(ch.uid, None)
     # строки урона НЕ показываем — только итог боя (убит/награда) и комнату
@@ -2565,7 +2575,7 @@ async def _max_handle_input(event: MaxInput):
         if await _max_legal_command(uid, command, parts):
             return
         if ch and command == 'onboard':
-            await send(uid, 'Герой уже создан.\n' + ui.render_room(ch, world, others_in(ch.room)))
+            await _max_room_reply(ch, 'Герой уже создан.')
             return
         if command in ("start", "help", "помощь"):
             if ch:
@@ -2577,7 +2587,7 @@ async def _max_handle_input(event: MaxInput):
                            "/shop [торговец], /buy <предмет>, /sell, /repair, "
                            "/train, /learn <умение>, /loadout <умение>, "
 "/preset save|load <1–3>, /group, /party <текст>, /guild, /auction, /map, /settings, /notify, /respawn.")
-                await send(uid, ui.render_room(ch, world, others_in(ch.room)))
+                await _max_room_reply(ch)
             else:
                 await _max_intro(uid)
             return
@@ -2609,7 +2619,7 @@ async def _max_handle_input(event: MaxInput):
             except ActiveCharacterExists:
                 recovered = await _max_restore_character(uid)
                 if recovered is not None:
-                    await send(uid, 'Герой уже создан.\n' + ui.render_room(recovered, world, others_in(recovered.room)))
+                    await _max_room_reply(recovered, 'Герой уже создан.')
                 else:
                     await send(uid, 'Не удалось загрузить героя. Повторите /start.')
                 return
@@ -2619,8 +2629,7 @@ async def _max_handle_input(event: MaxInput):
             chars[uid] = new
             await _max_onboarding_done(uid)
             analytics.track(uid, "character_created", {"race": race, "cls": cls})
-            await send(uid, f"✨ Герой {name} создан. Вы в общем мире «Семи Корон».\n"
-                       + ui.render_room(new, world, others_in(new.room)))
+            await _max_room_reply(new, f"✨ Герой {name} создан. Вы в общем мире «Семи Корон».")
             return
         if await _max_preferences_command(ch, command, parts):
             return
@@ -2641,8 +2650,7 @@ async def _max_handle_input(event: MaxInput):
                                                     or RACES.get(ch.race, {}).get("start_room", "temple"))
             ch.flags["dead"] = False
             await save(ch, force=True)
-            await send(uid, f"✨ Возрождение в {WORLD[ch.room]['name']}. Потеряно монет: {lost}.\n"
-                       + ui.render_room(ch, world, others_in(ch.room)))
+            await _max_room_reply(ch, f"✨ Возрождение в {WORLD[ch.room]['name']}. Потеряно монет: {lost}.")
             return
         if await _max_auction_command(ch, command, parts, event):
             return
@@ -2671,10 +2679,10 @@ async def _max_handle_input(event: MaxInput):
                 await send(uid, "\n".join(rewards))
             await send_tutorial(ch, "move")
             analytics.track_once(ch, "first_move")
-            await send(uid, ui.render_room(ch, world, others_in(ch.room)))
+            await _max_room_reply(ch)
             return
         if command == "look":
-            await send(uid, ui.render_room(ch, world, others_in(ch.room)))
+            await _max_room_reply(ch)
         elif command == "stats":
             await send(uid, ui.render_stats(ch))
         elif command == "inv":
@@ -2932,7 +2940,7 @@ async def _max_handle_input(event: MaxInput):
             if random.random() < 0.5:
                 _leave_combat(ch)
                 await save(ch)
-                await send(uid, "🏃 Вы вырвались из боя!\n" + ui.render_room(ch, world, others_in(ch.room)))
+                await _max_room_reply(ch, "🏃 Вы вырвались из боя!")
             else:
                 lines = combat.mob_attack(mob, ch)
                 await save(ch)
