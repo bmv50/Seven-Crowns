@@ -75,7 +75,7 @@ from engine import persist as _persist
 from engine import log as _elog
 from engine import textsafe as _ts
 from engine import combat
-from engine import quest
+from engine import quest, max_map
 from engine import errands
 from engine import npc as npclib
 from engine import skills as skillmod
@@ -2415,6 +2415,7 @@ async def move_core(ch: Character, direction: str) -> tuple[bool, bool]:
     combat_view.pop(ch.uid, None)
     talking_to.pop(ch.uid, None); npc_ai.reset(ch.uid)
     ch.room = exits[direction]
+    ch.flags['map_revision'] = int(ch.flags.get('map_revision', 0)) + 1
     await broadcast_ephemeral(old, f"🚶 {ch.name} уходит ({direction}).", exclude=ch.uid)
     await broadcast_ephemeral(ch.room, f"🚶 {ch.name} приходит.", exclude=ch.uid)
     if WORLD[ch.room].get("rest"):
@@ -2501,23 +2502,40 @@ async def player_setting_core(ch: Character, key: str, value: str):
         return False, "Не удалось сохранить настройку. Попробуйте позже."
 
 
+async def _max_map_reply(ch: Character, prefix='', *, page=None):
+    if page is not None:
+        await send(ch.uid, '📜 Выберите активное задание для маршрута. Выполненную цель карта заменит местом сдачи.',
+                   max_keyboard=max_map.quest_menu(ch, page))
+        return
+    qid, path, hint = max_map.plan(ch)
+    text = (prefix+'\n\n' if prefix else '') + max_map.caption(ch, qid, path, hint)
+    image = max_map.image_key(ch.room, path) if ch.flags.get('roompics', True) else None
+    await send(ch.uid, text, max_keyboard=max_map.keyboard(ch, path), max_image=image)
+
+
 async def _max_preferences_command(ch: Character, command: str, parts):
     send = _max_reply
-    if command not in ("map", "settings", "настройки", "notify", "уведомления"):
+    if command not in ("map", "maplist", "mapquest", "settings", "настройки", "notify", "уведомления"):
         return False
-    if command == "map":
-        if ch.flags.get("dead"):
+    if command in ('map', 'maplist', 'mapquest'):
+        if ch.flags.get("dead") or ch.hp <= 0:
             await send(ch.uid, "💀 Вы пали. Напишите /respawn.")
-        elif len(parts) != 1:
-            await send(ch.uid, "Формат: /map.")
+        elif command == 'maplist' and (len(parts) == 1 or (len(parts) == 2 and parts[1].isdigit() and len(parts[1]) <= 3)):
+            await _max_map_reply(ch, page=int(parts[1]) if len(parts) == 2 else 0)
+        elif command == 'mapquest' and len(parts) == 2 and (parts[1] == 'none' or parts[1] in max_map.active(ch)):
+            ch.flags['map_quest'] = parts[1]
+            await save(ch)
+            await _max_map_reply(ch)
+        elif command == 'map' and len(parts) == 1:
+            await _max_map_reply(ch)
         else:
-            await send(ch.uid, render_map(ch) + "\n\nДля движения напишите направление: север, юг, восток, запад, вверх или вниз.")
+            await send(ch.uid, 'Задание недоступно или команда устарела. Откройте /map или /maplist.')
         return True
     if command in ("settings", "настройки"):
         if len(parts) == 1:
             await send(ch.uid, ui.render_settings(ch) + "\n\n"
                        "/settings autoloot on|off — авто-лут\n"
-                       "/settings roompics on|off — изображения (пока только Telegram; MAX текстовый)\n"
+                       "/settings roompics on|off — изображения локаций и карты\n"
                        "/notify — настройки уведомлений")
         elif len(parts) == 3 and parts[1].lower() in ("autoloot", "roompics"):
             _, msg = await player_setting_core(ch, parts[1].lower(), parts[2].lower())
@@ -2631,6 +2649,16 @@ async def _max_handle_input(event: MaxInput):
             analytics.track(uid, "character_created", {"race": race, "cls": cls})
             await _max_room_reply(new, f"✨ Герой {name} создан. Вы в общем мире «Семи Корон».")
             return
+        map_walk = command == 'mapwalk'
+        if map_walk:
+            direction = max_map.resolve_walk(ch, event.text.strip())
+            if direction is None:
+                if ch.flags.get('dead') or ch.hp <= 0:
+                    await send(uid, '💀 Вы пали. Напишите /respawn.')
+                else:
+                    await _max_map_reply(ch, 'Кнопка карты устарела или недоступна. Позиция не изменена.')
+                return
+            command = direction
         if await _max_preferences_command(ch, command, parts):
             return
         if ch.flags.get("dead"):
@@ -2680,6 +2708,8 @@ async def _max_handle_input(event: MaxInput):
             await send_tutorial(ch, "move")
             analytics.track_once(ch, "first_move")
             await _max_room_reply(ch)
+            if map_walk:
+                await _max_map_reply(ch)
             return
         if command == "look":
             await _max_room_reply(ch)

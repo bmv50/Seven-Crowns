@@ -1,15 +1,18 @@
-"""Allowlisted bundled MAX art: onboarding and four location-style previews."""
+"""Allowlisted MAX art and validated, reconstructable map snapshots."""
 from pathlib import Path
 
 from . import content, max_onboarding
 
 ROOT = Path(__file__).resolve().parent.parent / 'images' / 'room_previews'
-# Intentionally bounded pilot. Existing Telegram art is not overwritten or
-# implicitly enabled: the owner will approve the new location style first.
-PREVIEW_ROOMS = frozenset(('village', 'market', 'temple', 'cellar'))
+# The owner approved the four pilots. Every current room now has a new MAX
+# illustration; the original Telegram artwork remains untouched.
+PREVIEW_ROOMS = frozenset(content.WORLD)
 
 
 def asset_path(key):
+    if isinstance(key, str) and key.startswith('map:'):
+        from .max_map import asset_path as map_path
+        return map_path(key)
     if isinstance(key, str) and key.startswith('room:'):
         room = key[5:]
         if room not in PREVIEW_ROOMS or room not in content.WORLD:

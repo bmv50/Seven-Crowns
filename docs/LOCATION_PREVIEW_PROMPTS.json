@@ -1,6 +1,6 @@
 {
   "tool": "built-in image_gen",
-  "status": "Four pilot images awaiting owner style review; existing Telegram room artwork remains unchanged.",
+  "status": "Four pilot images approved by owner; all remaining location cards are generated separately. Existing Telegram room artwork remains unchanged.",
   "assets": [
     {
       "room": "village",

@@ -1,7 +1,8 @@
-"""Four location pilots, all room-card paths, no gameplay effects or arbitrary files."""
+"""Full location coverage, room-card paths, no gameplay effects or arbitrary files."""
 import ast
 import asyncio
 import copy
+import json
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
@@ -16,7 +17,16 @@ from test_max_gameplay import load_handler
 
 
 def test_assets():
-    assert max_media.PREVIEW_ROOMS == {'village', 'market', 'temple', 'cellar'}
+    assert max_media.PREVIEW_ROOMS == set(content.WORLD)
+    manifests = [json.loads(Path('docs/'+name).read_text(encoding='utf-8'))
+                 for name in ('LOCATION_PREVIEW_PROMPTS.json', 'LOCATION_ART_REMAINING_PROMPTS.json')]
+    assets = [asset for manifest in manifests for asset in manifest['assets']]
+    assert len(assets) == len({a['room'] for a in assets}) == len(content.WORLD)
+    assert {a['room'] for a in assets} == set(content.WORLD)
+    for asset in assets:
+        assert asset['canonical_description'] == ' '.join(content.WORLD[asset['room']]['desc'].split())
+        assert Path(asset['file']).resolve() == max_media.asset_path('room:'+asset['room'])
+        assert asset['prompt']
     for room in max_media.PREVIEW_ROOMS:
         key = f'room:{room}'
         path = max_media.asset_path(key)
@@ -27,11 +37,11 @@ def test_assets():
             image.verify()
         assert max_media.room_asset(room) == key
         assert max_media.room_asset(room, enabled=False) is None
-    assert max_media.room_asset('inn') is None
+    assert max_media.room_asset('unknown_room') is None
     with patch.object(Path, 'is_file', return_value=False):
         assert max_media.room_asset('village') is None
     assert max_media.asset_path('human-mage') == max_onboarding.asset_path('human-mage')
-    for key in ('room:../.env', 'room:village/../../.env', 'room:inn', 'room:',
+    for key in ('room:../.env', 'room:village/../../.env', 'room:unknown_room', 'room:',
                 '/etc/passwd', 'https://example.org/room.jpg'):
         try:
             max_media.asset_path(key)
@@ -106,12 +116,12 @@ async def run():
     await env['combat_reward'](ch, 'Победа')
     assert sent.await_args.args[1] == 'Победа\n\nCARD:temple'
     assert sent.await_args.kwargs['max_image'] == 'room:temple'
-    ch.room = 'inn'  # Non-pilot locations continue working without a placeholder image.
+    ch.room = 'inn'
     await env['_max_room_reply'](ch)
-    assert text_only.await_args.args == (-1, 'CARD:inn')
+    assert sent.await_args.kwargs['max_image'] == 'room:inn'
 
 
 if __name__ == '__main__':
     test_assets()
     asyncio.run(run())
-    print('OK: MAX four location pilots, clean welcome, room cards, preferences, fallback, travel, respawn and combat return')
+    print('OK: MAX all location art, canonical prompt coverage, clean welcome, room cards, preferences, fallback, travel, respawn and combat return')

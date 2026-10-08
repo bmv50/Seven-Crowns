@@ -5,7 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
-from engine import content, notify, player_settings
+from engine import content, notify, player_settings, max_map
 from engine.character import Character
 from engine.lifecycle_errors import StaleCharacterWrite
 
@@ -13,9 +13,10 @@ from engine.lifecycle_errors import StaleCharacterWrite
 async def run():
     notify.ENABLED = True
     ch = Character(uid=-10, name='Тестер', cls='warrior', race='human')
+    ch.init_vitals()
     ch.flags['quest_progress'] = 42
     messages = []
-    async def send(uid, message):
+    async def send(uid, message, **kwargs):
         messages.append((uid, message))
     async def setting(actor, key, value):
         player_settings.apply(actor.flags, player_settings.patch_for(key, value))
@@ -24,7 +25,8 @@ async def run():
                send=send, _max_reply=send, StaleCharacterWrite=StaleCharacterWrite, _evict_stale=Mock(),
                _elog=SimpleNamespace(log_err=Mock()), _log=None,
                ui=SimpleNamespace(render_settings=lambda _: 'SETTINGS', render_notify=lambda _: 'NOTIFY'))
-    names = {'player_setting_core', '_max_preferences_command', 'render_map'}
+    env.update(max_map=max_map, save=AsyncMock())
+    names = {'player_setting_core', '_max_preferences_command', '_max_map_reply', 'render_map'}
     tree = ast.parse(Path('bot/main.py').read_text(encoding='utf-8'))
     nodes = [n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name in names]
     assert len(nodes) == len(names)
@@ -34,11 +36,11 @@ async def run():
     assert await command(ch, 'map', ['map'])
     assert content.WORLD[ch.room]['name'] in messages[-1][1]
     for direction, dest in content.WORLD[ch.room]['exits'].items():
-        assert direction in messages[-1][1] and content.WORLD[dest]['name'] in messages[-1][1]
+        assert direction.lower() in messages[-1][1].lower() and content.WORLD[dest]['name'] in messages[-1][1]
     old_room = ch.room
     ch.room = next(iter(content.WORLD[ch.room]['exits'].values()))
     await command(ch, 'map', ['map'])
-    assert f"Вы здесь: *{content.WORLD[ch.room]['name']}*" in messages[-1][1]
+    assert f"Вы здесь: {content.WORLD[ch.room]['name']}" in messages[-1][1]
     assert ch.room != old_room
     await command(ch, 'settings', ['settings'])
     assert '/settings autoloot' in messages[-1][1]

@@ -17,10 +17,12 @@ from engine.lifecycle_errors import ActiveCharacterExists, NameTaken
 
 
 def load_handler(env):
-    from engine import max_navigation, max_media
+    from engine import max_navigation, max_media, max_map
     env.setdefault('_max_reply', env['send'])
     env.setdefault('_max_navigation', max_navigation)
     env.setdefault('max_media', max_media)
+    env.setdefault('max_map', max_map)
+    env.setdefault('_max_map_reply', AsyncMock())
     env.setdefault('_max_shop_command', AsyncMock(return_value=False))
     env.setdefault('_max_service_command', AsyncMock(return_value=False))
     env.setdefault('_max_choice_command', AsyncMock(return_value=False))

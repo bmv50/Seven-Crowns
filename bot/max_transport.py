@@ -45,6 +45,7 @@ def parse_update(data: dict) -> MaxInput | None:
         return MaxInput(str(user_id), f"start:{user_id}:{stamp}", "/start")
     if kind == 'message_callback':
         from engine.max_onboarding import valid_callback
+        from engine.max_map import valid_callback as valid_map_callback
         callback, message = data.get('callback'), data.get('message')
         if not isinstance(callback, dict) or not isinstance(message, dict):
             return None
@@ -55,7 +56,7 @@ def parse_update(data: dict) -> MaxInput | None:
         if (recipient.get('chat_type') != 'dialog' or user.get('is_bot')
                 or type(user_id) is not int or user_id <= 0
                 or not isinstance(callback_id, str) or not 1 <= len(callback_id) <= 256
-                or not valid_callback(payload)):
+                or not (valid_callback(payload) or valid_map_callback(payload))):
             return None
         return MaxInput(str(user_id), f'callback:{user_id}:{callback_id}', payload)
     if kind != "message_created":
@@ -120,6 +121,13 @@ class MaxClient:
         async with self._upload_lock:
             if asset in self._image_tokens:
                 return self._image_tokens[asset]
+            if asset.startswith('map:'):
+                from engine.max_map import render_asset
+                try:
+                    path = await asyncio.to_thread(render_asset, asset)
+                except (OSError, RuntimeError, ImportError):
+                    _log.warning('max_map_render_failed')
+                    return None  # Text and navigation remain deliverable.
             async with self._session.post(f'{API_URL}/uploads', params={'type': 'image'},
                                           headers={'Authorization': self._token},
                                           allow_redirects=False) as response:
@@ -149,6 +157,8 @@ class MaxClient:
                                for p in photos.values())):
                 raise MaxSendError(502)
             payload = {'photos': photos}
+            if len(self._image_tokens) >= 512:
+                self._image_tokens.pop(next(iter(self._image_tokens)))
             self._image_tokens[asset] = payload
             return payload
 
@@ -161,7 +171,9 @@ class MaxClient:
         body = {'text': text}
         attachments = []
         if image_asset is not None:
-            attachments.append({'type': 'image', 'payload': await self.image_payload(image_asset)})
+            image = await self.image_payload(image_asset)
+            if image is not None:
+                attachments.append({'type': 'image', 'payload': image})
         if keyboard is not None:
             from engine.max_navigation import validate
             attachments.append({'type': 'inline_keyboard', 'payload': {'buttons': validate(keyboard)}})

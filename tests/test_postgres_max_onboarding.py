@@ -88,6 +88,17 @@ async def run(dsn):
             assert sender.send_chunk.await_args.kwargs == {'image_asset': key}
         assert await db.pool.fetchval('SELECT count(*) FROM max_outbox WHERE image_asset IS NOT NULL') == 0
         # Bad paths must be rejected before inserting any delivery.
+        from engine import max_map
+        map_key = max_map.image_key('village', ['village', 'cellar'])
+        map_menu = max_map.keyboard(ch, ['village', 'cellar'])
+        await outbox.enqueue(uid, '42', 'Map snapshot', keyboard=map_menu, image_asset=map_key)
+        await db.close()
+        await connect()
+        outbox = MaxOutboxStore(db.pool)
+        worker = MaxOutboxWorker(outbox, sender)
+        assert await worker.process_one()
+        assert sender.send_chunk.await_args.kwargs == {'keyboard': map_menu, 'image_asset': map_key}
+        assert max_map.snapshot(map_key) == ('village', ['village', 'cellar'])
         before = await db.pool.fetchval('SELECT count(*) FROM max_outbox')
         try:
             await outbox.enqueue(uid, '42', 'unsafe', image_asset='../.env')
