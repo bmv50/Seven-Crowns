@@ -23,7 +23,7 @@ run_tests.py
 .sim_rules2_cache.json
 
 # Арты нужны в образе: бот отдаёт их в Telegram файлом при первой отправке,
-# дальше работает кэш file_id. В образ кладём только оптимизированные JPEG.
+# дальше работает кэш file_id. В образ кладём оптимизированные JPEG/WebP.
 images/**/*.png
 images/items_cache/
 

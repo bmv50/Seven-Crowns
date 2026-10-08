@@ -251,7 +251,7 @@ def snapshot(key):
 
 def asset_path(key):
     snapshot(key)
-    return ROOT / (hashlib.sha256(key.encode()).hexdigest()+'.jpg')
+    return ROOT / ('terrain-v2-'+hashlib.sha256(key.encode()).hexdigest()+'.jpg')
 
 
 def render_asset(key):

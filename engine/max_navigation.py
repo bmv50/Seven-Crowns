@@ -196,9 +196,11 @@ def validate(rows):
             if isinstance(button, dict) and button.get('type') == 'callback':
                 from .max_onboarding import valid_callback
                 from .max_map import valid_callback as valid_map_callback
+                from .max_items import valid_callback as valid_item_callback
                 if (set(button) != {'type', 'text', 'payload'}
                         or not isinstance(button.get('text'), str) or not 1 <= len(button['text']) <= 128
-                        or not (valid_callback(button.get('payload')) or valid_map_callback(button.get('payload')))):
+                        or not (valid_callback(button.get('payload')) or valid_map_callback(button.get('payload'))
+                                or valid_item_callback(button.get('payload')))):
                     raise ValueError('Unsupported MAX callback button')
                 clean.append(dict(button))
                 continue

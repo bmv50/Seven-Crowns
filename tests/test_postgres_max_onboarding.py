@@ -99,6 +99,16 @@ async def run(dsn):
         assert await worker.process_one()
         assert sender.send_chunk.await_args.kwargs == {'keyboard': map_menu, 'image_asset': map_key}
         assert max_map.snapshot(map_key) == ('village', ['village', 'cellar'])
+        from engine import item_art
+        item_key = item_art.image_key('железный_меч#purple#42')
+        await outbox.enqueue(uid, '42', 'Item snapshot', image_asset=item_key)
+        await db.close()
+        await connect()
+        outbox = MaxOutboxStore(db.pool)
+        worker = MaxOutboxWorker(outbox, sender)
+        await worker.process_one()
+        assert sender.send_chunk.await_args.kwargs == {'image_asset': item_key}
+        assert item_art.snapshot(item_key) == 'железный_меч#purple#42'
         before = await db.pool.fetchval('SELECT count(*) FROM max_outbox')
         try:
             await outbox.enqueue(uid, '42', 'unsafe', image_asset='../.env')

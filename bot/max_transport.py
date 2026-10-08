@@ -46,6 +46,7 @@ def parse_update(data: dict) -> MaxInput | None:
     if kind == 'message_callback':
         from engine.max_onboarding import valid_callback
         from engine.max_map import valid_callback as valid_map_callback
+        from engine.max_items import valid_callback as valid_item_callback
         callback, message = data.get('callback'), data.get('message')
         if not isinstance(callback, dict) or not isinstance(message, dict):
             return None
@@ -56,7 +57,7 @@ def parse_update(data: dict) -> MaxInput | None:
         if (recipient.get('chat_type') != 'dialog' or user.get('is_bot')
                 or type(user_id) is not int or user_id <= 0
                 or not isinstance(callback_id, str) or not 1 <= len(callback_id) <= 256
-                or not (valid_callback(payload) or valid_map_callback(payload))):
+                or not (valid_callback(payload) or valid_map_callback(payload) or valid_item_callback(payload))):
             return None
         return MaxInput(str(user_id), f'callback:{user_id}:{callback_id}', payload)
     if kind != "message_created":
@@ -128,6 +129,13 @@ class MaxClient:
                 except (OSError, RuntimeError, ImportError):
                     _log.warning('max_map_render_failed')
                     return None  # Text and navigation remain deliverable.
+            if asset.startswith('item:'):
+                from engine.item_art import render_asset
+                try:
+                    path = await asyncio.to_thread(render_asset, asset)
+                except (OSError, RuntimeError, ImportError):
+                    _log.warning('max_item_render_failed')
+                    return None
             async with self._session.post(f'{API_URL}/uploads', params={'type': 'image'},
                                           headers={'Authorization': self._token},
                                           allow_redirects=False) as response:

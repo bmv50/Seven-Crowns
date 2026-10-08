@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, Mock
 
-from engine import content, game_actions, max_navigation as nav
+from engine import content, game_actions, max_navigation as nav, item_art
 from engine.character import Character, START_ROOM
 from engine.shop_purchase import guard, recover
 from bot.max_transport import MaxInput
@@ -47,7 +47,7 @@ async def run():
     env = dict(Character=Character, ShopPurchaseStore=lambda _: store, db=object(),
         _econ_lock=lambda _: asyncio.Lock(), _in_combat=lambda _: False,
         ui=SimpleNamespace(current_vendor=lambda _: vendor), game_actions=game_actions,
-        ITEMS=content.ITEMS, _max_navigation=nav, send=send, _max_reply=reply,
+        ITEMS=content.ITEMS, _max_navigation=nav, item_art=item_art, send=send, _max_reply=reply,
         StaleCharacterWrite=StaleCharacterWrite, _evict_stale=Mock(),
         _elog=SimpleNamespace(log_err=Mock()), _log=None)
     exec(compile(ast.Module(body=[node], type_ignores=[]), 'shop handler', 'exec'), env)
@@ -56,6 +56,7 @@ async def run():
     store.quote.assert_awaited_once_with(ch, vendor, key, operation='buy')
     store.confirm.assert_not_awaited()
     assert send.await_args.kwargs['max_keyboard'] == confirmation
+    assert item_art.snapshot(send.await_args.kwargs['max_image']) == key
     assert ch.gold == 10000 and key not in ch.inventory
     await command(ch, 'buy', ['buy', key])  # text cannot bypass confirmation either
     assert store.quote.await_count == 2 and store.confirm.await_count == 0

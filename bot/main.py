@@ -75,7 +75,7 @@ from engine import persist as _persist
 from engine import log as _elog
 from engine import textsafe as _ts
 from engine import combat
-from engine import quest, max_map
+from engine import quest, max_map, max_items, item_art
 from engine import errands
 from engine import npc as npclib
 from engine import skills as skillmod
@@ -594,7 +594,8 @@ async def _max_shop_command(ch: Character, command: str, parts):
             async with _econ_lock(ch.uid):
                 ok, text, token = await store.quote(ch, vendor, key, operation=operation)
             if ok:
-                await send(ch.uid, text, max_keyboard=_max_navigation.purchase_keyboard(token, operation))
+                await send(ch.uid, text, max_keyboard=_max_navigation.purchase_keyboard(token, operation),
+                           max_image=item_art.image_key(key) if item_art.valid_item(key) else None)
             else:
                 await _max_reply(ch.uid, text)
     except StaleCharacterWrite:
@@ -2716,7 +2717,22 @@ async def _max_handle_input(event: MaxInput):
         elif command == "stats":
             await send(uid, ui.render_stats(ch))
         elif command == "inv":
-            await send(uid, ui.render_inventory(ch))
+            await send(uid, ui.render_inventory(ch), max_keyboard=max_items.inventory_keyboard(ch))
+        elif command == 'invlist':
+            if len(parts) != 2 or not parts[1].isdigit() or len(parts[1]) > 3:
+                await send(uid, 'Откройте /inv для просмотра предметов.')
+            else:
+                await send(uid, '🎒 Выберите предмет для просмотра.',
+                           max_keyboard=max_items.inventory_keyboard(ch, int(parts[1])))
+        elif command == 'item':
+            if len(parts) != 2 or parts[1] not in max_items.owned(ch):
+                await send(uid, 'Этот предмет больше не находится у героя. Откройте /inv.')
+            else:
+                key = parts[1]
+                await send(uid, ui.item_caption(key, 'inv', ch),
+                           max_keyboard=[[{'type': 'message', 'text': '🎒 Сумка'},
+                                          {'type': 'message', 'text': '🔍 Осмотр'}]],
+                           max_image=item_art.image_key(key))
         elif command == "skills":
             learned = ", ".join(ch.learned) or "нет"
             await send(uid, ui.render_skills(ch) + f"\n\nКоды изученных: {learned}"

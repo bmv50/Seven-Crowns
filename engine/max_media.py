@@ -10,6 +10,9 @@ PREVIEW_ROOMS = frozenset(content.WORLD)
 
 
 def asset_path(key):
+    if isinstance(key, str) and key.startswith('item:'):
+        from .item_art import asset_path as item_path
+        return item_path(key)
     if isinstance(key, str) and key.startswith('map:'):
         from .max_map import asset_path as map_path
         return map_path(key)

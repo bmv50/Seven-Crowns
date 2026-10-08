@@ -12,8 +12,8 @@ RARITY_ORDER = ["common", "green", "blue", "purple", "gold", "red"]
 META = {
     "common": {"emoji": "⚪", "name": "Простая",      "mult": 1.0},
     "green":  {"emoji": "🟢", "name": "Редкая",       "mult": 1.3},
-    "blue":   {"emoji": "🔵", "name": "Эпическая",    "mult": 1.7},
-    "purple": {"emoji": "🟣", "name": "Мифическая",   "mult": 2.2},
+    "blue":   {"emoji": "🔵", "name": "Раритетная",   "mult": 1.7},
+    "purple": {"emoji": "🟣", "name": "Эпическая",    "mult": 2.2},
     "gold":   {"emoji": "🟡", "name": "Легендарная",  "mult": 3.0},
     "red":    {"emoji": "🔴", "name": "Божественная", "mult": 4.0},
 }

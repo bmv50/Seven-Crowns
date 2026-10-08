@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 
 from bot import commands
 from bot.max_transport import MaxInput
-from engine import content, game_actions, max_navigation as nav, money
+from engine import content, game_actions, max_navigation as nav, money, item_art
 from engine.character import Character
 from engine.lifecycle_errors import StaleCharacterWrite
 from engine.shop_purchase import recover
@@ -41,7 +41,7 @@ async def run():
         _econ_lock=lambda _: asyncio.Lock(), _in_combat=lambda _: False,
         ui=SimpleNamespace(current_vendor=lambda _: vendor, DIR_ICONS={}),
         game_actions=game_actions, ITEMS=content.ITEMS, WORLD=content.WORLD, money=money,
-        _max_navigation=nav, send=send, _max_reply=reply,
+        _max_navigation=nav, item_art=item_art, send=send, _max_reply=reply,
         StaleCharacterWrite=StaleCharacterWrite, _evict_stale=Mock(),
         _elog=SimpleNamespace(log_err=Mock()), _log=None)
     tree = ast.parse(Path('bot/main.py').read_text(encoding='utf-8'))
@@ -55,6 +55,7 @@ async def run():
     store.quote.assert_awaited_once_with(ch, vendor, key, operation='sell')
     store.confirm.assert_not_awaited()
     assert send.await_args.kwargs['max_keyboard'] == confirmation
+    assert item_art.snapshot(send.await_args.kwargs['max_image']) == key
     await command(ch, 'sell', ['sell', key])
     assert store.quote.await_count == 2  # text also requires confirmation
     await command(ch, 'sellconfirm', ['sellconfirm', token])
