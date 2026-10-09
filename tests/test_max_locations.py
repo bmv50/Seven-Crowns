@@ -93,7 +93,7 @@ async def run():
     sent.reset_mock()
     await env['_max_room_reply'](ch)
     sent.assert_not_awaited()
-    text_only.assert_awaited_with(-1, 'CARD:village')
+    text_only.assert_awaited_with(-1, 'CARD:village', max_keyboard=env['_max_navigation'].keyboard(ch, content.WORLD))
     ch.flags['roompics'] = True
     with patch.object(Path, 'is_file', return_value=False):
         await env['_max_room_reply'](ch)

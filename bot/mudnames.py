@@ -71,6 +71,11 @@ def match_item(query: str, keys) -> str:
     q = (query or "").strip().lower()
     if not q:
         return None
+    # A button supplies the complete item key (including rarity/seed). Never
+    # redirect it to an earlier, similarly named copy in the inventory.
+    for k in keys:
+        if k.lower() == q:
+            return k
     for k in keys:
         if item_alias(k).lower() == q:
             return k

@@ -116,7 +116,7 @@ async def run():
         return _Response()
     http._session = SimpleNamespace(post=post)
     await http.send_chunk('42', 'room', keyboard=menu)
-    assert calls[0]['json'] == {'text': 'room', 'attachments': [
+    assert calls[0]['json'] == {'text': 'room', 'format': 'html', 'attachments': [
         {'type': 'inline_keyboard', 'payload': {'buttons': menu}}]}
     try:
         await http.send_chunk('42', 'room', keyboard=[[{'type': 'link', 'text': '👤 Герой'}]])

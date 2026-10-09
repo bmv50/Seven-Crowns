@@ -17,13 +17,19 @@ from engine.lifecycle_errors import ActiveCharacterExists, NameTaken
 
 
 def load_handler(env):
-    from engine import max_navigation, max_media, max_map, max_items, item_art
+    from engine import max_navigation, max_media, max_map, max_items, item_art, max_ui
     env.setdefault('_max_reply', env['send'])
     env.setdefault('_max_navigation', max_navigation)
     env.setdefault('max_media', max_media)
     env.setdefault('max_map', max_map)
     env.setdefault('max_items', max_items)
     env.setdefault('item_art', item_art)
+    env.setdefault('max_ui', max_ui)
+    # Existing tests inject room renderers; entity presentation has its own
+    # integration tests with a real World, rather than changing those fixtures.
+    env.setdefault('max_encounters', SimpleNamespace(
+        room_card=lambda ch, world, others: env['ui'].render_room(ch, world, others),
+        entity_rows=lambda ch, world: []))
     env.setdefault('_max_map_reply', AsyncMock())
     env.setdefault('_max_shop_command', AsyncMock(return_value=False))
     env.setdefault('_max_service_command', AsyncMock(return_value=False))
@@ -41,6 +47,7 @@ def load_handler(env):
     path = Path(__file__).resolve().parents[1] / "bot" / "main.py"
     tree = ast.parse(path.read_text(encoding="utf-8"))
     names = {"_max_handle_input", "_max_npc_commands", "_max_resolve_npc", "_max_room_reply",
+             "_max_show_item", "_max_item_action", "_max_show_mob",
              "party_invite_core", "party_accept_core", "party_decline_core",
              "party_leave_core", "party_chat_core"}
     nodes = [n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))

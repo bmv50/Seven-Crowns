@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 from bot import commands
 from bot.max_transport import MaxInput
-from engine import content, errands, game_actions, max_navigation as nav, npc, quest, reputation
+from engine import content, errands, game_actions, max_navigation as nav, max_ui, npc, quest, reputation
 from engine.character import Character, START_ROOM
 from test_max_gameplay import load_handler
 from test_shared_npc_quests import load_core
@@ -82,7 +82,8 @@ async def run():
     async def click(action):
         await handler(MaxInput('42', 'event:' + action, button(action)))
     await click('/npcs')
-    assert set(actions(sent.await_args.kwargs['max_keyboard'])) >= {f'/talk {key}' for key in here}
+    assert {max_ui.resolve(ch, b['payload']) for row in sent.await_args.kwargs['max_keyboard']
+            for b in row if b.get('type') == 'callback'} == {('npc', key) for key in here}
     giver = content.QUESTS['sample_reach_well']['giver']
     await click(f'/talk {giver}')
     talk.assert_awaited_once_with(ch, giver)

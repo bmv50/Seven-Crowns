@@ -38,6 +38,25 @@ async def run(dsn):
             return await db.pool.fetch('SELECT * FROM max_outbox ORDER BY id')
         async def clear():
             await db.pool.execute('DELETE FROM max_outbox')
+        # Buttons survive batching and a worker restart in the existing JSON
+        # column; presentation retries cannot re-run a hit or consumable action.
+        from engine import max_ui, max_encounters
+        from engine.world import World
+        world = World()
+        ch.room = 'cellar'
+        await db.save(ch)
+        mob = world.living_in(ch.room)[0]
+        menu = max_ui.with_back(max_encounters.mob_keyboard(ch, mob))
+        assert await store.enqueue_combat(uid, '42', 'кнопки боя', '❤️ 100/100', 'buttons',
+                                          ch.generation, urgent=True, keyboard=menu)
+        await db.close()
+        await connect()
+        store = MaxOutboxStore(db.pool)
+        sender = SimpleNamespace(send_chunk=AsyncMock())
+        worker = MaxOutboxWorker(store, sender)
+        assert await worker.process_one()
+        assert sender.send_chunk.await_args.kwargs == {'keyboard': menu}
+        await clear()
         assert await combat('удар игрока')
         first = (await rows())[0]
         assert first['next_attempt_at'] > first['created_at'] and first['combat_open']

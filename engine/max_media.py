@@ -10,6 +10,11 @@ PREVIEW_ROOMS = frozenset(content.WORLD)
 
 
 def asset_path(key):
+    if isinstance(key, str) and key.startswith('mob:'):
+        mob = key[4:]
+        if mob not in content.MOBS:
+            raise ValueError('Unknown MAX mob illustration')
+        return ROOT.parent / 'mobs' / (mob+'.jpg')
     if isinstance(key, str) and key.startswith('item:'):
         from .item_art import asset_path as item_path
         return item_path(key)

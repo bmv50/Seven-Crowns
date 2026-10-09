@@ -75,7 +75,7 @@ from engine import persist as _persist
 from engine import log as _elog
 from engine import textsafe as _ts
 from engine import combat
-from engine import quest, max_map, max_items, item_art
+from engine import quest, max_map, max_items, item_art, max_ui, max_encounters
 from engine import errands
 from engine import npc as npclib
 from engine import skills as skillmod
@@ -504,6 +504,8 @@ dp.callback_query.outer_middleware(_input_middleware)
 
 async def send(uid: int, text: str, *, max_keyboard=None, max_image=None):
     if uid < 0:
+        if max_keyboard is not None and chars.get(uid) is not None:
+            max_keyboard = _max_navigation.readable(max_ui.with_back(max_keyboard))
         if not db or not db.pool:
             raise RuntimeError("MAX delivery requires PostgreSQL")
         external_id = await db.max_external_user_id(uid)
@@ -549,17 +551,82 @@ async def _max_reply(uid: int, text: str, *, max_keyboard=None):
 
 
 async def _max_context_reply(ch: Character, text: str, npc_id=None):
-    await send(ch.uid, text, max_keyboard=_max_navigation.context_keyboard(ch, WORLD, npc_id))
+    rows = _max_navigation.context_keyboard(ch, WORLD, npc_id)
+    if npc_id in WORLD[ch.room].get('npc', []):
+        rows = [[max_ui.button(ch, '💬 Поговорить', 'talk', npc_id)]]+rows
+    await send(ch.uid, text, max_keyboard=rows)
 
 
 async def _max_room_reply(ch, prefix=''):
     """Location card only; no quests, rewards or mutations in presentation."""
-    text = (prefix+'\n\n' if prefix else '') + ui.render_room(ch, world, others_in(ch.room))
+    max_ui.record(ch, 'look', ['/look'])
+    text = (prefix+'\n\n' if prefix else '') + max_encounters.room_card(ch, world, others_in(ch.room))
+    keyboard = max_encounters.entity_rows(ch, world)+_max_navigation.keyboard(ch, WORLD)
     image = max_media.room_asset(ch.room, enabled=ch.flags.get('roompics', True))
     if image is None:
-        await _max_reply(ch.uid, text)
+        await _max_reply(ch.uid, text, max_keyboard=keyboard)
     else:
-        await send(ch.uid, text, max_keyboard=_max_navigation.keyboard(ch, WORLD), max_image=image)
+        await send(ch.uid, text, max_keyboard=keyboard, max_image=image)
+
+
+async def _max_show_item(ch, key, note=''):
+    if key not in max_items.owned(ch):
+        await _max_reply(ch.uid, 'Этот предмет больше не находится у героя. Откройте /inv.')
+        return
+    max_ui.record(ch, 'item', ['/item', key])
+    await send(ch.uid, (note+'\n\n' if note else '')+ui.item_caption(key, 'inv', ch),
+               max_keyboard=max_items.actions_keyboard(ch, key), max_image=item_art.image_key(key))
+
+
+async def _max_item_action(ch, action, key):
+    if ch.hp <= 0 or ch.flags.get('dead'):
+        await _max_reply(ch.uid, '💀 Сначала возродитесь.')
+        return
+    if key not in max_items.owned(ch):
+        await _max_show_item(ch, key)
+        return
+    messages = []
+    class _Answer:
+        async def answer(self, value, **kwargs):
+            messages.append(value)
+    try:
+        if action == 'unequip':
+            slot = next((slot for slot, item in ch.equipment.items() if item == key), None)
+            if slot is None:
+                messages.append('Этот предмет уже снят.')
+            elif not _in_combat(ch) or await _combat_action_ready(ch, _Answer().answer):
+                ch.equipment[slot] = None
+                await save(ch, force=True)
+                messages.append('🚫 Предмет снят.')
+        elif action == 'equip' and key in ch.equipment.values():
+            messages.append('Этот предмет уже надет.')
+        elif action in ('equip', 'use'):
+            await text_action(_Answer(), ch, 'wield' if action == 'equip' else 'use', key)
+        else:
+            return
+    except Exception:
+        # Failed/uncertain persistence must not leave consumed/equipped cache
+        # available to the next input. Durable inbox never replays this action.
+        _evict_stale(ch.uid)
+        raise
+    note = '\n'.join(messages)
+    if key in max_items.owned(ch):
+        await _max_show_item(ch, key, note)
+    else:
+        max_ui.record(ch, 'inv', ['/inv'])
+        await _max_reply(ch.uid, note+'\n\n'+max_items.inventory_caption(ch),
+                         max_keyboard=max_items.inventory_keyboard(ch))
+
+
+async def _max_show_mob(ch, key, compare=False):
+    mob = world.find(ch.room, key)
+    if mob is None or mob.hp <= 0:
+        await _max_room_reply(ch, 'Этого противника здесь уже нет.')
+        return
+    image = 'mob:'+mob.mob_id
+    await send(ch.uid, max_encounters.mob_card(ch, mob, compare),
+               max_keyboard=max_encounters.mob_keyboard(ch, mob),
+               max_image=image if max_media.asset_path(image).is_file() else None)
 
 
 async def _max_shop_command(ch: Character, command: str, parts):
@@ -2568,6 +2635,7 @@ async def _max_preferences_command(ch: Character, command: str, parts):
 
 
 async def _max_handle_input(event: MaxInput):
+    from engine import max_ui
     send = _max_reply
     if not db or not db.pool:
         raise RuntimeError("MAX input requires PostgreSQL")
@@ -2650,6 +2718,19 @@ async def _max_handle_input(event: MaxInput):
             analytics.track(uid, "character_created", {"race": race, "cls": cls})
             await _max_room_reply(new, f"✨ Герой {name} создан. Вы в общем мире «Семи Корон».")
             return
+        if command == 'ui':
+            selection = max_ui.resolve(ch, text)
+            if selection is None:
+                await _max_room_reply(ch, 'Кнопка устарела или относится к другому герою/месту. Откройте карточку заново.')
+                return
+            action, key = selection
+            command = {'equip': 'itemact', 'unequip': 'itemact', 'use': 'itemact',
+                       'sell': 'selloffer', 'attack': 'attack'}.get(action, action)
+            parts = [command, action, key] if command == 'itemact' else [command, key]
+        if command == 'back':
+            parts = max_ui.back(ch).split()
+            command = cmds.canonical(parts[0])
+        max_ui.record(ch, command, parts)
         map_walk = command == 'mapwalk'
         if map_walk:
             direction = max_map.resolve_walk(ch, event.text.strip())
@@ -2714,25 +2795,50 @@ async def _max_handle_input(event: MaxInput):
             return
         if command == "look":
             await _max_room_reply(ch)
+        elif command == 'itemact':
+            if len(parts) == 3 and event.text.strip().startswith('/ui '):
+                await _max_item_action(ch, parts[1], parts[2])
+            else:
+                await send(uid, 'Откройте предмет в сумке и нажмите кнопку действия.')
+        elif command in ('mob', 'consider'):
+            await _max_show_mob(ch, parts[1] if len(parts) == 2 else '', command == 'consider')
+        elif command == 'mobs':
+            monsters = max_encounters.living(ch, world)
+            page = int(parts[1]) if len(parts) == 2 and parts[1].isdigit() and len(parts[1]) <= 3 else 0
+            page = min(page, max(0, (len(monsters)-1)//10))
+            rows = [[max_ui.button(ch, m.meta.get('emoji', '🐾')+' '+m.meta['name'], 'mob', m.key)]
+                    for m in monsters[page*10:(page+1)*10]]
+            nav = []
+            if page:
+                nav.append({'type': 'callback', 'text': '← Предыдущие', 'payload': '/mobs '+str(page-1)})
+            if (page+1)*10 < len(monsters):
+                nav.append({'type': 'callback', 'text': 'Следующие →', 'payload': '/mobs '+str(page+1)})
+            if nav:
+                rows.append(nav)
+            await send(uid, '🐾 *Противники рядом*\nВыберите цель.' if monsters else 'Здесь нет живых противников.',
+                       max_keyboard=rows+[[{'type': 'message', 'text': '🔍 Осмотр'}]])
+        elif command == 'npc':
+            npc_id = parts[1] if len(parts) == 2 else ''
+            if npc_id not in WORLD[ch.room].get('npc', []):
+                await send(uid, 'Этот персонаж не находится рядом.')
+            else:
+                await _max_context_reply(ch, max_encounters.npc_card(npc_id), npc_id)
         elif command == "stats":
             await send(uid, ui.render_stats(ch))
         elif command == "inv":
-            await send(uid, ui.render_inventory(ch), max_keyboard=max_items.inventory_keyboard(ch))
+            await send(uid, max_items.inventory_caption(ch), max_keyboard=max_items.inventory_keyboard(ch))
         elif command == 'invlist':
             if len(parts) != 2 or not parts[1].isdigit() or len(parts[1]) > 3:
                 await send(uid, 'Откройте /inv для просмотра предметов.')
             else:
-                await send(uid, '🎒 Выберите предмет для просмотра.',
+                await send(uid, max_items.inventory_caption(ch, int(parts[1])),
                            max_keyboard=max_items.inventory_keyboard(ch, int(parts[1])))
         elif command == 'item':
             if len(parts) != 2 or parts[1] not in max_items.owned(ch):
                 await send(uid, 'Этот предмет больше не находится у героя. Откройте /inv.')
             else:
                 key = parts[1]
-                await send(uid, ui.item_caption(key, 'inv', ch),
-                           max_keyboard=[[{'type': 'message', 'text': '🎒 Сумка'},
-                                          {'type': 'message', 'text': '🔍 Осмотр'}]],
-                           max_image=item_art.image_key(key))
+                await _max_show_item(ch, key)
         elif command == "skills":
             learned = ", ".join(ch.learned) or "нет"
             await send(uid, ui.render_skills(ch) + f"\n\nКоды изученных: {learned}"
@@ -2838,8 +2944,9 @@ async def _max_handle_input(event: MaxInput):
             await send(uid, msg)
         elif command in ("npcs", "нпс"):
             here = WORLD[ch.room].get("npc", [])
-            await _max_context_reply(ch, "Здесь: " + ("; ".join(
-                f"{npclib.display_name(n)} (/talk {n})" for n in here) if here else "никого"))
+            await send(uid, '💬 *Персонажи рядом*\n'+('Выберите персонажа.' if here else 'Здесь никого нет.'),
+                       max_keyboard=[[max_ui.button(ch, '💬 '+npclib.display_name(n), 'npc', n)] for n in here]
+                       +[[{'type': 'message', 'text': '🔍 Осмотр'}]])
         elif command in ("talk", "поговорить"):
             if _mod.is_muted(uid) or not _mod.chat_allowed(uid):
                 await send(uid, "🔇 Разговор временно недоступен. Попробуйте позже.")
@@ -2952,8 +3059,8 @@ async def _max_handle_input(event: MaxInput):
         elif command in ("attack", "kill", "удар"):
             target = " ".join(parts[1:]).lower()
             mob = next((m for m in world.living_in(ch.room)
-                        if not target or target in m.meta["name"].lower()
-                        or target in m.mob_id.lower()), None)
+                        if m.hp > 0 and (not target or target in m.meta["name"].lower()
+                        or target in m.mob_id.lower() or target == m.key.lower())), None)
             if not mob:
                 await send(uid, "🚫 Здесь нет такого врага.")
                 return
@@ -2975,7 +3082,12 @@ async def _max_handle_input(event: MaxInput):
             class _Answer:
                 async def answer(self, value, **_kwargs):
                     await send(uid, value)
-            await text_action(_Answer(), ch, command, " ".join(parts[1:]).lower())
+            try:
+                await text_action(_Answer(), ch, command, " ".join(parts[1:]).lower())
+            except Exception:
+                if command in ('get', 'use', 'wield', 'drop'):
+                    _evict_stale(uid)
+                raise
         elif command == "flee":
             mob = _combat_mob(ch)
             if not mob:
@@ -3004,6 +3116,7 @@ async def _max_enqueue_input(event: MaxInput):
 
 
 async def _max_combat_progress(ch: Character, mob, lines, urgent=False):
+    from engine import max_encounters, max_navigation, max_ui, content
     if not db or not db.pool:
         return False
     try:
@@ -3012,7 +3125,10 @@ async def _max_combat_progress(ch: Character, mob, lines, urgent=False):
             return await MaxOutboxStore(db.pool).enqueue_combat(
                 ch.uid, external_id, "\n".join(lines), _max_combat.status(ch, mob),
                 f"{ch.generation}:{ch.room}", ch.generation,
-                urgent=urgent or _max_combat.low_health(ch))
+                urgent=urgent or _max_combat.low_health(ch),
+                keyboard=max_ui.with_back(max_encounters.mob_keyboard(ch, mob)
+                    if ch.hp > 0 and mob is not None and mob.hp > 0
+                    else max_navigation.keyboard(ch, content.WORLD)))
     except Exception as exc:
         # Presentation failure must not prevent death/reward handling after a hit.
         _elog.log_err(_log, "max_combat_summary_failed", exc, uid=ch.uid)
@@ -3328,7 +3444,7 @@ async def text_action(message, ch: Character, verb: str, arg: str):
         if not key:
             await message.answer("🚫 Здесь нет такого предмета."); return
         take_ground_item(ch, ch.room, key)
-        await save(ch)
+        await save(ch, force=ch.uid < 0)
         await message.answer(f"✋ Вы подняли: {mudnames.item_label(key)}")
         return
     if verb in ("use", "wield", "drop"):
@@ -3341,7 +3457,7 @@ async def text_action(message, ch: Character, verb: str, arg: str):
             # нет персональный лут (см. engine.world.ground_items_for/take_ground_item):
             # выброшенный предмет стал бы «вечным» и общим для всех игроков комнаты.
             ch.inventory.remove(key)
-            await save(ch)
+            await save(ch, force=ch.uid < 0)
             await message.answer(f"🗑 Выброшено: {mudnames.item_label(key)}")
         elif verb == "wield":
             from engine import equip as _equip
@@ -3355,7 +3471,7 @@ async def text_action(message, ch: Character, verb: str, arg: str):
                 slot = "ring1" if not ch.equipment.get("ring1") else "ring2"
             ch.equipment[slot] = key
             ch.set_durab(slot, 100)
-            await save(ch)
+            await save(ch, force=ch.uid < 0)
             await message.answer(f"⚙️ Экипировано: {mudnames.item_label(key)}")
         else:
             if ITEMS.get(key, {}).get("type") != "consumable":
@@ -3364,7 +3480,7 @@ async def text_action(message, ch: Character, verb: str, arg: str):
             if not await _combat_action_ready(ch, message.answer):
                 return
             lines, is_potion = _consume_item(ch, key)
-            await save(ch)
+            await save(ch, force=ch.uid < 0)
             if is_potion:
                 await send_tutorial(ch, "potion")
             await message.answer(f"🧪 Использовано: {mudnames.item_label(key)}\n" + "\n".join(lines))

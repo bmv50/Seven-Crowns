@@ -16,6 +16,7 @@ COMMANDS = {
     '⚙️ Настройки': '/settings', '🔔 Уведомления': '/notify', '❓ Помощь': '/help',
     '👥 Группа': '/group', '🏰 Гильдия': '/guild', '⚖️ Аукцион': '/auction',
     '✨ Возродиться': '/respawn',
+    '⬅️ Назад': '/back', '🐾 Противники': '/mobs', '🏃 Отступить': '/flee',
     '💬 Персонажи': '/npcs', '🎓 Обучение': '/train', '💰 Скупка': '/sell',
     '🔧 Ремонт': '/repair',
     '📄 Условия': '/terms', '❌ Не принимаю условия': '/termsdecline',
@@ -60,6 +61,28 @@ def command(text):
     if match:
         return f"/{_CONFIRM_COMMANDS[match[1]]} {match[2]}"
     return COMMANDS.get(text, text)
+
+
+def valid_registered_callback(value):
+    return (isinstance(value, str) and len(value) <= 512 and
+            (value in COMMANDS.values() or bool(re.fullmatch(
+                r'/(?:buyconfirm|buycancel|sellconfirm|sellcancel|repairconfirm|repaircancel|learnconfirm|learncancel|choiceconfirm|choicecancel|erracceptoffer|termsagree) [0-9a-f]{32}', value))))
+
+
+def readable(rows):
+    """Hide routing IDs/tokens in callbacks without changing service guards."""
+    result = []
+    for row in rows:
+        clean = []
+        for button in row:
+            label = button.get('text', '')
+            route = command(label)
+            if button.get('type') == 'message' and label.endswith(']') and valid_registered_callback(route):
+                clean.append({'type': 'callback', 'text': re.sub(r' \[[^\]\n]+\]$', '', label), 'payload': route})
+            else:
+                clean.append(dict(button))
+        result.append(clean)
+    return result
 
 
 def purchase_keyboard(token, operation='buy'):
@@ -139,7 +162,8 @@ def keyboard(ch, rooms):
         if ch.flags.get('dead') or ch.hp <= 0:
             labels = ['✨ Возродиться', '⚙️ Настройки', '🔔 Уведомления', '❓ Помощь']
         else:
-            labels = [_DIRECTIONS[d] for d in rooms.get(ch.room, {}).get('exits', {}) if d in _DIRECTIONS]
+            labels = ([_DIRECTIONS[d] for d, dest in rooms.get(ch.room, {}).get('exits', {}).items()
+                       if d in _DIRECTIONS and dest in rooms] if not ch.target else ['🏃 Отступить'])
             labels += ['💬 Персонажи', '🔍 Осмотр', '👤 Герой', '🎒 Сумка', '✨ Умения', '📜 Задания',
                        '🗺 Карта', '⚙️ Настройки', '🔔 Уведомления']
             if ch.level >= 3:
@@ -185,7 +209,7 @@ def context_keyboard(ch, rooms, npc_id=None):
 
 
 def validate(rows):
-    if not isinstance(rows, list) or not 1 <= len(rows) <= 16:
+    if not isinstance(rows, list) or not 1 <= len(rows) <= 30:
         raise ValueError('Invalid MAX navigation keyboard')
     result = []
     for row in rows:
@@ -197,10 +221,13 @@ def validate(rows):
                 from .max_onboarding import valid_callback
                 from .max_map import valid_callback as valid_map_callback
                 from .max_items import valid_callback as valid_item_callback
+                from .max_ui import valid_callback as valid_ui_callback
                 if (set(button) != {'type', 'text', 'payload'}
                         or not isinstance(button.get('text'), str) or not 1 <= len(button['text']) <= 128
                         or not (valid_callback(button.get('payload')) or valid_map_callback(button.get('payload'))
-                                or valid_item_callback(button.get('payload')))):
+                                or valid_item_callback(button.get('payload'))
+                                or valid_ui_callback(button.get('payload'))
+                                or valid_registered_callback(button.get('payload')))):
                     raise ValueError('Unsupported MAX callback button')
                 clean.append(dict(button))
                 continue

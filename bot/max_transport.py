@@ -47,6 +47,8 @@ def parse_update(data: dict) -> MaxInput | None:
         from engine.max_onboarding import valid_callback
         from engine.max_map import valid_callback as valid_map_callback
         from engine.max_items import valid_callback as valid_item_callback
+        from engine.max_ui import valid_callback as valid_ui_callback
+        from engine.max_navigation import valid_registered_callback
         callback, message = data.get('callback'), data.get('message')
         if not isinstance(callback, dict) or not isinstance(message, dict):
             return None
@@ -57,7 +59,8 @@ def parse_update(data: dict) -> MaxInput | None:
         if (recipient.get('chat_type') != 'dialog' or user.get('is_bot')
                 or type(user_id) is not int or user_id <= 0
                 or not isinstance(callback_id, str) or not 1 <= len(callback_id) <= 256
-                or not (valid_callback(payload) or valid_map_callback(payload) or valid_item_callback(payload))):
+                or not (valid_callback(payload) or valid_map_callback(payload) or valid_item_callback(payload)
+                        or valid_ui_callback(payload) or valid_registered_callback(payload))):
             return None
         return MaxInput(str(user_id), f'callback:{user_id}:{callback_id}', payload)
     if kind != "message_created":
@@ -176,7 +179,11 @@ class MaxClient:
             raise RuntimeError("MAX client not started")
         if not text or len(text) > 3500:
             raise ValueError('MAX chunk must contain 1–3500 characters')
-        body = {'text': text}
+        from engine.max_text import to_html
+        formatted = to_html(text)
+        if len(formatted) > 4000:
+            raise ValueError('MAX formatted chunk exceeds limit')
+        body = {'text': formatted, 'format': 'html'}
         attachments = []
         if image_asset is not None:
             image = await self.image_payload(image_asset)

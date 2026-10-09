@@ -24,8 +24,8 @@ class MaxSendError(Exception):
 
 
 def text_parts(value):
-    text = str(value).replace('*', '')
-    return [text[i:i + 3500] for i in range(0, len(text), 3500)]
+    from .max_text import parts
+    return parts(value)
 
 
 class MaxOutboxStore:
@@ -68,9 +68,11 @@ class MaxOutboxStore:
         return len(parts)
 
     async def enqueue_combat(self, uid, external_user_id, value, snapshot, battle_key,
-                             generation, urgent=False):
+                             generation, urgent=False, *, keyboard=None):
         from .identity import identity_key
         from . import max_combat
+        from .max_navigation import validate
+        encoded_keyboard = json.dumps(validate(keyboard)) if keyboard is not None else None
         _, external_user_id = identity_key('max', external_user_id)
         if type(uid) is not int or uid >= 0 or not battle_key or not isinstance(snapshot, str):
             raise ValueError('Invalid MAX combat summary')
@@ -102,10 +104,10 @@ class MaxOutboxStore:
                 combined = pending['combat_log'] + '\n' + log if pending else log
                 if pending and len(combined) <= budget:
                     await con.execute('''UPDATE max_outbox SET combat_log=$2, combat_snapshot=$3,
-                        message_text=$4, combat_open=NOT $5,
+                        message_text=$4, combat_open=NOT $5, keyboard=$6,
                         next_attempt_at=CASE WHEN $5 THEN now() ELSE next_attempt_at END
                         WHERE id=$1
-                    ''', pending['id'], combined, snapshot, max_combat.render(combined, snapshot), urgent)
+                    ''', pending['id'], combined, snapshot, max_combat.render(combined, snapshot), urgent, encoded_keyboard)
                     return True
                 if pending:
                     # Preserve the earlier chunk in full, rather than truncating old hits.
@@ -115,12 +117,12 @@ class MaxOutboxStore:
                 for index, part in enumerate(parts):
                     open_batch = not urgent and index == len(parts)-1
                     await con.execute('''INSERT INTO max_outbox(uid,external_user_id,message_text,
-                        generation,combat_key,combat_open,combat_log,combat_snapshot,next_attempt_at,expires_at)
+                        generation,combat_key,combat_open,combat_log,combat_snapshot,next_attempt_at,expires_at,keyboard)
                         VALUES($1,$2,$3,$4,$5,$6,$7,$8,
-                               now()+$9*interval '1 second',now()+$10*interval '1 second')
+                               now()+$9*interval '1 second',now()+$10*interval '1 second',$11)
                     ''', uid, external_user_id, max_combat.render(part, snapshot), generation,
                         battle_key, open_batch, part, snapshot,
-                        float(max_combat.WINDOW_SECONDS if open_batch else 0), float(max_combat.TTL_SECONDS))
+                        float(max_combat.WINDOW_SECONDS if open_batch else 0), float(max_combat.TTL_SECONDS), encoded_keyboard)
         return True
 
     async def combat_current(self, row):

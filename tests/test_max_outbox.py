@@ -91,7 +91,9 @@ async def test_http():
         assert len(calls) == 1  # no hidden retry inside transport
         assert '42' in client._last_sent  # failed requests are throttled too
     assert len(text_parts('*' + 'a' * 7001 + '*')) == 3
-    assert ''.join(text_parts('*' + 'a' * 7001 + '*')) == 'a' * 7001
+    # Keep source emphasis in the durable outbox; the MAX transport now
+    # converts it to supported HTML rather than leaving backslash artifacts.
+    assert ''.join(text_parts('*' + 'a' * 7001 + '*')) == '*'+'a'*7001+'*'
     assert text_parts('') == []
 
 
