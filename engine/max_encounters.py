@@ -1,6 +1,6 @@
 """Read-only MAX room/entity presentation over the live shared world."""
 import copy
-from . import content, combat, rules2, npc, max_ui
+from . import content, combat, rules2, npc, max_ui, skills
 from .textsafe import esc_md
 
 DT = {'bash': 'дробящий', 'slash': 'режущий', 'pierce': 'колющий', 'fire': 'огонь',
@@ -87,9 +87,35 @@ def mob_card(ch, mob, compare=False):
     return '\n'.join(lines)
 
 
+def combat_skills(ch, ready_only=True):
+    """Read-only loadout selection; execution still uses the shared combat rules."""
+    if ch.hp <= 0 or ch.flags.get('dead'):
+        return []
+    learned = set(ch.learned or ch.class_basics)
+    result = []
+    for sid in ch.skills:
+        sk = content.SKILLS.get(sid)
+        if (not sk or sid in result or sid not in learned
+                or skills.class_of(sid) != ch.cls):
+            continue
+        if ready_only and (ch.cooldowns.get(sid, 0) > 0 or ch.mp < sk['mp']):
+            continue
+        result.append(sid)
+    return result
+
+
 def mob_keyboard(ch, mob):
-    rows = [[max_ui.button(ch, '⚔️ Ударить' if ch.target == mob.key else '⚔️ Напасть', 'attack', mob.key),
-             max_ui.button(ch, '🔍 Оценить силы', 'consider', mob.key)]]
+    rows = [[max_ui.button(ch, '⚔️ Ударить' if ch.target == mob.key else '⚔️ Напасть', 'attack', mob.key)]]
+    if not ch.target:
+        rows[0].append(max_ui.button(ch, '🔍 Оценить силы', 'consider', mob.key))
+    elif ch.target == mob.key and mob.hp > 0 and not mob.dead_at:
+        buttons = []
+        for sid in combat_skills(ch):
+            sk = content.SKILLS[sid]
+            cost = f" · {ch.resource_emoji}{sk['mp']}" if sk['mp'] else ''
+            buttons.append(max_ui.button(ch, sk['emoji']+' '+sk['name']+cost,
+                                         'cast', sid+'|'+mob.key))
+        rows.extend(buttons[i:i+2] for i in range(0, len(buttons), 2))
     if ch.target:
         rows.append([{'type': 'message', 'text': '🏃 Отступить'}])
     return rows

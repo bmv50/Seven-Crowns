@@ -2718,6 +2718,7 @@ async def _max_handle_input(event: MaxInput):
             analytics.track(uid, "character_created", {"race": race, "cls": cls})
             await _max_room_reply(new, f"✨ Герой {name} создан. Вы в общем мире «Семи Корон».")
             return
+        cast_target = None
         if command == 'ui':
             selection = max_ui.resolve(ch, text)
             if selection is None:
@@ -2727,6 +2728,14 @@ async def _max_handle_input(event: MaxInput):
             command = {'equip': 'itemact', 'unequip': 'itemact', 'use': 'itemact',
                        'sell': 'selloffer', 'attack': 'attack'}.get(action, action)
             parts = [command, action, key] if command == 'itemact' else [command, key]
+            if action == 'cast':
+                sid, _, cast_target = key.partition('|')
+                target = world.find(ch.room, cast_target)
+                if (ch.target != cast_target or target is None or target.hp <= 0
+                        or sid not in max_encounters.combat_skills(ch, ready_only=False)):
+                    await _max_room_reply(ch, 'Боевая кнопка устарела. Откройте текущего противника заново.')
+                    return
+                parts = ['cast', sid]
         if command == 'back':
             parts = max_ui.back(ch).split()
             command = cmds.canonical(parts[0])
@@ -3083,7 +3092,10 @@ async def _max_handle_input(event: MaxInput):
                 async def answer(self, value, **_kwargs):
                     await send(uid, value)
             try:
-                await text_action(_Answer(), ch, command, " ".join(parts[1:]).lower())
+                if cast_target is not None:
+                    await text_action(_Answer(), ch, command, parts[1], target_key=cast_target)
+                else:
+                    await text_action(_Answer(), ch, command, " ".join(parts[1:]).lower())
             except Exception:
                 if command in ('get', 'use', 'wield', 'drop'):
                     _evict_stale(uid)
@@ -3381,7 +3393,7 @@ async def do_flee(cb: CallbackQuery, ch: Character):
             await render_combat_cb(cb, ch)
 
 
-async def text_action(message, ch: Character, verb: str, arg: str):
+async def text_action(message, ch: Character, verb: str, arg: str, *, target_key=None):
     """Текстовые команды действий: cast/bash/flee/get/use/wield/drop/kill."""
     from bot import mudnames
     if verb == "flee":
@@ -3418,6 +3430,14 @@ async def text_action(message, ch: Character, verb: str, arg: str):
         if not await _combat_action_ready(ch, message.answer):
             return
         party = _combat_party(ch)
+        if target_key is not None:
+            from engine.max_encounters import combat_skills
+            target = world.find(ch.room, target_key)
+            if (ch.target != target_key or target is None or target.hp <= 0
+                    or sid not in combat_skills(ch, ready_only=False)):
+                _action_pacer.refund(ch.uid)
+                await message.answer('Боевая кнопка устарела. Откройте текущего противника заново.')
+                return
         ok, lines = combat.use_skill(ch, sid, world, party)
         if not ok:
             _action_pacer.refund(ch.uid)

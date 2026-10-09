@@ -17,7 +17,7 @@ _HISTORY = OrderedDict()
 READ = {'look', 'stats', 'inv', 'invlist', 'item', 'mobs', 'mob', 'consider',
         'npcs', 'npc', 'skills', 'quests', 'map', 'settings', 'notify', 'group',
         'guild', 'auction', 'train', 'shop', 'sell', 'help', 'terms', 'privacy', 'rules', 'support'}
-ACTIONS = {'equip', 'unequip', 'use', 'sell', 'attack', 'mob', 'consider', 'npc', 'talk'}
+ACTIONS = {'equip', 'unequip', 'use', 'sell', 'attack', 'cast', 'mob', 'consider', 'npc', 'talk'}
 
 
 def _digest(data):
@@ -57,6 +57,10 @@ def _decode(value):
         raise ValueError('Invalid NPC')
     if action in {'mob', 'attack', 'consider'} and not re.fullmatch(r'[\w:-]+', key):
         raise ValueError('Invalid mob')
+    if action == 'cast':
+        skill, separator, target = key.partition('|')
+        if not separator or skill not in content.SKILLS or not re.fullmatch(r'[\w:-]+', target):
+            raise ValueError('Invalid combat skill')
     return parts, values
 
 

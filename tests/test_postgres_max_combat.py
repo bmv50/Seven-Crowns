@@ -46,7 +46,11 @@ async def run(dsn):
         ch.room = 'cellar'
         await db.save(ch)
         mob = world.living_in(ch.room)[0]
+        ch.target = mob.key
+        ch.mp = ch.max_mp
         menu = max_ui.with_back(max_encounters.mob_keyboard(ch, mob))
+        assert any(max_ui.resolve(ch, b.get('payload', ''))[0] == 'cast'
+                   for row in menu for b in row if b.get('payload', '').startswith('/ui '))
         assert await store.enqueue_combat(uid, '42', 'кнопки боя', '❤️ 100/100', 'buttons',
                                           ch.generation, urgent=True, keyboard=menu)
         await db.close()
