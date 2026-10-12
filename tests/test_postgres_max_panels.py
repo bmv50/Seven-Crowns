@@ -76,8 +76,8 @@ async def run(dsn):
         await worker.process_one()
         assert client.send_chunk.await_args.kwargs['edit_message_id'] == 'mid.clicked'
         # Deleted source: force-new persists before fallback and survives a timeout/restart.
-        await store.enqueue(uid,'42','Карточка',keyboard=menu,edit_message_id='mid.deleted',
-                            panel_key=key,generation=ch.generation)
+        await store.enqueue_combat(uid,'42','Карточка','HP 38/100',key,ch.generation,
+                                   urgent=True,keyboard=menu,edit_message_id='mid.deleted')
         client.send_chunk.side_effect = [MaxSendError(404),TimeoutError()]
         await worker.process_one()
         failed = await db.pool.fetchrow("SELECT * FROM max_outbox WHERE status='pending'")
