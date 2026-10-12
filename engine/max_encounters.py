@@ -1,6 +1,8 @@
 """Read-only MAX room/entity presentation over the live shared world."""
 import copy
+import time
 from . import content, combat, rules2, npc, max_ui, skills
+from .world import CORPSE_TTL
 from .textsafe import esc_md
 
 DT = {'bash': 'дробящий', 'slash': 'режущий', 'pierce': 'колющий', 'fire': 'огонь',
@@ -11,6 +13,17 @@ DT = {'bash': 'дробящий', 'slash': 'режущий', 'pierce': 'колю
 
 def living(ch, world):
     return [m for m in world.living_in(ch.room) if m.hp > 0]
+
+
+def corpse_key(corpse):
+    # Bind to the corpse incarnation, not only a sequence reused after restart.
+    return corpse['key']+'|'+str(int(corpse['dead_at']*1000000))
+
+
+def lootable_corpses(ch, world, now=None):
+    now = time.time() if now is None else now
+    return [c for c in world.corpses_in(ch.room)
+            if c.get('loot') and 0 <= now-c['dead_at'] < CORPSE_TTL]
 
 
 def room_card(ch, world, others):
@@ -30,9 +43,8 @@ def room_card(ch, world, others):
     ground = ground_items_for(ch, ch.room)
     if ground:
         lines += ['', '*На земле*', ', '.join(content.ITEMS[key]['name'] for key in ground)]
-    for corpse in world.corpses_in(ch.room):
-        if corpse.get('loot'):
-            lines.append('💀 '+corpse.get('name', 'Останки')+' · есть добыча')
+    for corpse in lootable_corpses(ch, world):
+        lines.append('💀 '+corpse.get('name', 'Останки')+' · есть добыча')
     players = [other for other in others if other.uid != ch.uid]
     if players:
         lines += ['', '*Игроки рядом*', ', '.join(esc_md(other.name) for other in players)]
@@ -43,7 +55,11 @@ def room_card(ch, world, others):
 
 
 def entity_rows(ch, world):
-    rows = [[max_ui.button(ch, mob.meta.get('emoji', '🐾')+' '+mob.meta['name']+
+    rows = ([[max_ui.button(ch, '🎒 Обыскать: '+corpse.get('name', 'Останки'),
+                           'loot', corpse_key(corpse))]
+             for corpse in lootable_corpses(ch, world)[:6]]
+            if ch.hp > 0 and not ch.flags.get('dead') else [])
+    rows += [[max_ui.button(ch, mob.meta.get('emoji', '🐾')+' '+mob.meta['name']+
                           f" · ур.{mob.meta.get('level', 1)}", 'mob', mob.key)]
             for mob in living(ch, world)[:6]]
     rows += [[max_ui.button(ch, '💬 '+npc.display_name(key), 'npc', key)]

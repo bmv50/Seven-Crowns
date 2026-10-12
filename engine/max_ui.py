@@ -17,7 +17,7 @@ _HISTORY = OrderedDict()
 READ = {'look', 'stats', 'inv', 'invlist', 'item', 'mobs', 'mob', 'consider',
         'npcs', 'npc', 'skills', 'quests', 'map', 'settings', 'notify', 'group',
         'guild', 'auction', 'train', 'shop', 'sell', 'help', 'terms', 'privacy', 'rules', 'support'}
-ACTIONS = {'equip', 'unequip', 'use', 'sell', 'attack', 'cast', 'mob', 'consider', 'npc', 'talk'}
+ACTIONS = {'equip', 'unequip', 'use', 'sell', 'attack', 'cast', 'loot', 'mob', 'consider', 'npc', 'talk'}
 
 
 def _digest(data):
@@ -61,6 +61,8 @@ def _decode(value):
         skill, separator, target = key.partition('|')
         if not separator or skill not in content.SKILLS or not re.fullmatch(r'[\w:-]+', target):
             raise ValueError('Invalid combat skill')
+    if action == 'loot' and not re.fullmatch(r'corpse:[\w:-]+\|[0-9]{1,20}', key):
+        raise ValueError('Invalid corpse')
     return parts, values
 
 

@@ -569,6 +569,31 @@ async def _max_room_reply(ch, prefix=''):
         await send(ch.uid, text, max_keyboard=keyboard, max_image=image)
 
 
+async def _max_loot_corpse(ch, key):
+    if ch.hp <= 0 or ch.flags.get('dead'):
+        await _max_reply(ch.uid, '💀 Сначала возродитесь.')
+        return
+    corpse = next((c for c in max_encounters.lootable_corpses(ch, world)
+                   if max_encounters.corpse_key(c) == key), None)
+    if corpse is None:
+        await _max_room_reply(ch, '💨 Тело уже обыскали или оно истлело.')
+        return
+    # Claim the shared resource synchronously, before the first await. Two
+    # players clicking the same corpse can never both receive its inventory.
+    items = world.loot_corpse(ch.room, corpse['key'])
+    ch.inventory.extend(items)
+    try:
+        # Direct save propagates stale-generation errors instead of reporting
+        # success for an evicted hero. Never restore loot after uncertain COMMIT.
+        await db.save(ch)
+    except Exception:
+        _evict_stale(ch.uid)
+        raise
+    from engine import rarity
+    lines = [f"{rarity.emoji(item)} {ITEMS[item]['name']}" for item in items]
+    await _max_room_reply(ch, '🎒 *Вы обыскали тело и забрали:*\n'+'\n'.join(lines))
+
+
 async def _max_show_item(ch, key, note=''):
     if key not in max_items.owned(ch):
         await _max_reply(ch.uid, 'Этот предмет больше не находится у героя. Откройте /inv.')
@@ -2804,6 +2829,11 @@ async def _max_handle_input(event: MaxInput):
             return
         if command == "look":
             await _max_room_reply(ch)
+        elif command == 'loot':
+            if len(parts) == 2 and event.text.strip().startswith('/ui '):
+                await _max_loot_corpse(ch, parts[1])
+            else:
+                await _max_room_reply(ch, 'Нажмите «Обыскать» под карточкой текущей локации.')
         elif command == 'itemact':
             if len(parts) == 3 and event.text.strip().startswith('/ui '):
                 await _max_item_action(ch, parts[1], parts[2])

@@ -11,6 +11,8 @@ from .content import (WORLD, MOBS, HP_SCALE, RESPAWN_SCALE,
                       STARTER_MAX_LEVEL, STARTER_RESPAWN_SCALE,
                       ROAM_INTERVAL, ROAM_CHANCE, ROAM_CAP, ROAM_MAX_LEVEL)
 
+CORPSE_TTL = 180.0
+
 
 class MobInstance:
     """Конкретный экземпляр моба в конкретной комнате."""
@@ -195,7 +197,7 @@ class World:
         self.corpses[room] = [x for x in self.corpses.get(room, []) if x["key"] != key]
         return items
 
-    def process_corpse_decay(self, ttl: float = 180.0):
+    def process_corpse_decay(self, ttl: float = CORPSE_TTL):
         """Убрать истлевшие трупы."""
         now = time.time()
         for room in list(self.corpses):
