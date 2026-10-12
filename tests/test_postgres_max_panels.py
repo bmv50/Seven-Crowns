@@ -68,7 +68,11 @@ async def run(dsn):
                             panel_key=key,generation=ch.generation)
         client.send_chunk.return_value = 'mid.clicked'
         await worker.process_one()
-        await store.enqueue_combat(uid,'42','Заклинание','HP 40/100',key,ch.generation,urgent=True,keyboard=menu)
+        await store.enqueue_combat(uid,'42','Заклинание','HP 40/100',key,ch.generation,urgent=True,keyboard=menu,
+                                   edit_message_id='mid.clicked')
+        await worker.process_one()
+        assert client.send_chunk.await_args.kwargs['edit_message_id'] == 'mid.clicked'
+        await store.enqueue_combat(uid,'42','Ответ моба','HP 35/100',key,ch.generation,urgent=True,keyboard=menu)
         await worker.process_one()
         assert client.send_chunk.await_args.kwargs['edit_message_id'] == 'mid.clicked'
         # Deleted source: force-new persists before fallback and survives a timeout/restart.
@@ -132,7 +136,12 @@ async def run(dsn):
 if __name__ == '__main__':
     dsn = os.getenv('TEST_DATABASE_URL')
     if dsn:
-        asyncio.run(run(dsn))
+        try:
+            asyncio.run(run(dsn))
+        except AssertionError as exc:
+            import traceback
+            frame = traceback.extract_tb(exc.__traceback__)[-1]
+            raise AssertionError(f'MAX panel PostgreSQL check, line {frame.lineno}: {frame.line}') from exc
         print('OK: PostgreSQL MAX source/edit restart, combat panel reuse, persisted fallback, lease fencing, chunk integrity and rollback')
     else:
         print('SKIP: TEST_DATABASE_URL missing; PostgreSQL MAX panel tests run in CI')
