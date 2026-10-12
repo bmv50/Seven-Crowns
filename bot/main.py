@@ -514,6 +514,14 @@ async def send(uid: int, text: str, *, max_keyboard=None, max_image=None):
                 await MaxOutboxStore(db.pool).enqueue(uid, external_id, text)
             else:
                 options = {'keyboard': max_keyboard}
+                from engine import max_panel
+                if max_keyboard is not None:
+                    source = max_panel.target(external_id)
+                    if source is not None:
+                        options['edit_message_id'] = source
+                    actor = globals().get('chars', {}).get(uid)
+                    if actor is not None:
+                        options.update(panel_key=max_panel.key(actor), generation=actor.generation)
                 if max_image is not None:
                     options['image_asset'] = max_image
                 await MaxOutboxStore(db.pool).enqueue(uid, external_id, text, **options)
@@ -1753,7 +1761,10 @@ async def combat_reward(ch: Character, text: str):
     """Моб убит: удаляем боевую панель и публикуем итог (удар+награда+комната)
     НОВЫМ сообщением внизу, чтобы ничего не оставалось «под меню»."""
     if ch.uid < 0:
-        await _max_room_reply(ch, text)
+        from engine import max_panel
+        # A victory is a new milestone, not a replacement for the attack card.
+        with max_panel.reply_scope('', None):
+            await _max_room_reply(ch, text)
         return
     cv = combat_view.pop(ch.uid, None)
     # строки урона НЕ показываем — только итог боя (убит/награда) и комнату
@@ -3154,7 +3165,8 @@ async def _max_handle_input(event: MaxInput):
 async def _max_enqueue_input(event: MaxInput):
     if not db or not db.pool:
         raise RuntimeError("MAX webhook requires PostgreSQL")
-    await db.enqueue_max_update(event.event_key, event.external_user_id, event.text)
+    options = {'source_message_id': event.source_message_id} if event.source_message_id else {}
+    await db.enqueue_max_update(event.event_key, event.external_user_id, event.text, **options)
 
 
 async def _max_combat_progress(ch: Character, mob, lines, urgent=False):
@@ -3164,13 +3176,18 @@ async def _max_combat_progress(ch: Character, mob, lines, urgent=False):
     try:
         external_id = await db.max_external_user_id(ch.uid)
         if external_id:
+            from engine import max_panel
+            source = max_panel.target(external_id)
+            options = {'edit_message_id': source} if source is not None else {}
+            if source is None and max_panel.enabled() and max_panel.is_input(external_id):
+                options['edit_message_id'] = ''  # Text input starts a visible new panel.
             return await MaxOutboxStore(db.pool).enqueue_combat(
                 ch.uid, external_id, "\n".join(lines), _max_combat.status(ch, mob),
                 f"{ch.generation}:{ch.room}", ch.generation,
                 urgent=urgent or _max_combat.low_health(ch),
                 keyboard=max_ui.with_back(max_encounters.mob_keyboard(ch, mob)
                     if ch.hp > 0 and mob is not None and mob.hp > 0
-                    else max_navigation.keyboard(ch, content.WORLD)))
+                    else max_navigation.keyboard(ch, content.WORLD)), **options)
     except Exception as exc:
         # Presentation failure must not prevent death/reward handling after a hit.
         _elog.log_err(_log, "max_combat_summary_failed", exc, uid=ch.uid)
@@ -3184,14 +3201,17 @@ async def _max_inbox_worker():
         if not row:
             await asyncio.sleep(0.25)
             continue
-        event = MaxInput(row["external_user_id"], row["event_key"], row["message_text"])
+        event = MaxInput(row["external_user_id"], row["event_key"], row["message_text"],
+                         row.get('source_message_id'))
         if event.event_key.startswith('callback:'):
             try:
                 await _max_client.answer_callback(event.event_key.split(':', 2)[2])
             except Exception as exc:
                 _elog.log_err(_log, 'max_callback_answer_failed', error_type=type(exc).__name__)
         try:
-            await _max_handle_input(event)
+            from engine import max_panel
+            with max_panel.reply_scope(event.external_user_id, event.source_message_id):
+                await _max_handle_input(event)
         except Exception as e:
             _elog.log_err(_log, "max_input_failed", e, event_key=event.event_key)
             await db.finish_max_update(event.event_key, failed=True)

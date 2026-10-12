@@ -100,6 +100,7 @@ CREATE TABLE IF NOT EXISTS max_inbox (
 );
 CREATE INDEX IF NOT EXISTS idx_max_inbox_pending ON max_inbox(received_at)
     WHERE status='pending';
+ALTER TABLE max_inbox ADD COLUMN IF NOT EXISTS source_message_id TEXT;
 -- Delivery is retried independently; game inputs are NEVER replayed here.
 CREATE TABLE IF NOT EXISTS max_outbox (
     id BIGSERIAL PRIMARY KEY,
@@ -130,6 +131,11 @@ ALTER TABLE max_outbox ADD COLUMN IF NOT EXISTS combat_log TEXT;
 ALTER TABLE max_outbox ADD COLUMN IF NOT EXISTS combat_snapshot TEXT;
 ALTER TABLE max_outbox ADD COLUMN IF NOT EXISTS keyboard JSONB;
 ALTER TABLE max_outbox ADD COLUMN IF NOT EXISTS image_asset TEXT;
+ALTER TABLE max_outbox ADD COLUMN IF NOT EXISTS edit_message_id TEXT;
+ALTER TABLE max_outbox ADD COLUMN IF NOT EXISTS delivered_message_id TEXT;
+ALTER TABLE max_outbox ADD COLUMN IF NOT EXISTS panel_key TEXT;
+CREATE INDEX IF NOT EXISTS idx_max_outbox_panel ON max_outbox(uid,panel_key,id DESC)
+    WHERE delivered_message_id IS NOT NULL;
 CREATE TABLE IF NOT EXISTS max_onboarding (
     uid BIGINT PRIMARY KEY CHECK (uid<0),
     state JSONB NOT NULL,
@@ -638,14 +644,18 @@ class Database:
             "WHERE platform='max' AND uid=$1", uid)
 
     async def enqueue_max_update(self, event_key: str, external_user_id: str,
-                                 message_text: str) -> bool:
+                                 message_text: str, *, source_message_id=None) -> bool:
         """Persist the input before webhook ACK; duplicate deliveries are ignored."""
         if not self.pool:
             raise RuntimeError("MAX webhook requires PostgreSQL")
+        if source_message_id is not None:
+            from .max_panel import valid_mid
+            if not event_key.startswith('callback:') or not valid_mid(source_message_id):
+                raise ValueError('Invalid MAX source card')
         row = await self.pool.fetchval(
-            "INSERT INTO max_inbox(event_key, external_user_id, message_text) "
-            "VALUES($1,$2,$3) ON CONFLICT DO NOTHING RETURNING event_key",
-            event_key, external_user_id, message_text)
+            "INSERT INTO max_inbox(event_key, external_user_id, message_text, source_message_id) "
+            "VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING RETURNING event_key",
+            event_key, external_user_id, message_text, source_message_id)
         return row is not None
 
     async def claim_next_max_update(self):
@@ -655,7 +665,7 @@ class Database:
         async with self.pool.acquire() as con:
             async with con.transaction():
                 row = await con.fetchrow("""
-                    SELECT event_key, external_user_id, message_text FROM max_inbox
+                    SELECT event_key, external_user_id, message_text, source_message_id FROM max_inbox
                     WHERE status='pending' ORDER BY received_at, event_key
                     LIMIT 1 FOR UPDATE SKIP LOCKED
                 """)
@@ -668,7 +678,7 @@ class Database:
         if not self.pool:
             raise RuntimeError("MAX inbox requires PostgreSQL")
         await self.pool.execute(
-            "UPDATE max_inbox SET status=$2, message_text=NULL, finished_at=now() "
+            "UPDATE max_inbox SET status=$2, message_text=NULL, source_message_id=NULL, finished_at=now() "
             "WHERE event_key=$1 AND status='processing'",
             event_key, "failed" if failed else "done")
 

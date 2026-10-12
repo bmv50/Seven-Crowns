@@ -27,6 +27,7 @@ class MaxInput:
     external_user_id: str
     event_key: str
     text: str
+    source_message_id: str | None = None
 
 
 def parse_update(data: dict) -> MaxInput | None:
@@ -62,7 +63,16 @@ def parse_update(data: dict) -> MaxInput | None:
                 or not (valid_callback(payload) or valid_map_callback(payload) or valid_item_callback(payload)
                         or valid_ui_callback(payload) or valid_registered_callback(payload))):
             return None
-        return MaxInput(str(user_id), f'callback:{user_id}:{callback_id}', payload)
+        from engine.max_panel import valid_mid
+        body, sender = message.get('body') or {}, message.get('sender') or {}
+        mid = body.get('mid') if isinstance(body, dict) else None
+        # Only bot-authored source cards may be edited. Message commands and
+        # legacy updates without a source ID retain the normal new-message path.
+        source = mid if (valid_mid(mid) and isinstance(sender, dict)
+                         and sender.get('is_bot') is True) else None
+        if recipient.get('user_id') not in (None, user_id):
+            return None
+        return MaxInput(str(user_id), f'callback:{user_id}:{callback_id}', payload, source)
     if kind != "message_created":
         return None
     message = data.get("message") or {}
@@ -173,7 +183,8 @@ class MaxClient:
             self._image_tokens[asset] = payload
             return payload
 
-    async def send_chunk(self, external_user_id: str, text: str, *, keyboard=None, image_asset=None):
+    async def send_chunk(self, external_user_id: str, text: str, *, keyboard=None, image_asset=None,
+                         edit_message_id=None):
         """Send one persisted chunk, with no hidden network retry."""
         if self._session is None:
             raise RuntimeError("MAX client not started")
@@ -184,6 +195,11 @@ class MaxClient:
         if len(formatted) > 4000:
             raise ValueError('MAX formatted chunk exceeds limit')
         body = {'text': formatted, 'format': 'html'}
+        if edit_message_id is not None:
+            from engine.max_panel import valid_mid
+            if not valid_mid(edit_message_id):
+                raise ValueError('Invalid MAX message ID')
+            body['notify'] = False
         attachments = []
         if image_asset is not None:
             image = await self.image_payload(image_asset)
@@ -192,7 +208,7 @@ class MaxClient:
         if keyboard is not None:
             from engine.max_navigation import validate
             attachments.append({'type': 'inline_keyboard', 'payload': {'buttons': validate(keyboard)}})
-        if attachments:
+        if attachments or edit_message_id is not None:
             body['attachments'] = attachments
         lock = self._dialog_locks.setdefault(external_user_id, asyncio.Lock())
         async with lock:
@@ -201,9 +217,11 @@ class MaxClient:
             if delay > 0:
                 await asyncio.sleep(delay)
             try:
-                async with self._session.post(
+                method = self._session.put if edit_message_id is not None else self._session.post
+                async with method(
                     f"{API_URL}/messages",
-                    params={"user_id": external_user_id},
+                    params=({'message_id': edit_message_id} if edit_message_id is not None
+                            else {"user_id": external_user_id}),
                     json=body,
                     headers={"Authorization": self._token},
                     allow_redirects=False,
@@ -228,11 +246,16 @@ class MaxClient:
                         payload = await response.json()
                     except ValueError:
                         raise MaxSendError(502) from None
+                    if edit_message_id is not None:
+                        if not isinstance(payload, dict) or payload.get('success') is not True:
+                            raise MaxSendError(502)
+                        return edit_message_id
                     message = payload.get('message') if isinstance(payload, dict) else None
                     body = message.get('body') if isinstance(message, dict) else None
                     mid = body.get('mid') if isinstance(body, dict) else None
                     if not isinstance(mid, str) or not mid:
                         raise MaxSendError(502)
+                    return mid
             finally:
                 # Throttle failures too, not only successful responses.
                 self._last_sent[external_user_id] = loop.time()

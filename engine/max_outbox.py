@@ -34,7 +34,8 @@ class MaxOutboxStore:
             raise RuntimeError('MAX outbox requires PostgreSQL')
         self.pool = pool
 
-    async def enqueue(self, uid, external_user_id, value, *, keyboard=None, image_asset=None):
+    async def enqueue(self, uid, external_user_id, value, *, keyboard=None, image_asset=None,
+                      edit_message_id=None, panel_key=None, generation=None):
         from .identity import identity_key
         _, external_user_id = identity_key('max', external_user_id)
         if type(uid) is not int or uid >= 0:
@@ -48,6 +49,13 @@ class MaxOutboxStore:
         parts = text_parts(value)
         if not parts:
             return 0
+        from .max_panel import valid_mid
+        if edit_message_id not in (None, '') and not valid_mid(edit_message_id):
+            raise ValueError('Invalid MAX source card')
+        # Long text must not overwrite itself: preserve all chunks as new
+        # messages and make only the last chunk the next active panel.
+        if len(parts) != 1:
+            edit_message_id = None
         async with self.pool.acquire() as con:
             async with con.transaction():
                 # Keep all chunks of concurrent replies contiguous in this dialog.
@@ -59,20 +67,25 @@ class MaxOutboxStore:
                     WHERE external_user_id=$1 AND combat_open AND status='pending' AND attempts=0
                 ''', external_user_id)
                 await con.executemany('''
-                    INSERT INTO max_outbox(uid, external_user_id, message_text, keyboard, image_asset)
-                    VALUES($1,$2,$3,$4,$5)
+                    INSERT INTO max_outbox(uid, external_user_id, message_text, keyboard, image_asset,
+                                           edit_message_id,panel_key,generation)
+                    VALUES($1,$2,$3,$4,$5,$6,$7,$8)
                 ''', [(uid, external_user_id, part,
                        json.dumps(keyboard) if keyboard is not None and i == len(parts)-1 else None,
-                       image_asset if i == len(parts)-1 else None)
+                       image_asset if i == len(parts)-1 else None,
+                       edit_message_id, panel_key if i == len(parts)-1 else None, generation)
                       for i, part in enumerate(parts)])
         return len(parts)
 
     async def enqueue_combat(self, uid, external_user_id, value, snapshot, battle_key,
-                             generation, urgent=False, *, keyboard=None):
+                             generation, urgent=False, *, keyboard=None, edit_message_id=None):
         from .identity import identity_key
         from . import max_combat
         from .max_navigation import validate
         encoded_keyboard = json.dumps(validate(keyboard)) if keyboard is not None else None
+        from .max_panel import valid_mid
+        if edit_message_id not in (None, '') and not valid_mid(edit_message_id):
+            raise ValueError('Invalid MAX source card')
         _, external_user_id = identity_key('max', external_user_id)
         if type(uid) is not int or uid >= 0 or not battle_key or not isinstance(snapshot, str):
             raise ValueError('Invalid MAX combat summary')
@@ -105,9 +118,11 @@ class MaxOutboxStore:
                 if pending and len(combined) <= budget:
                     await con.execute('''UPDATE max_outbox SET combat_log=$2, combat_snapshot=$3,
                         message_text=$4, combat_open=NOT $5, keyboard=$6,
+                        edit_message_id=COALESCE($7,edit_message_id),
                         next_attempt_at=CASE WHEN $5 THEN now() ELSE next_attempt_at END
                         WHERE id=$1
-                    ''', pending['id'], combined, snapshot, max_combat.render(combined, snapshot), urgent, encoded_keyboard)
+                    ''', pending['id'], combined, snapshot, max_combat.render(combined, snapshot), urgent,
+                        encoded_keyboard, edit_message_id)
                     return True
                 if pending:
                     # Preserve the earlier chunk in full, rather than truncating old hits.
@@ -117,12 +132,15 @@ class MaxOutboxStore:
                 for index, part in enumerate(parts):
                     open_batch = not urgent and index == len(parts)-1
                     await con.execute('''INSERT INTO max_outbox(uid,external_user_id,message_text,
-                        generation,combat_key,combat_open,combat_log,combat_snapshot,next_attempt_at,expires_at,keyboard)
+                        generation,combat_key,combat_open,combat_log,combat_snapshot,next_attempt_at,expires_at,keyboard,
+                        edit_message_id,panel_key)
                         VALUES($1,$2,$3,$4,$5,$6,$7,$8,
-                               now()+$9*interval '1 second',now()+$10*interval '1 second',$11)
+                               now()+$9*interval '1 second',now()+$10*interval '1 second',$11,$12,$13)
                     ''', uid, external_user_id, max_combat.render(part, snapshot), generation,
                         battle_key, open_batch, part, snapshot,
-                        float(max_combat.WINDOW_SECONDS if open_batch else 0), float(max_combat.TTL_SECONDS), encoded_keyboard)
+                        float(max_combat.WINDOW_SECONDS if open_batch else 0), float(max_combat.TTL_SECONDS),
+                        encoded_keyboard, edit_message_id if len(parts) == 1 else '',
+                        battle_key if keyboard is not None and index == len(parts)-1 else None)
         return True
 
     async def combat_current(self, row):
@@ -188,7 +206,22 @@ class MaxOutboxStore:
         ''', uid, external_user_id, text, category, generation,
             datetime.fromtimestamp(deadline, timezone.utc), key) is not None
 
-    async def finish(self, row, status, error=None, delay=0, *, con=None, attempted=True):
+    async def active_panel(self, row):
+        return await self.pool.fetchval('''SELECT delivered_message_id FROM max_outbox
+            WHERE uid=$1 AND external_user_id=$2 AND panel_key=$3 AND combat_key=$3 AND id<$4
+              AND status='sent' AND delivered_message_id IS NOT NULL
+            ORDER BY id DESC LIMIT 1
+        ''', row['uid'], row['external_user_id'], row['panel_key'], row['id'])
+
+    async def abandon_edit(self, row):
+        # Empty string means force-new, including on a delivery retry. Persist
+        # before fallback POST so a lost response cannot repeat the failed edit.
+        return await self.pool.fetchval('''UPDATE max_outbox SET edit_message_id=''
+            WHERE id=$1 AND lease_token=$2 AND status='processing' RETURNING id
+        ''', row['id'], row['lease_token']) is not None
+
+    async def finish(self, row, status, error=None, delay=0, *, con=None, attempted=True,
+                     delivered_message_id=None):
         if status not in ('sent', 'failed', 'pending'):
             raise ValueError('Invalid outbox status')
         # Lease fencing prevents a stale sender from changing a recovered claim.
@@ -202,10 +235,13 @@ class MaxOutboxStore:
                 combat_snapshot=CASE WHEN $3='pending' THEN combat_snapshot ELSE NULL END,
                 keyboard=CASE WHEN $3='pending' THEN keyboard ELSE NULL END,
                 image_asset=CASE WHEN $3='pending' THEN image_asset ELSE NULL END,
+                edit_message_id=CASE WHEN $3='pending' THEN edit_message_id ELSE NULL END,
+                delivered_message_id=CASE WHEN $3='sent' THEN $7 ELSE delivered_message_id END,
                 finished_at=CASE WHEN $3='pending' THEN NULL ELSE now() END
             WHERE id=$1 AND lease_token=$2 AND status='processing'
             RETURNING id
-        ''', row['id'], row['lease_token'], status, error, float(delay), attempted) is not None
+        ''', row['id'], row['lease_token'], status, error, float(delay), attempted,
+            delivered_message_id) is not None
 
     async def cleanup(self):
         await self.pool.execute("DELETE FROM max_outbox WHERE finished_at<now()-interval '7 days'")
@@ -225,8 +261,8 @@ class MaxOutboxWorker:
         if row['expired'] or row['attempts'] > MAX_ATTEMPTS:
             await self.store.finish(row, 'failed', 'expired' if row['expired'] else 'attempts_exhausted')
             return True
-        if row.get('combat_key') and not await self.store.combat_current(row):
-            await self.store.finish(row, 'failed', 'stale_combat')
+        if (row.get('combat_key') or row.get('panel_key')) and not await self.store.combat_current(row):
+            await self.store.finish(row, 'failed', 'stale_combat' if row.get('combat_key') else 'stale_panel')
             return True
         try:
             if row.get('category'):
@@ -242,7 +278,21 @@ class MaxOutboxWorker:
                 options['keyboard'] = keyboard
             if row.get('image_asset') is not None:
                 options['image_asset'] = row['image_asset']
-            await self.client.send_chunk(row['external_user_id'], row['message_text'], **options)
+            from .max_panel import enabled, valid_mid
+            target = row.get('edit_message_id') if enabled() else None
+            if (enabled() and target is None and row.get('combat_key') and row.get('panel_key')):
+                target = await self.store.active_panel(row)
+            if valid_mid(target):
+                options['edit_message_id'] = target
+            try:
+                delivered = await self.client.send_chunk(row['external_user_id'], row['message_text'], **options)
+            except MaxSendError as exc:
+                if 'edit_message_id' not in options or exc.status not in (403, 404):
+                    raise
+                if not await self.store.abandon_edit(row):
+                    return True  # Recovered lease owns delivery now.
+                options.pop('edit_message_id')
+                delivered = await self.client.send_chunk(row['external_user_id'], row['message_text'], **options)
         except asyncio.CancelledError:
             # Leave the lease for restart recovery; HTTP delivery may be uncertain.
             raise
@@ -264,7 +314,10 @@ class MaxOutboxWorker:
             _log.warning('MAX delivery %s: id=%s error=%s attempt=%s',
                          status, row['id'], error, row['attempts'])
         else:
-            await self.store.finish(row, 'sent')
+            if row.get('panel_key') and valid_mid(delivered):
+                await self.store.finish(row, 'sent', delivered_message_id=delivered)
+            else:
+                await self.store.finish(row, 'sent')
         return True
 
     async def run(self):
