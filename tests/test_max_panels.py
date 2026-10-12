@@ -129,6 +129,7 @@ async def test_application():
             'source_message_id':'mid.source'}, asyncio.CancelledError()]),
         finish_max_update=AsyncMock())
     ns = dict(asyncio=asyncio, db=db, chars={-1:ch,-2:other}, MaxInput=MaxInput,
+              Character=Character,
               max_ui=max_ui, _max_navigation=max_navigation,
               WORLD=content.WORLD, _max_combat=max_combat,
               MaxOutboxStore=lambda _: SimpleNamespace(enqueue=queued, enqueue_combat=batched),
